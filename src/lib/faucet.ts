@@ -16,7 +16,7 @@ export const FAUCET_AMOUNTS = { NATIVE: 0.0015, IXUSDC: 100 };
 /** One claim per wallet, ever. */
 export const FAUCET_COOLDOWN_MS = Number.POSITIVE_INFINITY;
 const MIN_USER_NATIVE = 0.0005;
-const MIN_FAUCET_NATIVE = 0.002;
+export const MIN_FAUCET_NATIVE = 0.002;
 
 const transferAbi = [
   ...erc20Abi,
@@ -32,6 +32,8 @@ export interface FaucetStatus {
   faucetIxUsdcBalance?: number;
   /** True while the faucet can hand out ixUSDC. */
   ixUsdcAvailable: boolean;
+  /** True when the faucet wallet cannot pay for its own transactions. */
+  faucetLow: boolean;
   amounts: typeof FAUCET_AMOUNTS;
   ixs: { vault: string; usdc: string; usdcSymbol: string; usdcOwner: string };
   explorer: string;
@@ -82,6 +84,7 @@ export async function faucetStatus(): Promise<FaucetStatus> {
     faucetNativeBalance,
     faucetIxUsdcBalance,
     ixUsdcAvailable: (faucetIxUsdcBalance ?? 0) >= FAUCET_AMOUNTS.IXUSDC,
+    faucetLow: Boolean(account) && (faucetNativeBalance ?? 0) < MIN_FAUCET_NATIVE,
     amounts: FAUCET_AMOUNTS,
     ixs: { vault: IXS_BSC.hybridVault, usdc: IXS_BSC.usdc, usdcSymbol: IXS_USDC_SYMBOL, usdcOwner: IXS_USDC_OWNER },
     explorer: EXPLORER,

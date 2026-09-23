@@ -435,8 +435,8 @@ export async function riskReport(address: string) {
 }
 
 export async function portfolioReport(address: string, periodDays: number) {
-  const { snapshot, strategies } = await scan(address);
-  return { report: buildPortfolioReport(snapshot, periodDays), snapshot, strategies };
+  const { user, snapshot, strategies } = await scan(address);
+  return { report: buildPortfolioReport(snapshot, user, periodDays), snapshot, strategies };
 }
 
 export async function activity(address: string) {

@@ -4,7 +4,7 @@ import { getStore } from "@/lib/db";
 import { DEMO_ADDRESS } from "@/lib/demo";
 import { CHAIN_NAME } from "@/lib/chain/config";
 import { invalidateOnchain } from "@/lib/chain/treasury";
-import { FAUCET_COOLDOWN_MS, claimFaucet, faucetStatus } from "@/lib/faucet";
+import { FAUCET_COOLDOWN_MS, MIN_FAUCET_NATIVE, claimFaucet, faucetStatus } from "@/lib/faucet";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -21,7 +21,12 @@ export async function GET(req: Request) {
       const last = await store.getFaucetClaim(address);
       if (last && Date.now() - new Date(last).getTime() < FAUCET_COOLDOWN_MS) nextClaimAt = last;
     }
-    return { ...status, nextClaimAt, canClaim: status.configured && !nextClaimAt && address !== DEMO_ADDRESS };
+    let reason: string | null = null;
+    if (!status.configured) reason = "Faucet key not configured on the server.";
+    else if (address === DEMO_ADDRESS) reason = "The demo treasury is simulated; connect a browser wallet to claim.";
+    else if (nextClaimAt) reason = `This wallet already claimed on ${new Date(nextClaimAt).toLocaleString()}. One claim per wallet.`;
+    else if (status.faucetLow) reason = `Faucet wallet is low on ${status.nativeSymbol} (${(status.faucetNativeBalance ?? 0).toFixed(4)}); it needs at least ${MIN_FAUCET_NATIVE} to send. Top it up at ${status.faucetAddress}.`;
+    return { ...status, nextClaimAt, reason, canClaim: !reason };
   });
 }
 

@@ -1,6 +1,6 @@
 import { CHAIN_NAME } from "@/lib/chain/config";
 import { env, openservConfigured } from "@/lib/env";
-import { fmtAmount, fmtUsd } from "@/lib/format";
+import { fmtAmount, fmtUsd, vaultLabel } from "@/lib/format";
 import type { AllocationLeg, Metrics, RejectedOption, TreasurySnapshot, UserProfile } from "@/lib/types";
 import type { Candidate } from "@/lib/agents/finder";
 import type { Constraints, LegInput } from "@/lib/agents/planner";
@@ -169,7 +169,7 @@ export function localNarrative(i: NarrativeInput): Narrative {
       },
       {
         title: "Matches treasury objectives.",
-        body: `${legs.map((l) => `${l.asset} runway earns ${l.apy}% in ${l.vaultName}`).join("; ")}. No asset is sold.${unavailable.length ? ` ${unavailable.map((c) => `${c.asset} waits for the IXS ${c.strategy.vaultName} vault to go live`).join("; ")}.` : ""}`,
+        body: `${legs.map((l) => `${l.asset} runway earns ${l.apy}% in ${l.vaultName}`).join("; ")}. No asset is sold.${unavailable.length ? ` ${unavailable.map((c) => `${c.asset} waits for the ${vaultLabel(c.strategy.vaultName)} vault to go live`).join("; ")}.` : ""}`,
       },
     ],
     steps: [

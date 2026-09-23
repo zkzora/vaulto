@@ -1,4 +1,4 @@
-import { fmtUsd } from "@/lib/format";
+import { fmtUsd, vaultLabel } from "@/lib/format";
 import type { PortfolioReport, Recommendation, RiskReport, TreasurySnapshot, UserProfile } from "@/lib/types";
 import { healthLabel } from "./scoring";
 
@@ -31,7 +31,7 @@ export function buildRiskReport(snapshot: TreasurySnapshot, user: UserProfile, r
       title: "Vault risk",
       level: lowestVault == null ? "Low" : lowestVault >= user.minVaultRiskScore ? "Low" : "Medium",
       description: snapshot.positions.length
-        ? `${snapshot.positions.map((p) => `IXS ${p.vaultName} scores ${p.riskScore}`).join(" and ")}. No leverage, daily or 24h withdrawal.`
+        ? `${snapshot.positions.map((p) => `${vaultLabel(p.vaultName)} scores ${p.riskScore}`).join(" and ")}. No leverage, daily or 24h withdrawal.`
         : "No vault positions yet. Every IXS strategy Vaulto proposes is scored before it reaches you.",
       value: lowestVault == null ? "—" : String(lowestVault),
       sub: "lowest vault score",
@@ -118,7 +118,7 @@ export function buildRiskReport(snapshot: TreasurySnapshot, user: UserProfile, r
 }
 
 /** Synthesizes a smooth value history ending at the current treasury value. */
-export function buildPortfolioReport(snapshot: TreasurySnapshot, periodDays = 30): PortfolioReport {
+export function buildPortfolioReport(snapshot: TreasurySnapshot, user: UserProfile, periodDays = 30): PortfolioReport {
   const yieldEarnedUsd = Math.round((snapshot.earned30dUsd * periodDays) / 30);
   const btc = snapshot.assets.find((a) => a.symbol === "BTC");
   const priceChangeUsd = btc ? Math.round(btc.valueUsd * (btc.change30dPct / 100) * (periodDays / 30)) : 0;
@@ -140,17 +140,20 @@ export function buildPortfolioReport(snapshot: TreasurySnapshot, periodDays = 30
   const stable = snapshot.assets.filter((a) => a.symbol === "USDC" || a.symbol === "ixUSDC").reduce((s, a) => s + a.allocationPct, 0);
   const btcPct = btc?.allocationPct ?? 0;
   const rwa = snapshot.allocatedPct;
+  // Targets come from the user's policy and risk profile, so they match the Risk Center.
   const targets = [
-    { label: "Stablecoins", actualPct: stable, targetPct: 25, color: "#5B8DEF" },
-    { label: "BTC", actualPct: btcPct, targetPct: 60, color: "#F2A93B" },
-    { label: "In IXS vaults", actualPct: rwa, targetPct: 15, color: "#17996A" },
+    { label: "Stablecoins (liquidity floor)", actualPct: stable, targetPct: user.liquidityFloorPct, color: "#5B8DEF" },
+    { label: "BTC (exposure cap)", actualPct: btcPct, targetPct: user.maxAssetExposurePct, color: "#F2A93B" },
+    { label: "In IXS vaults", actualPct: rwa, targetPct: snapshot.targetAllocationPct, color: "#17996A" },
   ];
   const over = targets.find((t) => t.actualPct - t.targetPct >= 2);
   return {
     history,
     targets,
     note: over
-      ? `${over.label} is ${over.actualPct - over.targetPct} pts over target. Within tolerance; Vaulto rebalances by allocating idle capital, not by selling assets.`
+      ? over.label.startsWith("BTC")
+        ? `BTC is ${over.actualPct - over.targetPct} pts over the exposure cap. Vaulto never sells assets; the Risk Center flags exposure above the cap.`
+        : `${over.label.replace(/ (.*)$/, "")} is ${over.actualPct - over.targetPct} pts over target. Within tolerance; Vaulto rebalances by allocating idle capital into IXS vaults, not by selling assets.`
       : "Allocation is within target tolerance. Vaulto rebalances by allocating idle capital, not by selling assets.",
     yieldEarnedUsd,
     priceChangeUsd,

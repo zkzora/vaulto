@@ -120,7 +120,7 @@ export default function Landing() {
               </div>
               <div className="mt-2.5 font-display text-[20px] font-semibold leading-[1.3] tracking-[-0.01em] text-ink">Allocate idle capital into IXS RWA strategies</div>
               <div className="mt-2 text-[14px] leading-[1.5] text-body">
-                Your treasury has idle capital. Based on your liquidity floor and risk policy, Vaulto recommends moving part of the USDC runway into the IXS IX High Yield Bond vault while keeping two months of burn liquid.
+                Your treasury has idle capital. Based on your liquidity floor and risk policy, Vaulto recommends moving part of the USDC runway into the IX High Yield Bond (IXHYB) vault on IXS while keeping two months of burn liquid.
               </div>
               <div className="mt-4 flex gap-2.5">
                 <Link href="/connect" className="btn btn-primary">Review strategy</Link>

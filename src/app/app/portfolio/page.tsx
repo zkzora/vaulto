@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { usePortfolio } from "@/hooks/use-vaulto";
-import { fmtShortDate, fmtUsd } from "@/lib/format";
+import { fmtShortDate, fmtUsd, vaultLabel } from "@/lib/format";
 import { Card, CardTitle, ErrorState, Skeleton, TargetBar, cx } from "@/components/ui";
 
 const PERIODS = [
@@ -143,7 +143,7 @@ export default function PortfolioPage() {
               <span className="font-display text-[15px] font-semibold">{a.apy.toFixed(1)}%</span>
               <span className={a.change30dPct > 0.1 ? "text-green" : "text-muted"}>+{a.change30dPct}%</span>
               <span className="text-[13px] font-normal text-muted">
-                {a.deployedIn ? `IXS ${byId.get(a.deployedIn)?.vaultName ?? a.deployedIn}` : ""}
+                {a.deployedIn ? vaultLabel(byId.get(a.deployedIn)?.vaultName ?? a.deployedIn) : ""}
                 {a.deployedIn && a.idleUsd > 0 ? " · " : ""}
                 {a.idleUsd > 0 ? (a.deployedIn ? "Idle" : a.symbol === "ixUSDC" ? "Idle · IX High Yield Bond recommended" : "Idle · no IXS vault for this asset yet") : ""}
               </span>

@@ -1,4 +1,5 @@
 import { fmtAmount } from "@/lib/format";
+import { CHAIN_NAME, NATIVE_SYMBOL } from "@/lib/chain/config";
 import type { RejectedOption, TreasurySnapshot, UserProfile } from "@/lib/types";
 import type { Candidate } from "./finder";
 
@@ -59,12 +60,18 @@ export function guardCandidates(
   // Idle assets with no IXS strategy at all (e.g. gas token) are named so the reasoning can explain them.
   for (const a of snapshot.assets) {
     if (!a.idle || a.idleUsd < 50 || candidates.some((c) => c.asset === a.symbol)) continue;
-    if (a.symbol === "tBNB") continue; // gas reserve, never allocated
+    if (a.symbol === NATIVE_SYMBOL) continue; // gas reserve, never allocated
     rejected.push({ option: `Idle ${fmtAmount(a.idleAmount, a.symbol)}`, reason: "No IXS vault for this asset", tone: "muted" });
   }
 
-  // Always evaluate the naive alternative so the user sees why Vaulto sizes conservatively.
-  if (snapshot.idlePct > user.liquidityFloorPct) {
+  // Nothing allocatable at all (e.g. a wallet that only holds gas): say so instead of a generic floor breach.
+  if (!approved.length && !rejected.length) {
+    const gas = snapshot.assets.find((a) => a.symbol === NATIVE_SYMBOL && a.idleAmount > 0);
+    if (gas) rejected.push({ option: `Idle ${fmtAmount(gas.idleAmount, gas.symbol)}`, reason: `Gas reserve on ${CHAIN_NAME}; no IXS vault takes ${NATIVE_SYMBOL}`, tone: "muted" });
+  }
+
+  // Evaluate the naive alternative (only when there is something to allocate) so the user sees why Vaulto sizes conservatively.
+  if (approved.length && snapshot.idlePct > user.liquidityFloorPct) {
     rejected.push({ option: "Allocate all idle capital", reason: `Breaks ${user.liquidityFloorPct}% liquidity floor`, tone: "warn" });
   }
 

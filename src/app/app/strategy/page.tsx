@@ -4,7 +4,7 @@ import Link from "next/link";
 import { AnalysisProgress } from "@/components/dashboard/recommendation-card";
 import { useTxn } from "@/components/txn/txn-provider";
 import { useAnalyze, useRecommendationStatus, useTreasury } from "@/hooks/use-vaulto";
-import { fmtAmount, fmtTime, fmtUsd } from "@/lib/format";
+import { fmtAmount, fmtTime, fmtUsd, vaultLabel } from "@/lib/format";
 import { BeforeAfterBar, Card, CardTitle, EmptyState, ErrorState, OpenServBadge, Pill, Skeleton, Stat, cx } from "@/components/ui";
 
 export default function StrategyPage() {
@@ -141,7 +141,7 @@ export default function StrategyPage() {
             <div className="mt-4 grid gap-3.5">
               <BeforeAfterBar label="Idle capital" before={rec.before.idlePct} after={rec.after.idlePct} />
               {rec.legs.map((l) => (
-                <BeforeAfterBar key={l.strategyId} label={l.vaultName.startsWith("IX") ? l.vaultName : `IXS ${l.vaultName}`} before={rec.before.perStrategyPct[l.strategyId] ?? 0} after={rec.after.perStrategyPct[l.strategyId] ?? 0} />
+                <BeforeAfterBar key={l.strategyId} label={vaultLabel(l.vaultName)} before={rec.before.perStrategyPct[l.strategyId] ?? 0} after={rec.after.perStrategyPct[l.strategyId] ?? 0} />
               ))}
             </div>
             <div className="mt-4 grid gap-2">

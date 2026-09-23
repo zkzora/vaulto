@@ -25,7 +25,7 @@ export function fmtPct(value: number, decimals = 1) {
 }
 
 export function fmtAmount(value: number, symbol: string) {
-  const decimals = symbol === "BTC" ? 2 : symbol === "ETH" ? 4 : 0;
+  const decimals = symbol === "BTC" ? 2 : symbol === "ETH" || symbol === "BNB" || symbol === "tBNB" || (value !== 0 && Math.abs(value) < 1) ? 4 : 0;
   return `${value.toLocaleString("en-US", { maximumFractionDigits: decimals, minimumFractionDigits: symbol === "BTC" ? 1 : 0 })} ${symbol}`;
 }
 
@@ -72,4 +72,9 @@ export function clamp(n: number, min: number, max: number) {
 export function round(n: number, decimals = 0) {
   const f = 10 ** decimals;
   return Math.round(n * f) / f;
+}
+
+/** Vault display name with the IXS prefix, without doubling it for names that already start with "IX…". */
+export function vaultLabel(name: string): string {
+  return name.startsWith("IX") ? name : `IXS ${name}`;
 }

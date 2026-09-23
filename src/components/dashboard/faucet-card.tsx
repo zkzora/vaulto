@@ -18,7 +18,10 @@ export interface FaucetStatus {
   amounts: { NATIVE: number; IXUSDC: number };
   ixs: { vault: string; usdc: string; usdcSymbol: string; usdcOwner: string };
   explorer: string;
+  faucetLow: boolean;
   nextClaimAt: string | null;
+  /** Why a claim is blocked right now (null when it can proceed). */
+  reason: string | null;
   canClaim: boolean;
 }
 
@@ -105,10 +108,11 @@ export function FaucetCard({ onchain, compact }: { onchain: OnchainReadout; comp
         </div>
       )}
       {mutation.isError && <div className="mt-3 rounded-xl bg-amber-tint px-3.5 py-2.5 text-[12px] text-amber">{mutation.error.message}</div>}
+      {!mutation.isError && s?.reason && !s.nextClaimAt && <div className="mt-3 rounded-xl bg-amber-tint px-3.5 py-2.5 text-[12px] text-amber">{s.reason}</div>}
       <div className="mt-auto flex flex-wrap items-center gap-2.5 pt-4">
         <button className="btn btn-primary" disabled={!s?.canClaim || mutation.isPending || (hasGas && !s?.ixUsdcAvailable)} onClick={() => mutation.mutate()}>
           {mutation.isPending && <span className="spinner" />}
-          {mutation.isPending ? `Sending on ${CHAIN_NAME}…` : s?.nextClaimAt ? "Already claimed" : hasGas && !s?.ixUsdcAvailable ? "Nothing to claim right now" : "Get test funds"}
+          {mutation.isPending ? `Sending on ${CHAIN_NAME}…` : s?.nextClaimAt ? "Already claimed" : s?.faucetLow ? "Faucet needs gas" : hasGas && !s?.ixUsdcAvailable ? "Nothing to claim right now" : "Get test funds"}
         </button>
         {s?.nextClaimAt && <span className="text-[12px] text-muted">Claimed {new Date(s.nextClaimAt).toLocaleString()} · one claim per wallet</span>}
         {s?.faucetNativeBalance != null && (

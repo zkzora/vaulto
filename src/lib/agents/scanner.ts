@@ -1,6 +1,6 @@
 import { NATIVE_PRICE_KEY, NATIVE_SYMBOL } from "@/lib/chain/config";
 import { ASSET_META, DEMO_HOLDINGS } from "@/lib/demo";
-import { round } from "@/lib/format";
+import { round, vaultLabel } from "@/lib/format";
 import type {
   DemoState,
   OnchainReadout,
@@ -145,7 +145,7 @@ export function scanTreasury(input: ScanInput): TreasurySnapshot {
       a.allocationPct = pct(a.valueUsd, totalUsd);
       a.liquidity = a.idleUsd > 0 && a.deployedUsd === 0 ? "liquid" : a.idleUsd === 0 ? "deployed" : "liquid";
       const where: string[] = [];
-      if (a.deployedIn) where.push(`IXS ${byId.get(a.deployedIn)?.vaultName ?? a.deployedIn}`);
+      if (a.deployedIn) where.push(vaultLabel(byId.get(a.deployedIn)?.vaultName ?? a.deployedIn));
       if (a.idleUsd > 0) where.push(a.deployedUsd > 0 ? `${round(a.idleAmount, a.symbol === "BTC" ? 2 : 0).toLocaleString("en-US")} ${a.symbol} idle` : "Idle");
       a.note = where.join(" · ");
       return a;
