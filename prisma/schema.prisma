@@ -1,0 +1,118 @@
+// Vaulto Agent — PostgreSQL schema (Prisma 6)
+// Set DATABASE_URL and run `npm run db:push` to use Postgres. Without DATABASE_URL the app
+// falls back to a JSON file store with the same shape (src/lib/db/memory.ts).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                  String   @id @default(cuid())
+  walletAddress       String   @unique @map("wallet_address")
+  daoName             String   @default("Treasury") @map("dao_name")
+  treasuryGoal        String   @default("Preserve runway, earn on idle capital") @map("treasury_goal")
+  riskProfile         String   @default("Balanced") @map("risk_profile")
+  liquidityFloorPct   Int      @default(30) @map("liquidity_floor_pct")
+  maxAssetExposurePct Int      @default(70) @map("max_asset_exposure_pct")
+  minVaultRiskScore   Int      @default(80) @map("min_vault_risk_score")
+  monthlyBurnUsd      Float    @default(185000) @map("monthly_burn_usd")
+  demoMode            Boolean  @default(true) @map("demo_mode")
+  demoState           Json?    @map("demo_state")
+  lastFaucetAt        DateTime? @map("last_faucet_at")
+  firstSeenAt         DateTime @default(now()) @map("first_seen_at")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  treasury        Treasury[]
+  recommendations Recommendation[]
+  transactions    Transaction[]
+  agentLogs       AgentLog[]
+
+  @@map("users")
+}
+
+model Treasury {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  asset      String
+  balance    Float
+  valueUsd   Float    @map("value_usd")
+  allocation Float // percentage of treasury
+  liquidity  String // liquid | deployed
+  idle       Boolean  @default(false)
+  source     String   @default("onchain") // onchain | demo
+  deployedIn String?  @map("deployed_in")
+  snapshotAt DateTime @default(now()) @map("snapshot_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, snapshotAt])
+  @@map("treasury")
+}
+
+model VaultStrategy {
+  id        String   @id
+  provider  String   @default("IXS")
+  vaultName String   @map("vault_name")
+  assetType String   @map("asset_type")
+  apy       Float?
+  riskScore Int      @map("risk_score")
+  data      Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("vault_strategies")
+}
+
+model Recommendation {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  strategy  String
+  reasoning String
+  status    String   @default("proposed") // proposed | approved | executed | rejected | dismissed
+  data      Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([userId, createdAt])
+  @@map("recommendations")
+}
+
+model Transaction {
+  id               String   @id @default(cuid())
+  userId           String   @map("user_id")
+  recommendationId String?  @map("recommendation_id")
+  hash             String?
+  amount           Float
+  status           String   @default("prepared") // prepared | pending | confirmed | failed | simulated
+  data             Json
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recommendation Recommendation? @relation(fields: [recommendationId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@map("transactions")
+}
+
+model AgentLog {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  agentName String   @map("agent_name")
+  action    String
+  reasoning String
+  status    String   @default("info") // info | success | warn
+  source    String   @default("OpenServ") // OpenServ | IXS | Vaulto
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("agent_logs")
+}

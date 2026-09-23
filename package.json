@@ -1,17 +1,32 @@
 {
-  "name": "web",
+  "name": "vaulto",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "agent": "node --env-file=.env scripts/openserv-agent.mjs",
+    "probe:ixs": "node scripts/probe-ixs-chains.mjs",
+    "e2e:onchain": "node --env-file=.env scripts/e2e-onchain.mjs"
   },
   "dependencies": {
+    "@openserv-labs/sdk": "^2.4.1",
+    "@prisma/client": "^6.19.3",
+    "@rainbow-me/rainbowkit": "^2.2.11",
+    "@tanstack/react-query": "^5.103.1",
+    "@x402/core": "^2.26.0",
+    "@x402/evm": "^2.26.0",
+    "@x402/svm": "^2.26.0",
     "next": "16.3.5",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "viem": "^2.56.8",
+    "wagmi": "^2.19.5",
+    "zod": "^3.25.67"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -20,6 +35,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
+    "prisma": "^6.19.3",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
