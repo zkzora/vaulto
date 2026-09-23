@@ -13,7 +13,8 @@ import { env } from "./env";
 
 // BSC Testnet gas is ~0.1 gwei: 0.0015 tBNB covers dozens of approve + deposit transactions.
 export const FAUCET_AMOUNTS = { NATIVE: 0.0015, IXUSDC: 100 };
-export const FAUCET_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+/** One claim per wallet, ever. */
+export const FAUCET_COOLDOWN_MS = Number.POSITIVE_INFINITY;
 const MIN_USER_NATIVE = 0.0005;
 const MIN_FAUCET_NATIVE = 0.002;
 

@@ -125,6 +125,8 @@ export interface VaultStrategy {
   apy: number | null;
   /** True when the APY is a Vaulto estimate (IXS testnet metrics unavailable). */
   apyEstimated?: boolean;
+  /** "announced": IXS has announced the product but no vault is deployed (checked against the IXS Vault API). */
+  availability?: "live" | "announced";
   riskScore: number;
   liquidity: string;
   chainId: number;
@@ -141,7 +143,7 @@ export interface VaultStrategy {
   sharePrice?: number | null;
   source: "live" | "catalog";
   executable: boolean;
-  tag: "primary" | "secondary" | "opportunity" | "live";
+  tag: "primary" | "secondary" | "opportunity" | "live" | "announced";
   routeId?: string;
   explorerUrl?: string;
   capacityNote?: string;

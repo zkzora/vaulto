@@ -108,9 +108,9 @@ export function FaucetCard({ onchain, compact }: { onchain: OnchainReadout; comp
       <div className="mt-auto flex flex-wrap items-center gap-2.5 pt-4">
         <button className="btn btn-primary" disabled={!s?.canClaim || mutation.isPending || (hasGas && !s?.ixUsdcAvailable)} onClick={() => mutation.mutate()}>
           {mutation.isPending && <span className="spinner" />}
-          {mutation.isPending ? `Sending on ${CHAIN_NAME}…` : hasGas && !s?.ixUsdcAvailable ? "Nothing to claim right now" : "Get test funds"}
+          {mutation.isPending ? `Sending on ${CHAIN_NAME}…` : s?.nextClaimAt ? "Already claimed" : hasGas && !s?.ixUsdcAvailable ? "Nothing to claim right now" : "Get test funds"}
         </button>
-        {s?.nextClaimAt && <span className="text-[12px] text-muted">Next claim {new Date(s.nextClaimAt).toLocaleString()}</span>}
+        {s?.nextClaimAt && <span className="text-[12px] text-muted">Claimed {new Date(s.nextClaimAt).toLocaleString()} · one claim per wallet</span>}
         {s?.faucetNativeBalance != null && (
           <span className="ml-auto text-[12px] text-faint">
             Faucet {s.faucetNativeBalance.toFixed(4)} {NATIVE_SYMBOL} · {(s.faucetIxUsdcBalance ?? 0).toLocaleString("en-US")} {IXS_USDC_SYMBOL}

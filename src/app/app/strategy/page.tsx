@@ -141,7 +141,7 @@ export default function StrategyPage() {
             <div className="mt-4 grid gap-3.5">
               <BeforeAfterBar label="Idle capital" before={rec.before.idlePct} after={rec.after.idlePct} />
               {rec.legs.map((l) => (
-                <BeforeAfterBar key={l.strategyId} label={`IXS ${l.vaultName}`} before={rec.before.perStrategyPct[l.strategyId] ?? 0} after={rec.after.perStrategyPct[l.strategyId] ?? 0} />
+                <BeforeAfterBar key={l.strategyId} label={l.vaultName.startsWith("IX") ? l.vaultName : `IXS ${l.vaultName}`} before={rec.before.perStrategyPct[l.strategyId] ?? 0} after={rec.after.perStrategyPct[l.strategyId] ?? 0} />
               ))}
             </div>
             <div className="mt-4 grid gap-2">

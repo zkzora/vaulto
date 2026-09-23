@@ -19,7 +19,7 @@ export async function GET(req: Request) {
     if (address) {
       const store = await getStore();
       const last = await store.getFaucetClaim(address);
-      if (last && Date.now() - new Date(last).getTime() < FAUCET_COOLDOWN_MS) nextClaimAt = new Date(new Date(last).getTime() + FAUCET_COOLDOWN_MS).toISOString();
+      if (last && Date.now() - new Date(last).getTime() < FAUCET_COOLDOWN_MS) nextClaimAt = last;
     }
     return { ...status, nextClaimAt, canClaim: status.configured && !nextClaimAt && address !== DEMO_ADDRESS };
   });
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     const store = await getStore();
     const last = await store.getFaucetClaim(address);
     if (last && Date.now() - new Date(last).getTime() < FAUCET_COOLDOWN_MS) {
-      throw new Error(`Already claimed. Next claim available at ${new Date(new Date(last).getTime() + FAUCET_COOLDOWN_MS).toLocaleString()}`);
+      throw new Error(`This wallet already claimed on ${new Date(last).toLocaleString()}. The faucet allows one claim per wallet.`);
     }
     const result = await claimFaucet(address);
     invalidateOnchain(address);

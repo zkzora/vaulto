@@ -19,6 +19,10 @@ export function useStrategies() {
   return useQuery({ queryKey: ["vaults"], queryFn: api.vaults, staleTime: 60_000 });
 }
 
+export function useMainnetVaults() {
+  return useQuery({ queryKey: ["ixs-mainnet"], queryFn: api.mainnet, staleTime: 5 * 60_000 });
+}
+
 export function useActivity() {
   const { address } = useVaultoAccount();
   return useQuery({ queryKey: ["activity", address], queryFn: () => api.activity(address!), enabled: Boolean(address), refetchInterval: 20_000 });

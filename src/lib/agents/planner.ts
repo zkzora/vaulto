@@ -3,6 +3,39 @@ import type { AllocationLeg, Metrics, TreasurySnapshot, UserProfile } from "@/li
 import { computeHealth, pct } from "./scoring";
 import type { Candidate } from "./finder";
 
+const STABLE_ASSETS = new Set(["ixUSDC", "USDC"]);
+
+export interface LegCap {
+  strategyId: string;
+  vaultName: string;
+  asset: string;
+  priceUsd: number;
+  apy: number;
+  riskScore: number;
+  /** Largest amount (asset units) policy allows into this strategy. */
+  maxAmount: number;
+  maxUsd: number;
+  /** Why the cap is below the idle balance, if it is. */
+  capNote?: string;
+}
+
+export interface Constraints {
+  totalUsd: number;
+  idleUsd: number;
+  /** USD that must stay liquid after the allocation (policy floor + burn buffer). */
+  keepLiquidUsd: number;
+  /** USD available to deploy across all legs. */
+  budgetUsd: number;
+  /** Stablecoin runway reserve that never leaves the wallet (two months of burn). */
+  stableReserveUsd: number;
+  caps: LegCap[];
+}
+
+export interface LegInput {
+  strategyId: string;
+  amount: number;
+}
+
 export interface Plan {
   legs: AllocationLeg[];
   before: Metrics;
@@ -12,6 +45,57 @@ export interface Plan {
   liquidityAfterPct: number;
   txCount: number;
   feeUsd: number;
+}
+
+function roundAmount(asset: string, amount: number, usd: number) {
+  if (asset === "BTC") return Math.floor(amount * 100) / 100;
+  if (asset === "ETH" || asset === "tBNB") return Math.floor(amount * 1000) / 1000;
+  return usd >= 10_000 ? Math.floor(amount / 1000) * 1000 : Math.floor(amount * 100) / 100;
+}
+
+/**
+ * Allocation Planner Agent, step 1 — policy constraints every allocation must respect:
+ * liquidity floor (+1pt), two months of burn kept liquid (at most 10 pts above the floor), and a
+ * stablecoin runway reserve. The decision itself is made by SERV reasoning within these caps.
+ */
+export function planConstraints(snapshot: TreasurySnapshot, approved: Candidate[], user: UserProfile): Constraints | null {
+  if (!approved.length || snapshot.totalUsd <= 0) return null;
+  const floorUsd = snapshot.totalUsd * ((user.liquidityFloorPct + 1) / 100);
+  const burnBuffer = user.monthlyBurnUsd * 2;
+  const bufferCapUsd = snapshot.totalUsd * Math.min(0.6, (user.liquidityFloorPct + 11) / 100);
+  const keepLiquidUsd = clamp(burnBuffer, floorUsd, Math.max(floorUsd, bufferCapUsd));
+  const budgetUsd = Math.max(0, snapshot.idleUsd - keepLiquidUsd);
+  if (budgetUsd < 50) return null;
+  const stableReserveUsd = user.monthlyBurnUsd > 0 ? burnBuffer : 0;
+
+  const caps: LegCap[] = [];
+  for (const c of approved) {
+    const price = snapshot.prices[c.asset] ?? 1;
+    let maxUsd = Math.min(c.idleUsd, budgetUsd);
+    let capNote: string | undefined;
+    if (STABLE_ASSETS.has(c.asset) && stableReserveUsd > 0) {
+      const afterReserve = Math.max(0, c.idleUsd - stableReserveUsd);
+      if (afterReserve < maxUsd) {
+        maxUsd = afterReserve;
+        capNote = `keeps two months of burn (${Math.round(stableReserveUsd).toLocaleString("en-US")} USD) in stablecoins`;
+      }
+    }
+    const maxAmount = roundAmount(c.asset, maxUsd / price, maxUsd);
+    if (maxAmount * price < 10) continue;
+    caps.push({ strategyId: c.strategy.id, vaultName: c.strategy.vaultName, asset: c.asset, priceUsd: price, apy: c.strategy.apy ?? 0, riskScore: c.strategy.riskScore, maxAmount, maxUsd: Math.round(maxAmount * price), capNote });
+  }
+  if (!caps.length) return null;
+  return { totalUsd: snapshot.totalUsd, idleUsd: snapshot.idleUsd, keepLiquidUsd: Math.round(keepLiquidUsd), budgetUsd: Math.round(budgetUsd), stableReserveUsd: Math.round(stableReserveUsd), caps };
+}
+
+/** Deterministic sizing used when SERV reasoning is unavailable: fill caps proportionally to idle size. */
+export function localLegs(constraints: Constraints): LegInput[] {
+  const totalCap = constraints.caps.reduce((s, c) => s + c.maxUsd, 0);
+  return constraints.caps.map((c) => {
+    const share = totalCap > 0 ? c.maxUsd / totalCap : 0;
+    const usd = Math.min(c.maxUsd, constraints.budgetUsd * share);
+    return { strategyId: c.strategyId, amount: roundAmount(c.asset, usd / c.priceUsd, usd) };
+  });
 }
 
 function metricsFor(snapshot: TreasurySnapshot, user: UserProfile, legs: AllocationLeg[]): Metrics {
@@ -45,60 +129,48 @@ function metricsFor(snapshot: TreasurySnapshot, user: UserProfile, legs: Allocat
 }
 
 /**
- * Allocation Planner Agent — sizes deposits so the treasury stays above the liquidity floor
- * (plus a one-point buffer) and keeps at least two months of burn liquid. Never sells assets.
+ * Allocation Planner Agent, step 2 — validates a decision (from SERV reasoning or the local fallback)
+ * against the constraints: unknown strategies are dropped, amounts are clamped to their caps, the total
+ * is scaled down to the budget. Returns the plan with before/after metrics, or null when nothing survives.
  */
-export function planAllocation(snapshot: TreasurySnapshot, approved: Candidate[], user: UserProfile): Plan | null {
-  if (!approved.length || snapshot.totalUsd <= 0) return null;
-  const floorUsd = snapshot.totalUsd * ((user.liquidityFloorPct + 1) / 100);
-  // Two months of burn can raise the liquid reserve above the floor, but by at most 10 points of
-  // treasury, so a large burn setting never blocks a small treasury from deploying anything.
-  const burnBuffer = user.monthlyBurnUsd * 2;
-  const bufferCapUsd = snapshot.totalUsd * Math.min(0.6, (user.liquidityFloorPct + 11) / 100);
-  const keepLiquid = clamp(burnBuffer, floorUsd, Math.max(floorUsd, bufferCapUsd));
-  let budget = Math.max(0, snapshot.idleUsd - keepLiquid);
-  if (budget < 50) return null;
-
-  const totalIdle = approved.reduce((s, c) => s + c.idleUsd, 0);
-  const legs: AllocationLeg[] = [];
-  for (const c of approved) {
-    const share = totalIdle > 0 ? c.idleUsd / totalIdle : 0;
-    let usd = Math.min(c.idleUsd, budget * share);
-    const price = snapshot.prices[c.asset] ?? 1;
-    let amount = usd / price;
-    if (c.asset === "BTC") amount = Math.floor(amount * 100) / 100;
-    else if (c.asset === "ETH") amount = Math.floor(amount * 1000) / 1000;
-    else amount = usd >= 10_000 ? Math.floor(amount / 1000) * 1000 : Math.floor(amount * 100) / 100;
-    usd = amount * price;
+export function buildPlan(snapshot: TreasurySnapshot, approved: Candidate[], user: UserProfile, constraints: Constraints, input: LegInput[]): Plan | null {
+  const byId = new Map(approved.map((c) => [c.strategy.id, c]));
+  let legs: AllocationLeg[] = [];
+  for (const li of input) {
+    const cap = constraints.caps.find((c) => c.strategyId === li.strategyId);
+    const cand = byId.get(li.strategyId);
+    if (!cap || !cand || !(li.amount > 0)) continue;
+    const amount = roundAmount(cap.asset, Math.min(li.amount, cap.maxAmount), Math.min(li.amount, cap.maxAmount) * cap.priceUsd);
+    const usd = amount * cap.priceUsd;
     if (usd < 10) continue;
-    const onchainIdle = c.strategy.executable ? Math.min(snapshot.onchain.balances[c.asset] ?? 0, amount) : 0;
     legs.push({
-      strategyId: c.strategy.id,
-      vaultName: c.strategy.vaultName,
-      asset: c.asset,
+      strategyId: cap.strategyId,
+      vaultName: cap.vaultName,
+      asset: cap.asset,
       amount: round(amount, 6),
       amountUsd: Math.round(usd),
-      apy: c.strategy.apy ?? 0,
-      riskScore: c.strategy.riskScore,
-      executable: c.strategy.executable,
-      onchainAmount: round(onchainIdle, 6),
+      apy: cap.apy,
+      riskScore: cap.riskScore,
+      executable: cand.strategy.executable,
+      onchainAmount: cand.strategy.executable ? round(Math.min(snapshot.onchain.balances[cap.asset] ?? 0, amount), 6) : 0,
     });
   }
+  const sum = legs.reduce((s, l) => s + l.amountUsd, 0);
+  if (sum > constraints.budgetUsd && sum > 0) {
+    const k = constraints.budgetUsd / sum;
+    legs = legs
+      .map((l) => {
+        const amount = roundAmount(l.asset, l.amount * k, l.amountUsd * k);
+        return { ...l, amount: round(amount, 6), amountUsd: Math.round(amount * (l.amountUsd / l.amount)), onchainAmount: round(Math.min(l.onchainAmount, amount), 6) };
+      })
+      .filter((l) => l.amountUsd >= 10);
+  }
   if (!legs.length) return null;
-  budget = legs.reduce((s, l) => s + l.amountUsd, 0);
 
   const before = metricsFor(snapshot, user, []);
   const after = metricsFor(snapshot, user, legs);
+  const totalUsd = legs.reduce((s, l) => s + l.amountUsd, 0);
   const extraMonthlyUsd = Math.round(legs.reduce((s, l) => s + (l.amountUsd * l.apy) / 100 / 12, 0));
   const txCount = legs.reduce((s, l) => s + (l.executable ? 2 : 1), 0);
-  return {
-    legs,
-    before,
-    after,
-    totalUsd: Math.round(budget),
-    extraMonthlyUsd,
-    liquidityAfterPct: clamp(after.liquidPct, 0, 100),
-    txCount,
-    feeUsd: round(0.02 * txCount, 2),
-  };
+  return { legs, before, after, totalUsd: Math.round(totalUsd), extraMonthlyUsd, liquidityAfterPct: clamp(after.liquidPct, 0, 100), txCount, feeUsd: round(0.002 * txCount, 3) };
 }

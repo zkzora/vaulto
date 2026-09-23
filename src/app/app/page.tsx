@@ -140,7 +140,6 @@ export default function HomePage() {
                 <div key={a.symbol} className="flex items-center gap-2">
                   <span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: a.color }} />
                   {a.symbol}
-                  {a.symbol === "USTB" && <span className="text-faint">(T-bills)</span>}
                   <span className="ml-auto font-semibold text-ink">{a.allocationPct}%</span>
                 </div>
               ))}
@@ -168,11 +167,11 @@ export default function HomePage() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="font-display text-[16px] font-semibold text-ink">{s.apy != null ? `${s.apy}%` : "—"}</div>
+                      <div className="font-display text-[16px] font-semibold text-ink">{s.availability === "announced" ? "4–12%" : s.apy != null ? `${s.apyEstimated ? "~" : ""}${s.apy}%` : "—"}</div>
                       <div className="mt-1 flex justify-end gap-1.5">
                         <Pill tone="green" className="h-5 px-[7px] text-[10px]">Risk {s.riskScore}</Pill>
                         <Pill tone={p ? (s.tag === "primary" ? "blue" : "muted") : "muted"} className="h-5 px-[7px] text-[10px]">
-                          {p ? `Active${s.tag === "secondary" ? " · Secondary" : ""}` : s.requiresWhitelist ? "Eligibility check" : "Available"}
+                          {s.availability === "announced" ? "Announced · not deployable" : p ? `Active${s.tag === "secondary" ? " · Secondary" : ""}` : s.requiresWhitelist ? "Eligibility check" : "Available"}
                         </Pill>
                       </div>
                     </div>

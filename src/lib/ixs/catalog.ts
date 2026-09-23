@@ -91,5 +91,28 @@ export function buildCatalog(live: IxsVaultItem[] = []): VaultStrategy[] {
     capacityNote: "Eligibility check required · async settlement",
   };
 
-  return [hybrid, licensed];
+  const btc: VaultStrategy = {
+    id: STRATEGY_IDS.btc,
+    provider: "IXS",
+    vaultName: "BTC Real Yield",
+    assetType: "Bitcoin-denominated real yield · 4–12% indicative (IXS)",
+    asset: "BTC",
+    apy: null,
+    riskScore: 90,
+    liquidity: "—",
+    chainId: CHAIN_ID,
+    network: CHAIN_KEY,
+    chainName: CHAIN_NAME,
+    settlement: "sync",
+    requiresWhitelist: false,
+    status: live.some((v) => /BTC/i.test(v.underlyingAsset?.symbol ?? "")) ? "active" : "announced",
+    description: "Announced on ixs.finance (BTC Real Yield, 4–12% indicative APY) but no BTC vault exists on the IXS Vault API yet. Vaulto checks availability on every analysis and will make it allocatable the moment IXS deploys it.",
+    source: "catalog",
+    executable: false,
+    tag: "announced",
+    availability: live.some((v) => /BTC/i.test(v.underlyingAsset?.symbol ?? "")) ? "live" : "announced",
+    capacityNote: "Announced by IXS · not deployable yet",
+  };
+
+  return [hybrid, licensed, btc];
 }

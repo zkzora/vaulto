@@ -137,13 +137,13 @@ export function buildPortfolioReport(snapshot: TreasurySnapshot, periodDays = 30
     const date = new Date(new Date(snapshot.scannedAt).getTime() - (periodDays - t * periodDays) * 86_400_000);
     history.push({ date: date.toISOString(), value: Math.round(start + changeUsd * t + noise) });
   }
-  const stable = snapshot.assets.filter((a) => a.symbol === "USDC").reduce((s, a) => s + a.allocationPct, 0);
+  const stable = snapshot.assets.filter((a) => a.symbol === "USDC" || a.symbol === "ixUSDC").reduce((s, a) => s + a.allocationPct, 0);
   const btcPct = btc?.allocationPct ?? 0;
-  const rwa = snapshot.assets.filter((a) => a.symbol === "USTB").reduce((s, a) => s + a.allocationPct, 0);
+  const rwa = snapshot.allocatedPct;
   const targets = [
     { label: "Stablecoins", actualPct: stable, targetPct: 25, color: "#5B8DEF" },
     { label: "BTC", actualPct: btcPct, targetPct: 60, color: "#F2A93B" },
-    { label: "RWA", actualPct: rwa, targetPct: 15, color: "#17996A" },
+    { label: "In IXS vaults", actualPct: rwa, targetPct: 15, color: "#17996A" },
   ];
   const over = targets.find((t) => t.actualPct - t.targetPct >= 2);
   return {

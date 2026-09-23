@@ -40,4 +40,6 @@ export const IXS_BSC = {
 export const STRATEGY_IDS = {
   hybrid: "ixs-hybrid-yield-bsc",
   licensed: "ixs-licensed-rwa",
+  /** Announced by IXS (ixs.finance/vaults), no vault deployed: kept in the catalog as not deployable. */
+  btc: "ixs-btc-real-yield",
 } as const;

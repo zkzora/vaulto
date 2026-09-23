@@ -33,6 +33,23 @@ export interface LiveVault {
   strategyId?: string;
 }
 
+export interface MainnetVault {
+  routeId: string;
+  name: string;
+  chainId: number;
+  chainName: string;
+  contractAddress: string;
+  asset: string;
+  requiresWhitelist: boolean;
+  status: string;
+  apy: number | null;
+  tvlUsd: number | null;
+  sharePrice: number | null;
+  limitUsd: number | null;
+  explorerUrl: string;
+  ixsRewards: { active: boolean; multiplier: number } | null;
+}
+
 export interface TreasuryResponse {
   user: UserProfile;
   snapshot: TreasurySnapshot;
@@ -56,6 +73,7 @@ export interface SystemInfo {
 export const api = {
   treasury: (address: string) => request<TreasuryResponse>(`/api/treasury?address=${address}`),
   vaults: () => request<{ strategies: VaultStrategy[]; liveOk: boolean; liveVaults: LiveVault[] }>("/api/vaults"),
+  mainnet: () => request<{ vaults: MainnetVault[]; ok: boolean }>("/api/ixs/mainnet"),
   analyze: (address: string) => request<AnalysisResult>("/api/analyze", { method: "POST", body: JSON.stringify({ address }) }),
   recommendation: (address: string) => request<{ recommendation: Recommendation | null }>(`/api/recommendation?address=${address}`),
   setRecommendationStatus: (address: string, id: string, status: RecommendationStatus) =>

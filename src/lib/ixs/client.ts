@@ -79,6 +79,22 @@ export async function enrichCatalog(live: IxsVaultItem[]): Promise<VaultStrategy
   return list;
 }
 
+/**
+ * Live availability check against the IXS Vault API: a strategy is available when a vault with its
+ * underlying asset exists on this chain (announced products without a vault are not).
+ */
+export async function vaultAvailability(strategies: VaultStrategy[]): Promise<Record<string, { available: boolean; detail: string }>> {
+  const live = await fetchLiveVaults();
+  const out: Record<string, { available: boolean; detail: string }> = {};
+  for (const s of strategies) {
+    const match = live.items.find((v) => (s.routeId ? v.routeId === s.routeId : (v.underlyingAsset?.symbol ?? "").toUpperCase().includes(s.asset.toUpperCase())));
+    out[s.id] = match
+      ? { available: true, detail: `${s.vaultName}: live on the IXS Vault API (${match.name})` }
+      : { available: false, detail: live.ok ? `${s.vaultName}: announced by IXS, no ${s.asset} vault deployed on the IXS Vault API` : `${s.vaultName}: IXS Vault API unreachable, availability unknown` };
+  }
+  return out;
+}
+
 export interface LiveVaultSummary {
   routeId: string;
   name: string;

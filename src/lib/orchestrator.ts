@@ -4,15 +4,15 @@ import { EXPLORER, publicClient } from "@/lib/chain/client";
 import { CHAIN_NAME } from "@/lib/chain/config";
 import { getStore, normalizeAddress } from "@/lib/db";
 import { fmtAmount, fmtUsd } from "@/lib/format";
-import { checkWhitelist, getStrategies } from "@/lib/ixs/client";
+import { checkWhitelist, getStrategies, vaultAvailability } from "@/lib/ixs/client";
 import { getBtcVolatility30d, getPrices } from "@/lib/prices";
 import { scanTreasury } from "@/lib/agents/scanner";
 import { findOpportunities } from "@/lib/agents/finder";
 import { guardCandidates } from "@/lib/agents/risk";
-import { planAllocation } from "@/lib/agents/planner";
+import { buildPlan, localLegs, planConstraints } from "@/lib/agents/planner";
 import { prepareTransaction } from "@/lib/agents/execution";
 import { buildPortfolioReport, buildRiskReport } from "@/lib/agents/monitoring";
-import { narrate } from "@/lib/openserv/reasoning";
+import { decideAllocation, narrate } from "@/lib/openserv/reasoning";
 import type {
   AgentLog,
   AnalysisResult,
@@ -28,8 +28,8 @@ import type {
 } from "@/lib/types";
 
 /**
- * Agent Orchestrator — coordinates the multi-agent pipeline, the IXS adapter, OpenServ reasoning
- * and persistence. Every API route delegates here.
+ * Agent Orchestrator — coordinates the multi-agent pipeline, the IXS adapter, SERV (OpenServ)
+ * reasoning and persistence. Every API route delegates here.
  */
 
 export async function getUser(address: string) {
@@ -44,7 +44,7 @@ export async function resetUser(address: string) {
   return (await getStore()).resetUser(address);
 }
 
-export async function loadStrategies(): Promise<{ strategies: VaultStrategy[]; liveOk: boolean }> {
+export async function loadStrategies() {
   const result = await getStrategies();
   const store = await getStore();
   store.upsertStrategies(result.strategies).catch(() => undefined);
@@ -74,6 +74,10 @@ export async function scan(address: string): Promise<ScanResult> {
 
 const log = async (entry: Omit<AgentLog, "id" | "createdAt">) => (await getStore()).addLog(entry);
 
+function emptyMetrics(snapshot: TreasurySnapshot) {
+  return { liquidPct: snapshot.liquidPct, blendedApy: snapshot.blendedApy, healthScore: snapshot.healthScore, idlePct: snapshot.idlePct, allocatedPct: snapshot.allocatedPct, perStrategyPct: {} };
+}
+
 export async function analyze(address: string): Promise<AnalysisResult> {
   const started = Date.now();
   const store = await getStore();
@@ -98,33 +102,88 @@ export async function analyze(address: string): Promise<AnalysisResult> {
       walletAddress: wallet,
       agentName: "Opportunity Finder Agent",
       action: "find",
-      reasoning: `${fmtUsd(snapshot.idleUsd, { compact: true })} inefficient capital, opportunity score ${snapshot.opportunityScore}. ${candidates.length} IXS strategies match idle assets.`,
+      reasoning: `${fmtUsd(snapshot.idleUsd, { compact: true })} inefficient capital, opportunity score ${snapshot.opportunityScore}. ${candidates.length} IXS strategies match idle assets${candidates.some((c) => !c.available) ? ` (${candidates.filter((c) => !c.available).map((c) => c.strategy.vaultName).join(", ")} announced but not deployed)` : ""}.`,
       status: "info",
       source: "OpenServ",
     }),
   );
 
-  // Eligibility for whitelisted vaults through IXS MCP (only when a routeId is known to IXS).
-  const whitelist: Record<string, boolean | null> = {};
-  await Promise.all(
-    candidates
-      .filter((c) => c.strategy.requiresWhitelist && c.strategy.routeId)
-      .map(async (c) => {
-        whitelist[c.strategy.id] = await checkWhitelist(c.strategy.routeId!, wallet);
-      }),
-  );
+  // Live checks through IXS: vault availability (Vault API) and eligibility (MCP vault_check_whitelist).
+  const [availability, whitelistEntries] = await Promise.all([
+    vaultAvailability(candidates.map((c) => c.strategy)),
+    Promise.all(
+      candidates
+        .filter((c) => c.strategy.requiresWhitelist && c.strategy.routeId)
+        .map(async (c) => [c.strategy.id, await checkWhitelist(c.strategy.routeId!, wallet)] as const),
+    ),
+  ]);
+  const whitelist = Object.fromEntries(whitelistEntries) as Record<string, boolean | null>;
 
-  const verdict = guardCandidates(candidates, snapshot, user, whitelist);
-  const plan = planAllocation(snapshot, verdict.approved, user);
+  const verdict = guardCandidates(candidates, snapshot, user, whitelist, availability);
+  const constraints = planConstraints(snapshot, verdict.approved, user);
   logs.push(
     await log({
       walletAddress: wallet,
       agentName: "Risk Guardian Agent",
       action: "evaluate",
-      reasoning: plan
-        ? `Validated policy. ${plan.after.liquidPct}% liquid after deploy, floor ${user.liquidityFloorPct}%. ${verdict.rejected.length} options rejected.`
+      reasoning: constraints
+        ? `Validated policy. Budget ${fmtUsd(constraints.budgetUsd)} with ${fmtUsd(constraints.keepLiquidUsd)} kept liquid${constraints.stableReserveUsd ? ` and ${fmtUsd(constraints.stableReserveUsd)} stablecoin runway reserved` : ""}. ${verdict.rejected.filter((r) => r.tone === "warn").length} options rejected${Object.values(availability).some((a) => !a.available) ? `; ${Object.values(availability).filter((a) => !a.available).map((a) => a.detail).join("; ")}` : ""}.`
         : `No allocation passes policy right now (${verdict.policyChecks.map((c) => `${c.label}: ${c.ok ? "ok" : "fail"}`).join(", ")}).`,
-      status: plan ? "info" : "warn",
+      status: constraints ? "info" : "warn",
+      source: "OpenServ",
+    }),
+  );
+
+  if (!constraints) {
+    const rec: Recommendation = {
+      id: randomUUID(),
+      walletAddress: wallet,
+      title: "No allocation recommended",
+      headline: verdict.approved.length ? "Treasury is already deployed within policy. Vaulto will keep monitoring." : "No live IXS vault matches the idle assets right now. Vaulto will keep monitoring.",
+      foundLabel: `${fmtUsd(snapshot.idleUsd)} idle capital`,
+      summary: verdict.approved.length
+        ? "There is no idle capital above your liquidity floor to deploy safely. Nothing to approve."
+        : `${verdict.rejected.map((r) => `${r.option}: ${r.reason}`).join("; ") || "Nothing to allocate."} Nothing to approve.`,
+      legs: [],
+      before: emptyMetrics(snapshot),
+      after: emptyMetrics(snapshot),
+      totalUsd: 0,
+      extraMonthlyUsd: 0,
+      confidence: 90,
+      reasons: [{ title: "Policy respected.", body: verdict.policyChecks.map((c) => `${c.label}: ${c.detail}`).join(". ") }],
+      steps: [],
+      rejected: verdict.rejected,
+      status: "dismissed",
+      reasoningSource: "local",
+      durationMs: Date.now() - started,
+      createdAt: new Date().toISOString(),
+      txCount: 0,
+      feeUsd: 0,
+      idleUsd: snapshot.idleUsd,
+      context: { demoMode: snapshot.demoMode, totalUsd: snapshot.totalUsd },
+    };
+    await store.saveRecommendation(rec);
+    return { snapshot, recommendation: rec, logs, user };
+  }
+
+  // SERV reasoning decides the allocation within the Planner's caps; the Planner validates it.
+  const fallback = localLegs(constraints);
+  const decision = await decideAllocation({ user, snapshot, candidates, rejected: verdict.rejected, constraints, policyChecks: verdict.policyChecks, fallback });
+  let plan = buildPlan(snapshot, verdict.approved, user, constraints, decision.legs);
+  let decisionSource = decision.source;
+  if (!plan && decision.source === "openserv") {
+    plan = buildPlan(snapshot, verdict.approved, user, constraints, fallback);
+    decisionSource = "local";
+  }
+  logs.push(
+    await log({
+      walletAddress: wallet,
+      agentName: "Allocation Planner Agent",
+      action: "plan",
+      reasoning: plan
+        ? `${decisionSource === "openserv" ? `SERV reasoning (${decision.model ?? "OpenServ"}) decided` : "Deterministic sizing chose"} ${plan.legs.map((l) => `${fmtAmount(l.amount, l.asset)} → ${l.vaultName}`).join(", ")} within a ${fmtUsd(constraints.budgetUsd)} budget${decision.rationale ? `: ${decision.rationale}` : "."}`
+        : "SERV reasoning declined to allocate within the current constraints.",
+      status: plan ? "success" : "warn",
       source: "OpenServ",
     }),
   );
@@ -134,20 +193,21 @@ export async function analyze(address: string): Promise<AnalysisResult> {
       id: randomUUID(),
       walletAddress: wallet,
       title: "No allocation recommended",
-      headline: "Treasury is already deployed within policy. Vaulto will keep monitoring.",
+      headline: "SERV reasoning kept the treasury liquid for now.",
       foundLabel: `${fmtUsd(snapshot.idleUsd)} idle capital`,
-      summary: "There is no idle capital above your liquidity floor to deploy safely. Nothing to approve.",
+      summary: decision.rationale || "The reasoning engine decided not to deploy capital under the current policy. Nothing to approve.",
       legs: [],
-      before: { liquidPct: snapshot.liquidPct, blendedApy: snapshot.blendedApy, healthScore: snapshot.healthScore, idlePct: snapshot.idlePct, allocatedPct: snapshot.allocatedPct, perStrategyPct: {} },
-      after: { liquidPct: snapshot.liquidPct, blendedApy: snapshot.blendedApy, healthScore: snapshot.healthScore, idlePct: snapshot.idlePct, allocatedPct: snapshot.allocatedPct, perStrategyPct: {} },
+      before: emptyMetrics(snapshot),
+      after: emptyMetrics(snapshot),
       totalUsd: 0,
       extraMonthlyUsd: 0,
-      confidence: 90,
-      reasons: [{ title: "Liquidity floor respected.", body: `Idle capital (${snapshot.idlePct}%) is at or below the ${user.liquidityFloorPct}% floor plus buffer.` }],
+      confidence: 85,
+      reasons: [{ title: "Reasoning outcome.", body: decision.rationale || "No allocation within constraints." }],
       steps: [],
       rejected: verdict.rejected,
       status: "dismissed",
-      reasoningSource: "local",
+      reasoningSource: decision.source,
+      reasoningModel: decision.model,
       durationMs: Date.now() - started,
       createdAt: new Date().toISOString(),
       txCount: 0,
@@ -170,14 +230,15 @@ export async function analyze(address: string): Promise<AnalysisResult> {
     extraMonthlyUsd: plan.extraMonthlyUsd,
     totalUsd: plan.totalUsd,
     policyChecks: verdict.policyChecks,
+    decisionRationale: decision.rationale,
   });
 
   logs.push(
     await log({
       walletAddress: wallet,
-      agentName: "Allocation Planner Agent",
-      action: "plan",
-      reasoning: `${fmtUsd(plan.totalUsd)} split across ${plan.legs.map((l) => l.vaultName).join(" and ")}. Reasoning by ${narrative.source === "openserv" ? `OpenServ (${narrative.model ?? "platform model"})` : "Vaulto local engine"}, confidence ${narrative.confidence}%.`,
+      agentName: "SERV Reasoning",
+      action: "explain",
+      reasoning: `${fmtUsd(plan.totalUsd)} across ${plan.legs.map((l) => l.vaultName).join(" and ")}. Explanation by ${narrative.source === "openserv" ? `OpenServ (${narrative.model ?? "platform model"})` : "Vaulto local engine"}, confidence ${narrative.confidence}%.`,
       status: "success",
       source: "OpenServ",
     }),
@@ -200,8 +261,8 @@ export async function analyze(address: string): Promise<AnalysisResult> {
     steps: narrative.steps,
     rejected: verdict.rejected,
     status: "proposed",
-    reasoningSource: narrative.source,
-    reasoningModel: narrative.model,
+    reasoningSource: decisionSource === "openserv" || narrative.source === "openserv" ? "openserv" : "local",
+    reasoningModel: narrative.model ?? decision.model,
     durationMs: Date.now() - started,
     createdAt: new Date().toISOString(),
     txCount: plan.txCount,
@@ -280,7 +341,7 @@ export async function prepare(address: string, recommendationId: string, simulat
     action: "prepare",
     reasoning:
       onchain.length > 0
-        ? `${onchain.length} unsigned transaction${onchain.length > 1 ? "s" : ""} built via ${onchain[0].builtBy === "ixs-mcp" ? "IXS MCP" : "IXS adapter (ERC-4626 calldata)"} for ${CHAIN_NAME}. Awaiting wallet signature.`
+        ? `${onchain.length} unsigned transaction${onchain.length > 1 ? "s" : ""} built via ${onchain[0].builtBy === "ixs-mcp" ? "IXS MCP (vault_build_request_deposit)" : "IXS adapter (ERC-4626 calldata)"} for ${CHAIN_NAME}. Awaiting wallet signature.`
         : `Transaction workflow prepared via IXS Agent Rail (${prepared.steps.length} step${prepared.steps.length > 1 ? "s" : ""}, simulated rail). Awaiting approval.`,
     status: "success",
     source: "IXS",
@@ -303,7 +364,6 @@ export async function finalize(address: string, preparedId: string, results: Ste
   const rec = await store.getRecommendation(prepared.recommendationId);
   const demo = await store.getDemoState(wallet);
   const records: TransactionRecord[] = [];
-  const price = (asset: string) => (asset === "BTC" ? undefined : 1);
 
   for (const step of prepared.steps) {
     const r = results.find((x) => x.index === step.index);
@@ -327,7 +387,6 @@ export async function finalize(address: string, preparedId: string, results: Ste
     if (moved && step.mode === "simulated") {
       demo.moves.push({ strategyId: step.strategyId, asset: step.asset, amount: step.amount, at: record.createdAt });
     }
-    void price;
   }
   await store.setDemoState(wallet, demo);
   const lastHash = [...results].reverse().find((r) => r.status === "confirmed" && r.hash?.startsWith("0x") && r.hash.length === 66)?.hash;

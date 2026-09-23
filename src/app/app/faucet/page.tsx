@@ -71,7 +71,7 @@ export default function FaucetPage() {
             ))}
           </div>
           <div className="mt-4 rounded-xl bg-canvas px-4 py-3 text-[12px] leading-relaxed text-muted">
-            One claim per wallet every 24 hours: {d?.amounts.NATIVE ?? 0.0015} {NATIVE_SYMBOL} for gas plus {d?.amounts.IXUSDC ?? 100} {IXS_USDC_SYMBOL} while the faucet holds IXS test USDC. Nothing here has real value.
+            One claim per wallet (ever): {d?.amounts.NATIVE ?? 0.0015} {NATIVE_SYMBOL} for gas plus {d?.amounts.IXUSDC ?? 100} {IXS_USDC_SYMBOL} while the faucet holds IXS test USDC. Nothing here has real value.
           </div>
         </Card>
 

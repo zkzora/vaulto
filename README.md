@@ -13,7 +13,7 @@ Hackathon track: RWA Vaults powered by IXS Finance.
 | Web | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4 |
 | Wallet | RainbowKit + wagmi + viem, browser wallets via EIP-6963 (MetaMask, Rabby, …), BSC Testnet (97) |
 | Reasoning | OpenServ Inference API (`serv_…` key), optional OpenServ platform tasks via the SDK tunnel, local fallback engine |
-| Execution | IXS Vault API + IXS MCP (`vault_build_request_deposit`, `vault_check_whitelist`) on BSC Testnet, plus Vaulto faucet tokens + IXS-mirror ERC-4626 vaults (real transactions) |
+| Execution | Live IXS vaults on BSC Testnet via the IXS Vault API + IXS MCP (`vault_build_request_deposit`, `vault_check_whitelist`); the wallet signs every transaction |
 | Data | PostgreSQL via Prisma, or a JSON file store when `DATABASE_URL` is empty |
 
 ## Quick start
@@ -30,7 +30,7 @@ Open `http://localhost:3000`, click **Launch Vaulto**, then either connect a bro
 ### Optional configuration
 
 - **OpenServ reasoning** (no OpenAI account involved): put your OpenServ `serv_…` key in `OPENSERV_API_KEY`. Vaulto sends the multi-agent pipeline facts to the **OpenServ Inference API** (`https://inference-api.openserv.ai/v1`, model `OPENSERV_MODEL`, default `gpt-5.4-mini`), which writes the explanation. Optional platform mode (`OPENSERV_REASONING_MODE=platform`): create a Vaulto agent + workspace on platform.openserv.ai, set `OPENSERV_WORKSPACE_ID`, run `npm run agent`; each analysis then becomes a workspace task completed by the OpenServ runtime. Without a key Vaulto uses its deterministic local engine and labels the source. Restart `npm run dev` after editing `.env`.
-- **Testnet faucet + real transactions**: `FAUCET_PRIVATE_KEY` is the faucet/deployer wallet. Fund it with tBNB (BSC Testnet faucet: https://www.bnbchain.org/en/testnet-faucet), then run `npm run deploy:testnet`. This deploys tUSDC and tBTC faucet tokens plus two ERC-4626 vaults mirroring the IXS strategies and writes `deployments/bsc-testnet.json`. Users click **Get test funds** on the Faucet page: the faucet sends 0.0015 tBNB for gas and mints 10,000 tUSDC + 0.25 tBTC (real transactions, 24h cooldown). If the faucet wallet also holds IXS test USDC (IXS mints it; ask the IXS team), 100 ixUSDC is forwarded so the user can deposit into the official IXS vault through the IXS MCP.
+- **Testnet faucet**: `FAUCET_PRIVATE_KEY` is the faucet wallet. Fund it with tBNB (BSC Testnet faucet: https://www.bnbchain.org/en/testnet-faucet). Users click **Get test funds** on the Faucet page once per wallet: the faucet sends 0.0015 tBNB for gas and, while it holds some, 100 ixUSDC (IXS test USDC). ixUSDC is minted by IXS only (contract `0xbBCa…dc4f4`, owner `0xE8eA…A9C4`); ask the IXS team to send test USDC to the faucet wallet or to your own wallet. Every claim and deposit is a real transaction.
 - **PostgreSQL**: set `DATABASE_URL`, then run `npm run db:push`. The schema lives in `prisma/schema.prisma` (users, treasury, vault_strategies, recommendations, transactions, agent_logs).
 - **WalletConnect**: optional. Set `NEXT_PUBLIC_WC_PROJECT_ID` to add a WalletConnect option; browser wallets work without it.
 
@@ -60,42 +60,29 @@ User wallet (browser wallet, BSC Testnet)
 
 | Agent | File | Responsibility |
 | --- | --- | --- |
-| Treasury Scanner | `scanner.ts` | Reads on-chain balances (tBNB, tUSDC, tBTC, IXS test USDC, vault shares) plus the optional demo profile; detects idle capital; computes health and opportunity scores |
-| Opportunity Finder | `finder.ts` | Matches idle assets to IXS strategies and ranks fit |
-| Risk Guardian | `risk.ts` | Vault score, eligibility (IXS MCP `vault_check_whitelist`), liquidity floor, exposure policy |
-| Allocation Planner | `planner.ts` | Sizes deposits so liquidity stays above the floor and two months of burn; never sells assets |
-| Execution | `execution.ts` | Builds unsigned approve + deposit calldata via IXS MCP for IXS vaults, and a local ERC-4626 encoder for the Vaulto mirror vaults |
-| Monitoring | `monitoring.ts` | Risk report, alerts, portfolio history |
+| Treasury Scanner | `scanner.ts` | Reads on-chain balances (tBNB, IXS test USDC, IXS vault shares) plus the optional demo profile; detects idle capital; computes health and opportunity scores |
+| Opportunity Finder | `finder.ts` | Matches idle assets to IXS strategies and ranks fit; surfaces announced-but-undeployed products (BTC Real Yield) as unavailable candidates |
+| Risk Guardian | `risk.ts` | Live vault availability (IXS Vault API), eligibility (IXS MCP `vault_check_whitelist`), vault score, liquidity floor, exposure policy |
+| Allocation Planner | `planner.ts` | Computes hard caps (liquidity floor, burn buffer, stablecoin runway reserve) and validates the SERV decision against them; never sells assets |
+| Execution | `execution.ts` | Builds unsigned approve + deposit calldata via the IXS MCP; the wallet signs |
+| Monitoring | `monitoring.ts` | Risk report, alerts, portfolio history, recommendation expiry |
+| SERV reasoning | `openserv/reasoning.ts` | Decides the allocation within the Planner caps (`decideAllocation`) and writes the explanation (`narrate`), both through the OpenServ Inference API |
 
 ### IXS integration (BSC Testnet, chain 97)
 
-- Live catalog: `GET https://api-dev-v2.ixs.finance/vaults` filtered to BSC Testnet (shown on the IXS Strategies page).
+- Live catalog: `GET https://api-dev-v2.ixs.finance/vaults` filtered to BSC Testnet. Vault availability is checked against it on every analysis.
 - MCP: `POST https://api-dev-v2.ixs.finance/mcp`, JSON-RPC 2.0 over Streamable HTTP. Tools used: `vault_check_whitelist`, `vault_build_request_deposit` (returns approve + deposit calldata that the user signs).
-- Official IXS vault: **IXHYB - BSC** `0xCb09a5326AEFD705d14FF4C5ca2beD7086ba0Dcc` (sync ERC-4626, open whitelist, asset = IXS test USDC `0xbBCa80a7116aE46B0f249D279EF43f86274dc4f4`). Executable through the IXS MCP when the wallet holds ixUSDC.
-- Whitelist-gated IXS vault: **t_ix7540v1** `0x45B962394995e3FbFa83229Fbe97591dEb1DDCc4` (async ERC-7540), surfaced as "Licensed RWA Vault Opportunities" with live eligibility checks.
-- Vaulto mirror vaults (Tokenized RWA Yield, BTC Real Yield): plain ERC-4626 contracts deployed by `npm run deploy:testnet`, fed by the Vaulto faucet, so the flow is fully on-chain without IXS test USDC.
+- **IX High Yield Bond (IXHYB · BSC)** `0xCb09a5326AEFD705d14FF4C5ca2beD7086ba0Dcc`: sync ERC-4626, open whitelist, asset = IXS test USDC `0xbBCa80a7116aE46B0f249D279EF43f86274dc4f4`. The executable strategy.
+- **Licensed RWA Vault Opportunities** (t_ix7540v1) `0x45B962394995e3FbFa83229Fbe97591dEb1DDCc4`: async ERC-7540, whitelist required; eligibility checked live (the demo, user and faucet wallets are currently not whitelisted).
+- **BTC Real Yield**: announced on ixs.finance (4–12% indicative) but no BTC vault exists on the IXS Vault API. Kept in the catalog as *announced, not deployable*; idle BTC is explicitly rejected by the Risk Guardian and SERV reasoning offers the USDC portion into IXHYB instead.
+- **Mainnet panel** (read-only): the four production IX High Yield Bond vaults on BNB Chain and Avalanche from `https://api-v2.ixs.finance/vaults`, with on-chain TVL and price per share.
 - Single-chain config lives in `src/lib/chain/config.ts`.
 
 ### Real on-chain flow on BSC Testnet
 
-Connected wallets start with their real balances (demo layer off). **Get test funds** → faucet transactions → **Run analysis** → **Approve** → the wallet signs `approve` + `deposit` (IXS MCP calldata for IXS vaults, ERC-4626 calldata for the mirror vaults) → shares and positions are read back from the chain.
+Connected wallets start with their real balances (demo layer off). **Faucet → Get test funds** (tBNB + ixUSDC while available) → **Run analysis** (SERV decides the allocation, the Planner validates it) → **Approve** → the wallet signs `approve` + `deposit` built by the IXS MCP → shares and positions are read back from the IXS vault.
 
 The demo treasury (Acme DAO, **Continue with demo treasury**) still exists for a no-wallet walkthrough: there, legs without an on-chain balance run on a clearly labelled simulated rail. Real wallets can turn the demo layer on in Settings.
-
-### Deployed on BSC Testnet
-
-| Contract | Address |
-| --- | --- |
-| IXS Hybrid Yield vault (official IXS, read + MCP deposits) | `0xCb09a5326AEFD705d14FF4C5ca2beD7086ba0Dcc` |
-| IXS whitelist vault (official IXS, eligibility checks) | `0x45B962394995e3FbFa83229Fbe97591dEb1DDCc4` |
-| IXS test USDC (ixUSDC) | `0xbBCa80a7116aE46B0f249D279EF43f86274dc4f4` |
-| tUSDC (Vaulto faucet token, 6 dec) | `0x138d831721194999666f864821a709404a9f4461` |
-| tBTC (Vaulto faucet token, 8 dec) | `0x44d4df941ca13ffa2ab58633863ab9db996101b1` |
-| Tokenized RWA Yield · Vaulto mirror vault (ERC-4626) | `0x7ca05164ccc95c34d322f308446f1d22c0e22a63` |
-| BTC Real Yield · Vaulto mirror vault (ERC-4626) | `0x8886401a3ab5bd44503a290a8a24ec6d72a2bebc` |
-| Faucet / deployer wallet | `0xCE3963137d2F04b7dDb9c1792a834F0bCe857A7c` |
-
-Verified end to end with `npm run e2e:onchain`: faucet → analysis → approve + deposit into both mirror vaults (signed) → positions read back from chain.
 
 ## API
 
@@ -111,7 +98,8 @@ Verified end to end with `npm run e2e:onchain`: faucet → analysis → approve 
 | GET | `/api/risk?address=` | Risk Center report |
 | GET | `/api/portfolio?address=&period=` | Portfolio history and targets |
 | GET/PATCH/DELETE | `/api/settings` | Profile, risk policy, demo mode, reset |
-| GET/POST | `/api/faucet` | Faucet status / claim tBNB + tUSDC + tBTC (+ ixUSDC when available) |
+| GET/POST | `/api/faucet` | Faucet status / claim tBNB (+ ixUSDC while the faucet holds some), once per wallet |
+| GET | `/api/ixs/mainnet` | Read-only view of the IXS production vaults (BNB Chain + Avalanche) |
 
 ## Security rules
 
@@ -123,7 +111,7 @@ Verified end to end with `npm run e2e:onchain`: faucet → analysis → approve 
 ## Demo script
 
 1. Landing page → **Launch Vaulto** → connect a browser wallet (BSC Testnet) or **Continue with demo treasury**.
-2. With a wallet: open **Faucet** → **Get test funds** (real faucet transactions on BSC Testnet).
+2. With a wallet: open **Faucet** → **Get test funds** (tBNB for gas, plus ixUSDC while the faucet holds IXS test USDC).
 3. Home shows the treasury, idle capital detected and the opportunity score. Click **Run analysis**.
 4. The pipeline runs (Scanner → Finder → Risk Guardian → Planner → OpenServ narrative). The recommendation card explains the strategy with confidence and reasons.
 5. **Review strategy** shows how Vaulto reasoned, the before/after allocation and what was rejected.
@@ -137,6 +125,4 @@ Verified end to end with `npm run e2e:onchain`: faucet → analysis → approve 
 - `npm run agent` – start the OpenServ agent server
 - `npm run probe:ixs` – probe the IXS vaults and MCP on BSC Testnet
 - `node --env-file=.env scripts/probe-openserv.mjs` – verify the OpenServ Inference API key and list models
-- `node scripts/compile-contracts.mjs` – compile `contracts/*.sol` with solc
-- `npm run deploy:testnet` – deploy faucet tokens + mirror vaults to BSC Testnet
 - `npm run e2e:onchain` – full on-chain proof with a throwaway wallet (faucet → analyze → sign → finalize)
