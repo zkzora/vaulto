@@ -14,6 +14,7 @@ const NAV = [
   { href: "/app/risk", label: "Risk Center", icon: Icons.shield },
   { href: "/app/activity", label: "Activity", icon: Icons.list },
   { href: "/app/settings", label: "Settings", icon: Icons.settings },
+  { href: "/evidence", label: "Evidence", icon: Icons.list },
 ];
 
 export function Sidebar() {

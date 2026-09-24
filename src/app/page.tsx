@@ -60,6 +60,7 @@ export default function Landing() {
           <nav className="hidden gap-8 text-[15px] font-semibold text-slate md:flex">
             <a href="#features" className="hover:text-ink">Product</a>
             <a href="#how" className="hover:text-ink">How it works</a>
+            <a href="#revenue" className="hover:text-ink">Revenue</a>
             <a href="#security" className="hover:text-ink">Security</a>
             <a href="#architecture" className="hover:text-ink">Docs</a>
           </nav>
@@ -248,6 +249,29 @@ export default function Landing() {
             </div>
           ))}
         </div>
+      </section>
+
+      {/* Revenue model */}
+      <section id="revenue" className="mx-auto max-w-[1120px] scroll-mt-24 px-6 pt-24 lg:px-16 lg:pt-32">
+        <Eyebrow>Revenue model</Eyebrow>
+        <h2 className="mt-3 font-display text-[32px] font-semibold tracking-[-0.02em] text-ink lg:text-[40px]">A routing fee on the capital Vaulto puts to work</h2>
+        <p className="mt-4 max-w-[720px] text-[16px] leading-[1.6] text-body">
+          Vaulto charges a small annual fee in basis points on the assets it routes into IXS vaults (AUM routed), taken from the yield the vaults pay out. No fee on idle capital, no fee when SERV reasoning defers or rejects. The vaults&apos; own terms stay untouched: 0% deposit fee, 0.5% redemption fee to IXS.
+        </p>
+        <div className="mt-8 grid gap-4 md:grid-cols-3">
+          {[
+            ["25 bps / year", "on routed AUM", "Taken from the vault yield (3.07% TTM today), so the treasury keeps ~2.8% net."],
+            ["$1M routed → $2,500 / yr", "$10M routed → $25,000 / yr", "$50M routed → $125,000 / yr. Fee scales with what is actually deployed, not with what sits idle."],
+            ["Who pays for it", "DAO treasuries, crypto startups, small funds", "Teams that want RWA yield with policy guardrails and an audit trail, without an ops desk watching cutoffs, NAV updates and deposit limits."],
+          ].map(([t, s, b]) => (
+            <div key={t} className="rounded-2xl border border-line bg-white p-6">
+              <div className="font-display text-[22px] font-semibold text-ink">{t}</div>
+              <div className="mt-1 text-[13px] font-semibold text-blue-deep">{s}</div>
+              <div className="mt-2 text-[14px] leading-[1.55] text-body">{b}</div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 text-[13px] text-muted">Every decision, deferral and rejection is logged with the SERV reasoning that produced it (see /evidence), which is the product: an allocation desk that explains itself.</div>
       </section>
 
       {/* Security */}
