@@ -316,6 +316,7 @@ export async function narrate(input: NarrativeInput): Promise<Narrative> {
           { role: "system", content: VAULTO_SYSTEM_PROMPT },
           { role: "user", content: `${task.description}\n\n${task.body}\n\nEXPECTED OUTPUT: ${task.expectedOutput}` },
         ],
+        maxTokens: 6000,
       });
       output = r.content;
       model = r.model;
