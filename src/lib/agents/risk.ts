@@ -41,6 +41,11 @@ export function guardCandidates(
       rejected.push({ option: label, reason: `Risk score ${s.riskScore} below your ${user.minVaultRiskScore} minimum`, tone: "warn" });
       continue;
     }
+    const minDeposit = s.terms?.minDepositUsd ?? 0;
+    if (minDeposit > 0 && c.idleUsd < minDeposit) {
+      rejected.push({ option: `${label} · idle ${fmtAmount(c.idleAmount, c.asset)}`, reason: `Below the IXS minimum deposit of ${minDeposit} ${c.asset}`, tone: "warn" });
+      continue;
+    }
     if (s.requiresWhitelist && whitelist[s.id] !== true) {
       rejected.push({ option: label, reason: whitelist[s.id] === false ? "Wallet not whitelisted (IXS MCP check)" : "Eligibility check pending", tone: "warn" });
       continue;

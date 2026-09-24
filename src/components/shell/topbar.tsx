@@ -6,7 +6,7 @@ import { useState } from "react";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useVaultoAccount } from "@/hooks/use-account";
 import { useTreasury } from "@/hooks/use-vaulto";
-import { CHAIN_ID } from "@/lib/chain/config";
+import { CHAIN_ID, CHAIN_NAME, MODE_LABEL } from "@/lib/chain/config";
 import { shortAddress } from "@/lib/format";
 import { Icons, Pill, VaultoLogo } from "@/components/ui";
 
@@ -23,6 +23,9 @@ export function Topbar() {
     .slice(0, 2)
     .toUpperCase();
   const openRec = data?.recommendation?.status === "proposed";
+  const mode = data?.snapshot.executionMode;
+  const rpcKind = data?.snapshot.onchain.rpcKind;
+  const modeLabel = mode === "live" ? MODE_LABEL.live : rpcKind === "fork" ? MODE_LABEL.fork : MODE_LABEL.simulated;
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-line bg-white px-6">
@@ -31,6 +34,20 @@ export function Topbar() {
       </Link>
       <div className="flex items-center gap-2.5">
         {account.isDemo && <Pill tone="amber">Demo treasury</Pill>}
+        {data && (
+          <Link
+            href="/app/settings"
+            title={
+              mode === "live"
+                ? `Wallet holds ≥ 100 USDC: deposits are real and signed by your wallet on ${CHAIN_NAME}.`
+                : rpcKind === "fork"
+                  ? "RPC_URL points at a local Anvil fork of BNB mainnet."
+                  : "Deposits are simulated with eth_call + state override against the real IXS vault on BNB mainnet. Hold ≥ 100 USDC to go live."
+            }
+          >
+            <Pill tone={mode === "live" ? "green" : rpcKind === "fork" ? "blue" : "amber"}>{modeLabel}</Pill>
+          </Link>
+        )}
         {account.isWallet && data?.user.demoMode && (
           <Link href="/app/settings" title="The simulated Acme DAO treasury is layered on top of your real balances. Turn it off in Settings.">
             <Pill tone="amber">Demo layer on · simulated $2.8M</Pill>
@@ -59,7 +76,7 @@ export function Topbar() {
         </ConnectButton.Custom>
         {open && account.isDemo && (
           <div className="absolute right-6 top-14 z-40 w-64 rounded-xl border border-line bg-white p-3 shadow-panel rise">
-            <div className="text-[12px] text-muted">Using the demo treasury address. Connect a wallet to scan a real treasury on BSC Testnet.</div>
+            <div className="text-[12px] text-muted">Using the demo treasury address. Connect a wallet to scan a real treasury on {CHAIN_NAME}.</div>
             <ConnectButton.Custom>
               {({ openConnectModal }) => (
                 <button

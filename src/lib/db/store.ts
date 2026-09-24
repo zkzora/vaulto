@@ -29,8 +29,6 @@ export interface Store {
   listTransactions(address: string, limit?: number): Promise<TransactionRecord[]>;
   addLog(log: Omit<AgentLog, "id" | "createdAt">): Promise<AgentLog>;
   listLogs(address: string, limit?: number): Promise<AgentLog[]>;
-  getFaucetClaim(address: string): Promise<string | null>;
-  setFaucetClaim(address: string, at: string): Promise<void>;
   resetUser(address: string): Promise<void>;
 }
 

@@ -25,7 +25,7 @@ export function fmtPct(value: number, decimals = 1) {
 }
 
 export function fmtAmount(value: number, symbol: string) {
-  const decimals = symbol === "BTC" ? 2 : symbol === "ETH" || symbol === "BNB" || symbol === "tBNB" || (value !== 0 && Math.abs(value) < 1) ? 4 : 0;
+  const decimals = symbol === "BTC" ? 2 : symbol === "ETH" || symbol === "BNB" || (value !== 0 && Math.abs(value) < 1) ? 4 : 0;
   return `${value.toLocaleString("en-US", { maximumFractionDigits: decimals, minimumFractionDigits: symbol === "BTC" ? 1 : 0 })} ${symbol}`;
 }
 

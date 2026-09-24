@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { addressFrom, addressSchema, bad, handle } from "@/lib/api-utils";
-import { CHAIN_ID, CHAIN_NAME } from "@/lib/chain/config";
+import { CHAIN_ID, CHAIN_NAME, LIVE_MODE_MIN_USDC, MIN_DEPOSIT_USDC } from "@/lib/chain/config";
+import { RPC_KIND } from "@/lib/chain/client";
 import { env, openservConfigured } from "@/lib/env";
 import { getStore } from "@/lib/db";
 import { getUser, resetUser, updateUser } from "@/lib/orchestrator";
@@ -16,7 +17,11 @@ async function systemInfo() {
     openservWorkspace: Boolean(env.openservWorkspaceId),
     openservMode: env.openservReasoningMode,
     openservModel: env.openservModel,
-    faucet: Boolean(env.faucetPrivateKey),
+    ixsApi: env.ixsApiBaseUrl.replace(/^https?:\/\//, ""),
+    rpcKind: RPC_KIND,
+    rpcUrl: env.rpcUrl,
+    liveMinUsdc: LIVE_MODE_MIN_USDC,
+    minDepositUsdc: MIN_DEPOSIT_USDC,
     database: store.kind,
     chainId: CHAIN_ID,
     network: CHAIN_NAME,

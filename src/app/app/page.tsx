@@ -5,7 +5,7 @@ import { RecommendationCard } from "@/components/dashboard/recommendation-card";
 import { AgentActivityList } from "@/components/dashboard/agent-activity";
 import { useVaultoAccount } from "@/hooks/use-account";
 import { useActivity, useAnalyze, useTreasury } from "@/hooks/use-vaulto";
-import { CHAIN_NAME } from "@/lib/chain/config";
+import { CHAIN_NAME, LIVE_MODE_MIN_USDC, MODE_LABEL } from "@/lib/chain/config";
 import { fmtDate, fmtUsd, greeting, timeAgo } from "@/lib/format";
 import { Card, CardTitle, Donut, ErrorState, Pill, Skeleton, Stat, cx } from "@/components/ui";
 
@@ -57,14 +57,15 @@ export default function HomePage() {
         </div>
       </div>
 
-      {account.isWallet && (snapshot.onchain.balances.ixUSDC ?? 0) === 0 && snapshot.onchain.positions.length === 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-tint px-4 py-3 text-[13px] text-body">
-          <span>
-            <b className="text-ink">No IXS test USDC in this wallet yet.</b> Claim gas and ixUSDC from the {CHAIN_NAME} faucet to run a real allocation into the IXS vault.
-          </span>
-          <Link href="/app/faucet" className="btn btn-primary h-9 text-[13px]">Get test funds</Link>
-        </div>
-      )}
+      <div className={cx("flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line px-4 py-3 text-[13px] text-body", snapshot.executionMode === "live" ? "bg-green-tint" : "bg-tint")}>
+        <span>
+          <b className="text-ink">{snapshot.onchain.rpcKind === "fork" ? MODE_LABEL.fork : snapshot.executionMode === "live" ? MODE_LABEL.live : MODE_LABEL.simulated}.</b>{" "}
+          {snapshot.executionMode === "live"
+            ? `This wallet holds ${fmtUsd(snapshot.onchain.balances[snapshot.onchain.assetSymbol ?? "USDC"] ?? 0)} USDC on ${CHAIN_NAME}: approved deposits into the IX High Yield Bond vault are real and signed by your wallet.`
+            : `${account.isWallet ? `This wallet holds ${fmtUsd(snapshot.onchain.balances[snapshot.onchain.assetSymbol ?? "USDC"] ?? 0)} USDC on ${CHAIN_NAME} (under ${LIVE_MODE_MIN_USDC}).` : "Demo treasury."} Approve + deposit calldata from the IXS MCP is simulated with eth_call + state override against the real vault; nothing is sent. Hold ≥ ${LIVE_MODE_MIN_USDC} USDC to switch to Live.`}
+        </span>
+        <Link href="/app/vaults" className="btn btn-soft h-9 text-[13px]">IXS vault terms</Link>
+      </div>
 
       <div className="grid items-start gap-5 xl:grid-cols-2">
         <Card>

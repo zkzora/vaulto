@@ -1,11 +1,13 @@
 import { formatUnits, isAddress } from "viem";
-import { publicClient } from "./client";
+import { publicClient, RPC_KIND } from "./client";
 import { erc20Abi, erc4626Abi } from "./abi";
-import { CHAIN_ID, IXS_BSC, IXS_USDC_SYMBOL, STRATEGY_IDS } from "./config";
+import { CHAIN_ID, STRATEGY_IDS } from "./config";
+import { getRegistry, strategyIdFor } from "@/lib/ixs/registry";
 import type { OnchainReadout } from "@/lib/types";
 
 const empty = (error?: string): OnchainReadout => ({
   rpcOk: false,
+  rpcKind: RPC_KIND,
   chainId: CHAIN_ID,
   blockNumber: null,
   nativeBalance: 0,
@@ -26,18 +28,9 @@ export function invalidateOnchain(address: string, confirmedBlock?: number) {
   if (confirmedBlock) minBlock.set(key, Math.max(minBlock.get(key) ?? 0, confirmedBlock));
 }
 
-/** Contracts Vaulto tracks on BSC Testnet: the IXS test USDC and the IXS vaults. */
-export const TRACKED = {
-  tokens: [{ key: IXS_USDC_SYMBOL, address: IXS_BSC.usdc, decimals: IXS_BSC.usdcDecimals }],
-  vaults: [
-    { id: STRATEGY_IDS.hybrid, address: IXS_BSC.hybridVault, assetDecimals: IXS_BSC.usdcDecimals },
-    { id: STRATEGY_IDS.licensed, address: IXS_BSC.licensedVault, assetDecimals: IXS_BSC.usdcDecimals },
-  ],
-};
-
 /**
- * Reads the wallet's real state on BSC Testnet in one Multicall3 round-trip (consistent block):
- * native tBNB, IXS test USDC, and shares in the IXS vaults.
+ * Reads the wallet's real state on BNB Chain in one Multicall3 round-trip (consistent block): native BNB,
+ * the vault asset (USDC, as read from asset()) and shares in the IXS vaults from the registry.
  */
 export async function readOnchainTreasury(address: string): Promise<OnchainReadout> {
   if (!isAddress(address)) return empty("invalid address");
@@ -59,45 +52,37 @@ export async function readOnchainTreasury(address: string): Promise<OnchainReado
 
 async function readOnce(owner: `0x${string}`): Promise<OnchainReadout> {
   const client = publicClient();
-  const { tokens: tokenList, vaults: vaultList } = TRACKED;
+  const registry = await getRegistry();
+  const vaultList = registry.vaults.map((v) => ({ id: strategyIdFor(v, STRATEGY_IDS), address: v.address, assetDecimals: v.asset.decimals, assetSymbol: v.asset.symbol, shareDecimals: v.shareDecimals }));
+  const tokenList = [...new Map(registry.vaults.map((v) => [v.asset.address.toLowerCase(), { key: v.asset.symbol, address: v.asset.address, decimals: v.asset.decimals }])).values()];
+  if (!vaultList.length) return empty("IXS vault registry unavailable");
 
   try {
     const contracts = [
       ...tokenList.map((t) => ({ address: t.address, abi: erc20Abi, functionName: "balanceOf" as const, args: [owner] as const })),
       ...vaultList.flatMap((v) => [
-        { address: v.address, abi: erc4626Abi, functionName: "decimals" as const },
         { address: v.address, abi: erc4626Abi, functionName: "balanceOf" as const, args: [owner] as const },
         { address: v.address, abi: erc4626Abi, functionName: "totalAssets" as const },
       ]),
     ];
-    const [block, native, results] = await Promise.all([
-      client.getBlockNumber(),
-      client.getBalance({ address: owner }),
-      client.multicall({ contracts, allowFailure: true }),
-    ]);
-    const val = (i: number): bigint | number | null => (results[i]?.status === "success" ? (results[i].result as bigint | number) : null);
+    const [block, native, results] = await Promise.all([client.getBlockNumber(), client.getBalance({ address: owner }), client.multicall({ contracts, allowFailure: true })]);
+    const val = (i: number): bigint | null => (results[i]?.status === "success" ? (results[i].result as bigint) : null);
 
     const balances: Record<string, number> = {};
     tokenList.forEach((t, i) => {
       const b = val(i);
       if (b == null) throw new Error(`balanceOf failed for ${t.key}`);
-      balances[t.key] = Number(formatUnits(b as bigint, t.decimals));
+      balances[t.key] = Number(formatUnits(b, t.decimals));
     });
 
     const base = tokenList.length;
-    const shareDecimals: number[] = [];
-    const shareBalances: bigint[] = [];
-    const totals: bigint[] = [];
-    vaultList.forEach((_, i) => {
-      shareDecimals.push(Number(val(base + i * 3) ?? 18));
-      shareBalances.push((val(base + i * 3 + 1) as bigint | null) ?? 0n);
-      totals.push((val(base + i * 3 + 2) as bigint | null) ?? 0n);
-    });
+    const shareBalances = vaultList.map((_, i) => val(base + i * 2) ?? 0n);
+    const totals = vaultList.map((_, i) => val(base + i * 2 + 1) ?? 0n);
 
     const conv = await client.multicall({
       allowFailure: true,
       contracts: vaultList.flatMap((v, i) => [
-        { address: v.address, abi: erc4626Abi, functionName: "convertToAssets" as const, args: [10n ** BigInt(shareDecimals[i])] as const },
+        { address: v.address, abi: erc4626Abi, functionName: "convertToAssets" as const, args: [10n ** BigInt(v.shareDecimals)] as const },
         { address: v.address, abi: erc4626Abi, functionName: "convertToAssets" as const, args: [shareBalances[i]] as const },
       ]),
     });
@@ -108,18 +93,20 @@ async function readOnce(owner: `0x${string}`): Promise<OnchainReadout> {
       const unit = conv[i * 2]?.status === "success" ? (conv[i * 2].result as bigint) : 0n;
       const mine = conv[i * 2 + 1]?.status === "success" ? (conv[i * 2 + 1].result as bigint) : 0n;
       vaults[v.id] = { address: v.address, tvl: Number(formatUnits(totals[i], v.assetDecimals)), sharePrice: Number(formatUnits(unit, v.assetDecimals)) };
-      const shares = Number(formatUnits(shareBalances[i], shareDecimals[i]));
+      const shares = Number(formatUnits(shareBalances[i], v.shareDecimals));
       if (shares > 0) positions.push({ strategyId: v.id, shares, assets: Number(formatUnits(mine, v.assetDecimals)) });
     });
 
     return {
       rpcOk: true,
+      rpcKind: RPC_KIND,
       chainId: CHAIN_ID,
       blockNumber: Number(block),
       nativeBalance: Number(formatUnits(native, 18)),
       balances,
       positions,
       vaults,
+      assetSymbol: tokenList[0]?.key,
     };
   } catch (e) {
     return empty(e instanceof Error ? e.message.slice(0, 160) : "rpc error");

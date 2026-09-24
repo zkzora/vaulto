@@ -13,7 +13,7 @@ import { useVaultoAccount } from "@/hooks/use-account";
 import { TxnModal } from "./txn-modal";
 import { Toast, type ToastData } from "./toast";
 
-export type StepState = { index: number; status: "idle" | "signing" | "pending" | "confirmed" | "simulated" | "failed"; hash?: string; error?: string };
+export type StepState = { index: number; status: "idle" | "signing" | "pending" | "confirmed" | "simulated" | "failed"; hash?: string; error?: string; detail?: string };
 
 interface TxnContext {
   open: (recommendationId: string, opts?: { simulate?: boolean }) => void;
@@ -35,18 +35,21 @@ export function TxnProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [prepared, setPrepared] = useState<PreparedTransaction | null>(null);
+  const [recId, setRecId] = useState<string | null>(null);
   const [steps, setSteps] = useState<StepState[]>([]);
   const [executing, setExecuting] = useState(false);
   const [toast, setToast] = useState<ToastData | null>(null);
 
+  /** Prepares the workflow. The server picks the mode (Live at >= 100 USDC, otherwise simulated); `simulate` forces a simulation. */
   const load = useCallback(
     async (recommendationId: string, simulate: boolean) => {
       if (!account.address) return;
       setLoading(true);
       setError(null);
       setPrepared(null);
+      setRecId(recommendationId);
       try {
-        const { prepared } = await api.prepare(account.address, recommendationId, simulate || account.isDemo);
+        const { prepared } = await api.prepare(account.address, recommendationId, simulate);
         setPrepared(prepared);
         setSteps(prepared.steps.map((s) => ({ index: s.index, status: "idle" })));
       } catch (e) {
@@ -55,7 +58,7 @@ export function TxnProvider({ children }: { children: ReactNode }) {
         setLoading(false);
       }
     },
-    [account.address, account.isDemo],
+    [account.address],
   );
 
   const open = useCallback(
@@ -75,92 +78,97 @@ export function TxnProvider({ children }: { children: ReactNode }) {
 
   const update = (index: number, patch: Partial<StepState>) => setSteps((prev) => prev.map((s) => (s.index === index ? { ...s, ...patch } : s)));
 
-  const execute = useCallback(
-    async (mode: "execute" | "simulate") => {
-      if (!prepared || !account.address) return;
-      setExecuting(true);
-      setError(null);
-      const results: { index: number; hash?: string; status: TxStatus; error?: string }[] = [];
-      let aborted = false;
+  const execute = useCallback(async () => {
+    if (!prepared || !account.address) return;
+    setExecuting(true);
+    setError(null);
+    const results: { index: number; hash?: string; status: TxStatus; error?: string }[] = [];
+    let aborted = false;
 
-      for (const step of prepared.steps) {
-        if (aborted) {
-          results.push({ index: step.index, status: "failed", error: "skipped" });
-          update(step.index, { status: "failed", error: "Skipped" });
-          continue;
-        }
-        const simulated = mode === "simulate" || step.mode === "simulated";
-        if (simulated) {
-          update(step.index, { status: "pending" });
-          await new Promise((r) => setTimeout(r, 650));
-          const hash = `0xsim${Array.from({ length: 60 }, () => Math.floor(Math.random() * 16).toString(16)).join("")}`;
-          update(step.index, { status: "simulated", hash });
-          results.push({ index: step.index, hash, status: "simulated" });
-          continue;
-        }
-        try {
-          update(step.index, { status: "signing" });
-          if (account.chainId !== step.chainId) await switchChainAsync({ chainId: step.chainId });
-          // Public RPC nodes can lag behind the previous receipt: wait until the precondition is visible.
-          if (step.precheck?.kind === "allowance" && publicClient) {
-            const need = BigInt(step.precheck.amount);
-            for (let i = 0; i < 20; i++) {
-              const allowance = await publicClient.readContract({ address: step.precheck.token, abi: erc20Abi, functionName: "allowance", args: [account.address as `0x${string}`, step.precheck.spender] }).catch(() => 0n);
-              if (allowance >= need) break;
-              await new Promise((r) => setTimeout(r, 1500));
-            }
-          }
-          let hash: `0x${string}` | undefined;
-          for (let attempt = 0; attempt < 3; attempt++) {
-            try {
-              hash = await sendTransactionAsync({ to: step.to, data: step.data, value: BigInt(step.value || "0"), chainId: step.chainId });
-              break;
-            } catch (err) {
-              const msg = err instanceof Error ? err.message : "";
-              if (attempt === 2 || !/reverted|estimateGas|allowance/i.test(msg) || /rejected/i.test(msg)) throw err;
-              await new Promise((r) => setTimeout(r, 2500));
-            }
-          }
-          if (!hash) throw new Error("Transaction was not sent");
-          update(step.index, { status: "pending", hash });
-          const receipt = await publicClient!.waitForTransactionReceipt({ hash, confirmations: 1 });
-          if (receipt.status !== "success") throw new Error("Transaction reverted");
-          update(step.index, { status: "confirmed", hash });
-          results.push({ index: step.index, hash, status: "confirmed" });
-        } catch (e) {
-          const msg = e instanceof Error ? (e.message.includes("User rejected") || e.message.includes("rejected") ? "Rejected in wallet" : e.message.split("\n")[0].slice(0, 140)) : "failed";
+    for (const step of prepared.steps) {
+      if (aborted) {
+        results.push({ index: step.index, status: "failed", error: "skipped" });
+        update(step.index, { status: "failed", error: "Skipped" });
+        continue;
+      }
+      if (step.mode === "simulated") {
+        // The server already ran eth_call + state override against the vault; replay its verdict step by step.
+        update(step.index, { status: "pending" });
+        await new Promise((r) => setTimeout(r, 450));
+        const sim = step.simulation;
+        if (!sim || !sim.ok) {
+          const msg = sim?.revertReason ?? "simulation unavailable";
           update(step.index, { status: "failed", error: msg });
           results.push({ index: step.index, status: "failed", error: msg });
           aborted = true;
+          continue;
         }
+        const detail = sim.expectedShares != null ? `expected ${sim.expectedShares.toFixed(4)} ${sim.shareSymbol ?? "shares"}` : sim.requestId ? `request #${sim.requestId}` : "ok";
+        update(step.index, { status: "simulated", detail });
+        results.push({ index: step.index, status: "simulated" });
+        continue;
       }
-
       try {
-        await api.finalize(account.address, prepared.id, results);
+        update(step.index, { status: "signing" });
+        if (account.chainId !== step.chainId) await switchChainAsync({ chainId: step.chainId });
+        // Public RPC nodes can lag behind the previous receipt: wait until the precondition is visible.
+        if (step.precheck?.kind === "allowance" && publicClient) {
+          const need = BigInt(step.precheck.amount);
+          for (let i = 0; i < 20; i++) {
+            const allowance = await publicClient.readContract({ address: step.precheck.token, abi: erc20Abi, functionName: "allowance", args: [account.address as `0x${string}`, step.precheck.spender] }).catch(() => 0n);
+            if (allowance >= need) break;
+            await new Promise((r) => setTimeout(r, 1500));
+          }
+        }
+        let hash: `0x${string}` | undefined;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            hash = await sendTransactionAsync({ to: step.to, data: step.data, value: BigInt(step.value || "0"), chainId: step.chainId });
+            break;
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "";
+            if (attempt === 2 || !/reverted|estimateGas|allowance/i.test(msg) || /rejected/i.test(msg)) throw err;
+            await new Promise((r) => setTimeout(r, 2500));
+          }
+        }
+        if (!hash) throw new Error("Transaction was not sent");
+        update(step.index, { status: "pending", hash });
+        const receipt = await publicClient!.waitForTransactionReceipt({ hash, confirmations: 1 });
+        if (receipt.status !== "success") throw new Error("Transaction reverted");
+        update(step.index, { status: "confirmed", hash });
+        results.push({ index: step.index, hash, status: "confirmed" });
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Could not record execution");
+        const msg = e instanceof Error ? (e.message.includes("User rejected") || e.message.includes("rejected") ? "Rejected in wallet" : e.message.split("\n")[0].slice(0, 140)) : "failed";
+        update(step.index, { status: "failed", error: msg });
+        results.push({ index: step.index, status: "failed", error: msg });
+        aborted = true;
       }
-      setExecuting(false);
-      // give the RPC a moment to settle so the dashboard refetch reflects the new positions
-      await new Promise((r) => setTimeout(r, 1500));
-      await qc.invalidateQueries();
+    }
 
-      const ok = results.filter((r) => r.status === "confirmed" || r.status === "simulated").length;
-      const failed = results.some((r) => r.status === "failed");
-      if (ok > 0 && !failed) {
-        setVisible(false);
-        setPrepared(null);
-        const onchain = results.some((r) => r.status === "confirmed");
-        setToast({
-          title: onchain ? `Transactions confirmed on ${CHAIN_NAME} via IXS` : "Transaction submitted via IXS Agent Rail",
-          body: `Allocate ${fmtUsd(prepared.summary.amountUsd)} → ${prepared.summary.destination}${onchain ? " · view on BscScan from Activity" : " · simulated rail, positions updated"}`,
-        });
-        router.push("/app");
-        setTimeout(() => setToast(null), 7000);
-      }
-    },
-    [prepared, account.address, account.chainId, publicClient, qc, router, sendTransactionAsync, switchChainAsync],
-  );
+    try {
+      await api.finalize(account.address, prepared.id, results);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not record execution");
+    }
+    setExecuting(false);
+    // give the RPC a moment to settle so the dashboard refetch reflects the new positions
+    await new Promise((r) => setTimeout(r, 1500));
+    await qc.invalidateQueries();
+
+    const ok = results.filter((r) => r.status === "confirmed" || r.status === "simulated").length;
+    const failed = results.some((r) => r.status === "failed");
+    if (ok > 0 && !failed) {
+      setVisible(false);
+      setPrepared(null);
+      const onchain = results.some((r) => r.status === "confirmed");
+      setToast({
+        title: onchain ? `Deposit confirmed on ${CHAIN_NAME} via IXS` : `${prepared.label} · simulation passed`,
+        body: `Allocate ${fmtUsd(prepared.summary.amountUsd)} → ${prepared.summary.destination}${onchain ? " · view on BscScan from Activity" : " · eth_call + state override, no funds moved · logged in Activity"}`,
+      });
+      router.push("/app");
+      setTimeout(() => setToast(null), 7000);
+    }
+  }, [prepared, account.address, account.chainId, publicClient, qc, router, sendTransactionAsync, switchChainAsync]);
 
   const notify = useCallback((data: ToastData) => {
     setToast(data);
@@ -173,7 +181,17 @@ export function TxnProvider({ children }: { children: ReactNode }) {
     <Ctx.Provider value={value}>
       {children}
       {visible && (
-        <TxnModal prepared={prepared} loading={loading} error={error} steps={steps} executing={executing} onClose={close} onExecute={() => execute("execute")} onSimulate={() => execute("simulate")} isDemo={account.isDemo} />
+        <TxnModal
+          prepared={prepared}
+          loading={loading}
+          error={error}
+          steps={steps}
+          executing={executing}
+          onClose={close}
+          onExecute={() => void execute()}
+          onSimulate={() => recId && void load(recId, true)}
+          isDemo={account.isDemo}
+        />
       )}
       {toast && <Toast data={toast} onClose={() => setToast(null)} />}
     </Ctx.Provider>

@@ -1,5 +1,5 @@
-import { NATIVE_PRICE_KEY, NATIVE_SYMBOL } from "@/lib/chain/config";
-import { ASSET_META, DEMO_HOLDINGS } from "@/lib/demo";
+import { LIVE_MODE_MIN_USDC, NATIVE_PRICE_KEY, NATIVE_SYMBOL } from "@/lib/chain/config";
+import { ASSET_META, DEMO_ADDRESS, DEMO_HOLDINGS } from "@/lib/demo";
 import { round, vaultLabel } from "@/lib/format";
 import type {
   DemoState,
@@ -59,7 +59,7 @@ export function scanTreasury(input: ScanInput): TreasurySnapshot {
     holdings.push(...demo.filter((h) => h.amount > 0));
   }
 
-  // --- on-chain (BSC Testnet) ---
+  // --- on-chain (BNB Chain) ---
   const onchainIdleDays = Math.max(1, Math.round((now.getTime() - new Date(user.firstSeenAt).getTime()) / 86_400_000));
   if (onchain.nativeBalance > 0.0005) holdings.push({ symbol: NATIVE_SYMBOL, amount: onchain.nativeBalance, idleDays: onchainIdleDays, source: "onchain" });
   for (const [symbol, amount] of Object.entries(onchain.balances)) {
@@ -71,7 +71,7 @@ export function scanTreasury(input: ScanInput): TreasurySnapshot {
     holdings.push({ symbol: s.asset, amount: p.assets, deployedIn: p.strategyId, idleDays: 0, source: "onchain" });
   }
 
-  const priceOf = (symbol: string) => prices[symbol] ?? (symbol === NATIVE_SYMBOL ? (prices[NATIVE_PRICE_KEY] ?? 0) : symbol === "ixUSDC" ? 1 : 0);
+  const priceOf = (symbol: string) => prices[symbol] ?? (symbol === NATIVE_SYMBOL ? (prices[NATIVE_PRICE_KEY] ?? 0) : symbol === "USDC" ? 1 : 0);
 
   // --- positions per strategy ---
   const positionMap = new Map<string, VaultPosition>();
@@ -171,6 +171,8 @@ export function scanTreasury(input: ScanInput): TreasurySnapshot {
     maxAssetExposurePct: user.maxAssetExposurePct,
     idlePct,
   });
+  const stableSymbol = strategies.find((s) => s.executable)?.asset ?? "USDC";
+  const executionMode: TreasurySnapshot["executionMode"] = user.walletAddress.toLowerCase() !== DEMO_ADDRESS && (onchain.balances[stableSymbol] ?? 0) >= LIVE_MODE_MIN_USDC ? "live" : "simulated";
   const bestApy = strategies.filter((s) => s.apy != null && s.status === "active").reduce((m, s) => Math.max(m, s.apy ?? 0), 0);
   const opportunityScore = totalUsd > 0 ? computeOpportunity({ idlePct, idleDays, bestApy }) : 0;
 
@@ -199,5 +201,6 @@ export function scanTreasury(input: ScanInput): TreasurySnapshot {
     demoMode: user.demoMode,
     maxExposure,
     targetAllocationPct: targetAllocationFor(user.riskProfile),
+    executionMode,
   };
 }

@@ -59,7 +59,7 @@ export default function StrategyPage() {
     ["Treasury scanned", "Idle capital detected"],
     ["OpenServ reasoning", rec.reasoningSource === "openserv" ? "Risk + allocation explained" : "Local engine (OpenServ key not set)"],
     ["Recommended allocation", rec.status === "approved" || rec.status === "executed" ? "Approved" : closed ? "Reviewed" : "Review below"],
-    ["Your approval", rec.status === "executed" ? "Executed on-chain" : rec.status === "approved" ? "Awaiting wallet signature" : closed ? (rec.status === "rejected" ? "Rejected" : "Dismissed") : "Wallet signature"],
+    ["Your approval", rec.status === "executed" ? (snapshot.executionMode === "live" ? "Executed on-chain" : "Simulation passed") : rec.status === "approved" ? (snapshot.executionMode === "live" ? "Awaiting wallet signature" : "Run the simulation") : closed ? (rec.status === "rejected" ? "Rejected" : "Dismissed") : snapshot.executionMode === "live" ? "Wallet signature" : "Simulation"],
   ];
 
   return (
@@ -152,7 +152,7 @@ export default function StrategyPage() {
                     <div>
                       <div className="font-semibold text-ink">{l.vaultName}</div>
                       <div className="text-[12px] text-muted">
-                        {s?.chainName} · {s?.liquidity} · risk {l.riskScore} · {l.executable ? (l.onchainAmount > 0 ? `${fmtAmount(l.onchainAmount, l.asset)} on-chain` : "on-chain vault") : "prepared via IXS rail"}
+                        {s?.chainName} · {s?.liquidity} · risk {l.riskScore} · {l.executable ? (snapshot.executionMode === "live" ? `${fmtAmount(l.onchainAmount, l.asset)} on-chain · wallet signs` : "simulated on BNB mainnet") : "not executable"}
                       </div>
                     </div>
                     <div className="text-right">
@@ -186,7 +186,7 @@ export default function StrategyPage() {
               />
             </div>
             {rec.status === "executed" ? (
-              <div className="mt-5 rounded-xl bg-green-tint px-4 py-3 text-[13px] font-medium text-green">Executed. Positions updated; the Monitoring Agent is tracking the vaults.</div>
+              <div className="mt-5 rounded-xl bg-green-tint px-4 py-3 text-[13px] font-medium text-green">{snapshot.executionMode === "live" ? "Executed on-chain. Positions updated; the Monitoring Agent is tracking the vault." : "Simulation passed (eth_call + state override on BNB mainnet). No funds moved; Activity holds the expected shares."}</div>
             ) : closed ? (
               <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-canvas px-4 py-3 text-[13px] font-medium text-muted">
                 <span>{rec.status === "rejected" ? "Rejected · not executed" : "Dismissed · not executed"}</span>
@@ -206,7 +206,7 @@ export default function StrategyPage() {
                   </button>
                 </div>
                 <div className="mt-3 text-center text-[12px] leading-[1.5] text-faint">
-                  {rec.txCount} transaction{rec.txCount > 1 ? "s" : ""} via IXS Agent Rail · wallet signature required · est. fee {fmtUsd(rec.feeUsd, { decimals: 2 })}
+                  {rec.txCount} calldata step{rec.txCount > 1 ? "s" : ""} via IXS MCP · {snapshot.executionMode === "live" ? `wallet signature required · est. fee ${fmtUsd(rec.feeUsd, { decimals: 2 })}` : "simulated on BNB mainnet · nothing is sent"}
                 </div>
               </>
             )}

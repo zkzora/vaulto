@@ -1,9 +1,10 @@
+import { MIN_DEPOSIT_USDC } from "@/lib/chain/config";
 import { clamp, round } from "@/lib/format";
 import type { AllocationLeg, Metrics, TreasurySnapshot, UserProfile } from "@/lib/types";
 import { computeHealth, pct } from "./scoring";
 import type { Candidate } from "./finder";
 
-const STABLE_ASSETS = new Set(["ixUSDC", "USDC"]);
+const STABLE_ASSETS = new Set(["USDC"]);
 
 export interface LegCap {
   strategyId: string;
@@ -28,6 +29,8 @@ export interface Constraints {
   budgetUsd: number;
   /** Stablecoin runway reserve that never leaves the wallet (two months of burn). */
   stableReserveUsd: number;
+  /** IXS minimum deposit per leg (USD). */
+  minDepositUsd: number;
   caps: LegCap[];
 }
 
@@ -49,7 +52,7 @@ export interface Plan {
 
 function roundAmount(asset: string, amount: number, usd: number) {
   if (asset === "BTC") return Math.floor(amount * 100) / 100;
-  if (asset === "ETH" || asset === "tBNB") return Math.floor(amount * 1000) / 1000;
+  if (asset === "ETH" || asset === "BNB") return Math.floor(amount * 1000) / 1000;
   return usd >= 10_000 ? Math.floor(amount / 1000) * 1000 : Math.floor(amount * 100) / 100;
 }
 
@@ -81,11 +84,11 @@ export function planConstraints(snapshot: TreasurySnapshot, approved: Candidate[
       }
     }
     const maxAmount = roundAmount(c.asset, maxUsd / price, maxUsd);
-    if (maxAmount * price < 10) continue;
+    if (maxAmount * price < (c.strategy.terms?.minDepositUsd ?? 10)) continue;
     caps.push({ strategyId: c.strategy.id, vaultName: c.strategy.vaultName, asset: c.asset, priceUsd: price, apy: c.strategy.apy ?? 0, riskScore: c.strategy.riskScore, maxAmount, maxUsd: Math.round(maxAmount * price), capNote });
   }
   if (!caps.length) return null;
-  return { totalUsd: snapshot.totalUsd, idleUsd: snapshot.idleUsd, keepLiquidUsd: Math.round(keepLiquidUsd), budgetUsd: Math.round(budgetUsd), stableReserveUsd: Math.round(stableReserveUsd), caps };
+  return { totalUsd: snapshot.totalUsd, idleUsd: snapshot.idleUsd, keepLiquidUsd: Math.round(keepLiquidUsd), budgetUsd: Math.round(budgetUsd), stableReserveUsd: Math.round(stableReserveUsd), minDepositUsd: MIN_DEPOSIT_USDC, caps };
 }
 
 /** Deterministic sizing used when SERV reasoning is unavailable: fill caps proportionally to idle size. */
@@ -142,7 +145,7 @@ export function buildPlan(snapshot: TreasurySnapshot, approved: Candidate[], use
     if (!cap || !cand || !(li.amount > 0)) continue;
     const amount = roundAmount(cap.asset, Math.min(li.amount, cap.maxAmount), Math.min(li.amount, cap.maxAmount) * cap.priceUsd);
     const usd = amount * cap.priceUsd;
-    if (usd < 10) continue;
+    if (usd < (cand.strategy.terms?.minDepositUsd ?? 10)) continue;
     legs.push({
       strategyId: cap.strategyId,
       vaultName: cap.vaultName,
@@ -163,7 +166,7 @@ export function buildPlan(snapshot: TreasurySnapshot, approved: Candidate[], use
         const amount = roundAmount(l.asset, l.amount * k, l.amountUsd * k);
         return { ...l, amount: round(amount, 6), amountUsd: Math.round(amount * (l.amountUsd / l.amount)), onchainAmount: round(Math.min(l.onchainAmount, amount), 6) };
       })
-      .filter((l) => l.amountUsd >= 10);
+      .filter((l) => l.amountUsd >= (byId.get(l.strategyId)?.strategy.terms?.minDepositUsd ?? 10));
   }
   if (!legs.length) return null;
 

@@ -14,6 +14,8 @@ Rules: never execute or move funds; only decide, explain and recommend. Never pr
 Only allocate into vaults that are live on the IXS Vault API; if a product is announced but not deployed (e.g. BTC Real Yield),
 say so explicitly, reject that allocation, and offer the best available alternative (a USDC portion into the live IXS vault).
 Respect the liquidity floor, asset exposure limit, minimum vault risk score and the stablecoin runway reserve.
+The IXS vaults require a minimum deposit of 100 USDC per allocation: never propose a smaller leg.
+Deposits run as "Simulated on BNB mainnet" (eth_call + state override against the real vault) until the wallet holds 100 USDC, then they are signed live; the allocation logic is identical in both modes.
 Write in plain, confident language for a treasury manager. Be specific with numbers and never invent figures.`;
 
 /* ------------------------------------------------------------------ decision ------------------------------------------------------------------ */
@@ -75,6 +77,7 @@ function decisionFacts(i: DecisionInput) {
       budgetUsd: i.constraints.budgetUsd,
       keepLiquidUsd: i.constraints.keepLiquidUsd,
       stableReserveUsd: i.constraints.stableReserveUsd,
+      minDepositUsd: i.constraints.minDepositUsd,
       caps: i.constraints.caps.map((c) => ({ strategyId: c.strategyId, vault: c.vaultName, asset: c.asset, maxAmount: c.maxAmount, maxUsd: c.maxUsd, priceUsd: c.priceUsd, apy: c.apy, note: c.capNote })),
     },
     fallbackSizing: i.fallback,
@@ -101,7 +104,7 @@ export async function decideAllocation(input: DecisionInput): Promise<Decision> 
   const fallback: Decision = { legs: input.fallback, rationale: "Deterministic sizing (SERV reasoning unavailable).", source: "local" };
   if (!openservConfigured() || env.openservReasoningMode === "platform") return fallback;
   try {
-    const prompt = `DECIDE THE ALLOCATION for this treasury. Facts (JSON):\n${JSON.stringify(decisionFacts(input))}\n\nRules: choose amounts only for strategyIds listed in constraints.caps and never above their maxAmount; the sum in USD must not exceed constraints.budgetUsd; you may allocate less if prudence requires it (explain why). If a candidate has available=false (announced, not deployed), do not allocate to it and mention it in the rationale, offering the USDC portion into the live IXS vault instead. Respond with ONLY JSON: {"legs":[{"strategyId":string,"amount":number}],"rationale":string (2-3 sentences)}`;
+    const prompt = `DECIDE THE ALLOCATION for this treasury. Facts (JSON):\n${JSON.stringify(decisionFacts(input))}\n\nRules: choose amounts only for strategyIds listed in constraints.caps and never above their maxAmount and never below constraints.minDepositUsd in USD; the sum in USD must not exceed constraints.budgetUsd; you may allocate less if prudence requires it (explain why). If a candidate has available=false (announced, not deployed), do not allocate to it and mention it in the rationale, offering the USDC portion into the live IXS vault instead. Respond with ONLY JSON: {"legs":[{"strategyId":string,"amount":number}],"rationale":string (2-3 sentences)}`;
     const r = await chatCompletion({ messages: [{ role: "system", content: VAULTO_SYSTEM_PROMPT }, { role: "user", content: prompt }], temperature: 0.1 });
     const json = extractJson<{ legs?: { strategyId: string; amount: number }[]; rationale?: string }>(r.content);
     if (!json?.legs) return fallback;

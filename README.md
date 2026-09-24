@@ -1,128 +1,90 @@
-# Vaulto Agent
+# Vaulto — AI treasury allocation agent for IXS RWA vaults
 
-**Find idle capital. Deploy smarter.**
+Vaulto scans a DAO / Web3 company treasury, finds idle capital and allocates it into the **IX High Yield Bond vault on BNB Chain mainnet** through the IXS Agent Rail. OpenServ (SERV reasoning) decides and explains every allocation; the user approves; nothing moves without the wallet's signature.
 
-Vaulto is an AI treasury allocation agent. It scans a treasury wallet, detects idle capital, reasons with OpenServ about the best IXS RWA vault strategy under the treasury's own risk policy, and prepares the approved allocation for the user's wallet to sign. Non-custodial end to end.
+Built for the OpenServ SERV Hackathon, **RWA Vaults powered by IXS Finance** track.
 
-Hackathon track: RWA Vaults powered by IXS Finance.
+## What runs where
 
-## Stack
-
-| Layer | Choice |
-| --- | --- |
-| Web | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4 |
-| Wallet | RainbowKit + wagmi + viem, browser wallets via EIP-6963 (MetaMask, Rabby, …), BSC Testnet (97) |
-| Reasoning | OpenServ Inference API (`serv_…` key), optional OpenServ platform tasks via the SDK tunnel, local fallback engine |
-| Execution | Live IXS vaults on BSC Testnet via the IXS Vault API + IXS MCP (`vault_build_request_deposit`, `vault_check_whitelist`); the wallet signs every transaction |
+| Layer | Implementation |
+|---|---|
+| Frontend | Next.js 16 (App Router) · React 19 · TypeScript · Tailwind 4 |
+| Wallet | RainbowKit + wagmi + viem, browser wallets via EIP-6963 (MetaMask, Rabby, …), BNB Chain (56) |
+| Reasoning | OpenServ Inference API (`OPENSERV_API_KEY`), six agents: Treasury Scanner, Opportunity Finder, Risk Guardian, Allocation Planner, Execution, Monitoring |
+| Vaults | IXS production Vault API (`api-v2.ixs.finance`) + IXS MCP (`vault_get`, `vault_check_whitelist`, `vault_build_request_deposit`, `vault_request_status`) |
+| Execution | **Simulated on BNB mainnet** (eth_call + state override) or **Live** (wallet-signed) or **Mainnet fork** (Anvil) — always against the real IXS contracts |
 | Data | PostgreSQL via Prisma, or a JSON file store when `DATABASE_URL` is empty |
+
+No mock tokens and no mock vaults: the only contracts Vaulto touches are the IXS vaults and the USDC they hold.
 
 ## Quick start
 
 ```bash
 cd web
+cp .env.example .env        # add OPENSERV_API_KEY
 npm install
-cp .env.example .env      # defaults work out of the box
-npm run dev               # http://localhost:3000
+npm run dev
 ```
 
-Open `http://localhost:3000`, click **Launch Vaulto**, then either connect a browser wallet on BSC Testnet (chain 97) or choose **Continue with demo treasury**. `http://localhost:3000/connect?demo=1` jumps straight into the demo.
+Open `http://localhost:3000` → **Launch Vaulto** → connect a browser wallet on BNB Chain, or **Continue with demo treasury** (Acme DAO).
 
-### Optional configuration
+## Execution modes (honest labels everywhere)
 
-- **OpenServ reasoning** (no OpenAI account involved): put your OpenServ `serv_…` key in `OPENSERV_API_KEY`. Vaulto sends the multi-agent pipeline facts to the **OpenServ Inference API** (`https://inference-api.openserv.ai/v1`, model `OPENSERV_MODEL`, default `gpt-5.4-mini`), which writes the explanation. Optional platform mode (`OPENSERV_REASONING_MODE=platform`): create a Vaulto agent + workspace on platform.openserv.ai, set `OPENSERV_WORKSPACE_ID`, run `npm run agent`; each analysis then becomes a workspace task completed by the OpenServ runtime. Without a key Vaulto uses its deterministic local engine and labels the source. Restart `npm run dev` after editing `.env`.
-- **Testnet faucet**: `FAUCET_PRIVATE_KEY` is the faucet wallet. Fund it with tBNB (BSC Testnet faucet: https://www.bnbchain.org/en/testnet-faucet). Users click **Get test funds** on the Faucet page once per wallet: the faucet sends 0.0015 tBNB for gas and, while it holds some, 100 ixUSDC (IXS test USDC). ixUSDC is minted by IXS only (contract `0xbBCa…dc4f4`, owner `0xE8eA…A9C4`); ask the IXS team to send test USDC to the faucet wallet or to your own wallet. Every claim and deposit is a real transaction.
-- **PostgreSQL**: set `DATABASE_URL`, then run `npm run db:push`. The schema lives in `prisma/schema.prisma` (users, treasury, vault_strategies, recommendations, transactions, agent_logs).
-- **WalletConnect**: optional. Set `NEXT_PUBLIC_WC_PROJECT_ID` to add a WalletConnect option; browser wallets work without it.
+| Mode | When | What happens on **Approve** |
+|---|---|---|
+| **Simulated on BNB mainnet** | wallet holds < 100 USDC (default, demo treasury) | The approve + deposit calldata built by the IXS MCP is run through `eth_call` on BNB mainnet with a **state override** (USDC balance + allowance of the wallet). The modal shows the expected shares (decoded from the call and cross-checked with `previewDeposit`), gas estimate, price per share, or the decoded revert reason. Nothing is sent. |
+| **Live · BNB Chain** | wallet holds ≥ 100 USDC | Same calldata, signed by the wallet: `approve` then `deposit` into the vault. Hashes land in Activity with BscScan links. Switches on automatically. |
+| **Mainnet fork** | `RPC_URL=http://127.0.0.1:8545` (Anvil) | Same flows against a local fork of BNB mainnet; the topbar says "Mainnet fork". |
 
-### Run the Vaulto agent on the OpenServ platform
+The Strategy page, transaction modal, Activity log and topbar carry the mode label; a simulated step never gets a fake hash.
+
+## The vault (nothing hardcoded)
+
+- Addresses come from `GET https://api-v2.ixs.finance/vaults` (chain 56, product `ixhyb`); `src/lib/chain/config.ts` keeps them only as a last-known fallback for when the API is down.
+- `asset()`, the asset's `decimals()`/`symbol()`, share `decimals()`, `feeBps()`, `whitelistEnabled()`, `paused()`, `totalAssets()`, `totalSupply()` and price per share are read from the contracts on every registry refresh (`src/lib/ixs/registry.ts`). Settlement (sync ERC-4626 vs async ERC-7540) comes from the IXS MCP `vault_get`.
+- Two BNB Chain vaults are listed: the **open** IX High Yield Bond vault (`ixv1`, sync, no whitelist) is the executable target; the **licensed** one (`ix7540v1`, async ERC-7540, KYC whitelist) is checked live through `vault_check_whitelist` and rejected with the reason when the wallet is not whitelisted. BTC Real Yield stays in the catalog as announced / not deployable.
+- Terms shown in the Risk Center and IXS Strategies page: minimum deposit 100 USDC (enforced by the Risk Guardian, Planner and SERV prompt), 0% deposit fee, **0.5% redemption fee read from `feeBps()`**, redemption requests anytime and processed per cycle (as fast as T+1, per IXS).
+
+## Mainnet fork script (for the video)
 
 ```bash
-OPENSERV_API_KEY=... VAULTO_API_URL=http://localhost:3000 npm run agent
+npm run fork:demo            # or: KEEP=1 npm run fork:demo   to leave Anvil running for the app
 ```
 
-`scripts/openserv-agent.mjs` registers the six Vaulto agents as OpenServ capabilities (`scan_treasury`, `list_ixs_strategies`, `analyze_treasury`, `get_recommendation`, `prepare_execution`, `get_activity`). Capabilities call the Vaulto backend; none of them can sign or send a transaction.
+`scripts/fork-demo.mjs` starts Anvil as a fork of BNB mainnet, resolves the vault from the IXS API, reads `asset()`/`decimals()`, impersonates a USDC whale to fund the demo wallet with 100 USDC, asks the IXS MCP for the approve + deposit calldata, sends both from the demo wallet, and prints shares received, price per share and whether the deposit settled synchronously (ERC-4626) or, for async vaults, the request status (`pendingDepositRequest` / MCP `vault_request_status`). Requires Foundry (`anvil`); set `ANVIL_BIN` if it is not on PATH.
 
-## Architecture
+## How an allocation is decided
 
-```
-User wallet (browser wallet, BSC Testnet)
-  → Vaulto web app (Next.js)
-  → Agent orchestrator            src/lib/orchestrator.ts
-  → OpenServ reasoning            src/lib/openserv/reasoning.ts
-  → Multi-agent decision system   src/lib/agents/*
-  → IXS adapter layer             src/lib/ixs/client.ts, catalog.ts
-  → IXS Agent Rail / MCP + Vault API
-  → ERC-4626 vault infrastructure
-  → Wallet signs (nothing is signed server-side)
-```
-
-### Agents (`src/lib/agents`)
-
-| Agent | File | Responsibility |
-| --- | --- | --- |
-| Treasury Scanner | `scanner.ts` | Reads on-chain balances (tBNB, IXS test USDC, IXS vault shares) plus the optional demo profile; detects idle capital; computes health and opportunity scores |
-| Opportunity Finder | `finder.ts` | Matches idle assets to IXS strategies and ranks fit; surfaces announced-but-undeployed products (BTC Real Yield) as unavailable candidates |
-| Risk Guardian | `risk.ts` | Live vault availability (IXS Vault API), eligibility (IXS MCP `vault_check_whitelist`), vault score, liquidity floor, exposure policy |
-| Allocation Planner | `planner.ts` | Computes hard caps (liquidity floor, burn buffer, stablecoin runway reserve) and validates the SERV decision against them; never sells assets |
-| Execution | `execution.ts` | Builds unsigned approve + deposit calldata via the IXS MCP; the wallet signs |
-| Monitoring | `monitoring.ts` | Risk report, alerts, portfolio history, recommendation expiry |
-| SERV reasoning | `openserv/reasoning.ts` | Decides the allocation within the Planner caps (`decideAllocation`) and writes the explanation (`narrate`), both through the OpenServ Inference API |
-
-### IXS integration (BSC Testnet, chain 97)
-
-- Live catalog: `GET https://api-dev-v2.ixs.finance/vaults` filtered to BSC Testnet. Vault availability is checked against it on every analysis.
-- MCP: `POST https://api-dev-v2.ixs.finance/mcp`, JSON-RPC 2.0 over Streamable HTTP. Tools used: `vault_check_whitelist`, `vault_build_request_deposit` (returns approve + deposit calldata that the user signs).
-- **IX High Yield Bond (IXHYB · BSC)** `0xCb09a5326AEFD705d14FF4C5ca2beD7086ba0Dcc`: sync ERC-4626, open whitelist, asset = IXS test USDC `0xbBCa80a7116aE46B0f249D279EF43f86274dc4f4`. The executable strategy.
-- **Licensed RWA Vault Opportunities** (t_ix7540v1) `0x45B962394995e3FbFa83229Fbe97591dEb1DDCc4`: async ERC-7540, whitelist required; eligibility checked live (the demo, user and faucet wallets are currently not whitelisted).
-- **BTC Real Yield**: announced on ixs.finance (4–12% indicative) but no BTC vault exists on the IXS Vault API. Kept in the catalog as *announced, not deployable*; idle BTC is explicitly rejected by the Risk Guardian and SERV reasoning offers the USDC portion into IXHYB instead.
-- **Mainnet panel** (read-only): the four production IX High Yield Bond vaults on BNB Chain and Avalanche from `https://api-v2.ixs.finance/vaults`, with on-chain TVL and price per share.
-- Single-chain config lives in `src/lib/chain/config.ts`.
-
-### Real on-chain flow on BSC Testnet
-
-Connected wallets start with their real balances (demo layer off). **Faucet → Get test funds** (tBNB + ixUSDC while available) → **Run analysis** (SERV decides the allocation, the Planner validates it) → **Approve** → the wallet signs `approve` + `deposit` built by the IXS MCP → shares and positions are read back from the IXS vault.
-
-The demo treasury (Acme DAO, **Continue with demo treasury**) still exists for a no-wallet walkthrough: there, legs without an on-chain balance run on a clearly labelled simulated rail. Real wallets can turn the demo layer on in Settings.
+1. **Treasury Scanner** reads BNB, USDC (as `asset()` of the vault) and vault shares in one Multicall3 round-trip, layers the optional demo profile, detects idle capital.
+2. **Opportunity Finder** matches idle assets to the catalog; announced products are surfaced as unavailable.
+3. **Risk Guardian** checks vault availability (IXS Vault API), eligibility (IXS MCP), minimum deposit, risk score, liquidity floor and exposure.
+4. **Allocation Planner** computes hard caps (liquidity floor + burn buffer, stablecoin runway reserve, minimum deposit).
+5. **SERV reasoning** (OpenServ) decides the legs within the caps and writes the explanation; the Planner validates and clamps. Local sizing only as fallback when OpenServ is down, labelled as such.
+6. **Execution Agent** builds calldata via the IXS MCP and either simulates it (eth_call + state override) or hands it to the wallet.
+7. **Monitoring Agent** scores health, exposure (real 30-day BTC volatility), strategy deviation and vault terms.
 
 ## API
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| GET | `/api/treasury?address=` | Treasury snapshot + latest recommendation |
-| GET | `/api/vaults` | IXS strategies (catalog + live) |
-| POST | `/api/analyze` | Run the multi-agent OpenServ reasoning pipeline |
-| GET/POST/PATCH | `/api/recommendation` | Fetch, generate, dismiss or reject a recommendation |
-| POST | `/api/execute` | Prepare the execution workflow (unsigned calldata) |
-| PUT | `/api/execute` | Record signed / simulated outcomes |
-| GET | `/api/activity?address=` | Agent logs and transactions |
-| GET | `/api/risk?address=` | Risk Center report |
-| GET | `/api/portfolio?address=&period=` | Portfolio history and targets |
-| GET/PATCH/DELETE | `/api/settings` | Profile, risk policy, demo mode, reset |
-| GET/POST | `/api/faucet` | Faucet status / claim tBNB (+ ixUSDC while the faucet holds some), once per wallet |
-| GET | `/api/ixs/mainnet` | Read-only view of the IXS production vaults (BNB Chain + Avalanche) |
-
-## Security rules
-
-- No unrestricted autonomous transfers. Every transaction requires the user's wallet signature.
-- The review modal shows amount, destination, expected outcome, risk level, liquidity after and execution rail before signing.
-- IXS MCP and the local encoder only build calldata. Vaulto holds no keys.
-- Every agent decision and every transaction (hash, status) is logged and shown in Activity.
-
-## Demo script
-
-1. Landing page → **Launch Vaulto** → connect a browser wallet (BSC Testnet) or **Continue with demo treasury**.
-2. With a wallet: open **Faucet** → **Get test funds** (tBNB for gas, plus ixUSDC while the faucet holds IXS test USDC).
-3. Home shows the treasury, idle capital detected and the opportunity score. Click **Run analysis**.
-4. The pipeline runs (Scanner → Finder → Risk Guardian → Planner → OpenServ narrative). The recommendation card explains the strategy with confidence and reasons.
-5. **Review strategy** shows how Vaulto reasoned, the before/after allocation and what was rejected.
-6. **Approve strategy** opens the transaction review. **Execute** signs `approve` + `deposit` in your wallet on BSC Testnet.
-7. Home updates: idle capital down, allocation up, health score up. Activity shows the log and transaction hashes.
+| Method | Route | Purpose |
+|---|---|---|
+| GET | `/api/treasury?address=` | Snapshot (on-chain + demo layer), execution mode, open recommendation |
+| GET | `/api/vaults` | Catalog from the registry (API addresses + contract reads) and every IXS production vault |
+| GET | `/api/ixs/mainnet` | Read-only view of all IXS production vaults (BNB Chain + Avalanche) |
+| POST | `/api/analyze` | Full pipeline → recommendation |
+| GET/POST/PATCH | `/api/recommendation` | Latest / generate / dismiss-reject |
+| POST | `/api/execute` | Prepare: MCP calldata + simulation (or unsigned txs in Live mode); `simulate: true` forces a simulation |
+| PUT | `/api/execute` | Finalize: record signed / simulated outcomes |
+| GET | `/api/risk`, `/api/portfolio`, `/api/activity`, `/api/settings` | Reports, logs, policy |
 
 ## Scripts
 
-- `npm run dev` / `npm run build` / `npm run start`
-- `npm run db:generate` / `npm run db:push`
-- `npm run agent` – start the OpenServ agent server
-- `npm run probe:ixs` – probe the IXS vaults and MCP on BSC Testnet
-- `node --env-file=.env scripts/probe-openserv.mjs` – verify the OpenServ Inference API key and list models
-- `npm run e2e:onchain` – full on-chain proof with a throwaway wallet (faucet → analyze → sign → finalize)
+- `npm run dev` / `npm run build` / `npm run lint`
+- `npm run fork:demo` — Anvil mainnet-fork walkthrough (above)
+- `npm run agent` — run Vaulto as an OpenServ platform agent (platform reasoning mode)
+- `npm run db:push` — Prisma schema to PostgreSQL
+
+## Security model
+
+- Vaulto holds no keys and never signs. The IXS MCP builds calldata; the wallet signs in Live mode; simulations are read-only `eth_call`s.
+- Every proposal shows amount, destination, expected outcome, risk score, liquidity after, fees and the execution mode before approval.
+- Reasoning source (OpenServ vs local), confidence, simulation results and transaction hashes are logged in Activity.

@@ -77,15 +77,19 @@ export interface VaultPosition {
 
 export interface OnchainReadout {
   rpcOk: boolean;
+  /** "fork" when the RPC is a local Anvil fork of BNB mainnet. */
+  rpcKind: "mainnet" | "fork";
   chainId: number;
   blockNumber: number | null;
-  /** Native gas token balance (tBNB). */
+  /** Native gas token balance (BNB). */
   nativeBalance: number;
-  /** Wallet balances keyed by canonical symbol (ixUSDC = IXS test USDC). */
+  /** Wallet balances keyed by the asset symbol read from the vault's asset() (USDC). */
   balances: Record<string, number>;
   /** IXS vault share positions, in asset units. */
   positions: { strategyId: string; shares: number; assets: number }[];
   vaults: Record<string, { address: string; tvl: number; sharePrice: number }>;
+  /** Symbol of the vault asset as read on-chain. */
+  assetSymbol?: string;
   error?: string;
 }
 
@@ -114,6 +118,8 @@ export interface TreasurySnapshot {
   demoMode: boolean;
   maxExposure: { symbol: string; pct: number };
   targetAllocationPct: number;
+  /** "live" when the wallet holds >= LIVE_MODE_MIN_USDC of the vault asset; otherwise deposits are simulated. */
+  executionMode: "simulated" | "live";
 }
 
 export interface VaultStrategy {
@@ -123,8 +129,10 @@ export interface VaultStrategy {
   assetType: string;
   asset: string;
   apy: number | null;
-  /** True when the APY is a Vaulto estimate (IXS testnet metrics unavailable). */
+  /** True when the APY is a Vaulto estimate rather than an IXS figure. */
   apyEstimated?: boolean;
+  /** Where the yield figure comes from (e.g. trailing 12 months, IXS Vault API). */
+  apyNote?: string;
   /** "announced": IXS has announced the product but no vault is deployed (checked against the IXS Vault API). */
   availability?: "live" | "announced";
   riskScore: number;
@@ -135,6 +143,8 @@ export interface VaultStrategy {
   contractAddress?: string;
   assetAddress?: string;
   assetDecimals?: number;
+  shareDecimals?: number;
+  shareSymbol?: string;
   settlement: "sync" | "async-erc7540";
   requiresWhitelist: boolean;
   status: string;
@@ -147,6 +157,16 @@ export interface VaultStrategy {
   routeId?: string;
   explorerUrl?: string;
   capacityNote?: string;
+  /** Vault terms Vaulto enforces and displays (minimum deposit, fees read on-chain, redemption cadence). */
+  terms?: VaultTerms;
+}
+
+export interface VaultTerms {
+  minDepositUsd: number;
+  depositFeeBps: number;
+  redeemFeeBps: number | null;
+  redemption: string;
+  feeSource: string;
 }
 
 export interface AllocationLeg {
@@ -217,6 +237,22 @@ export interface Recommendation {
   context?: { demoMode: boolean; totalUsd: number };
 }
 
+export interface StepSimulation {
+  ok: boolean;
+  /** "Simulated on BNB mainnet" or "Mainnet fork". */
+  label: string;
+  /** Storage overrides applied to the eth_call (balance / allowance). */
+  overrides: string[];
+  block?: number;
+  gasEstimate?: number;
+  expectedShares?: number;
+  previewShares?: number;
+  shareSymbol?: string;
+  sharePrice?: number;
+  requestId?: string;
+  revertReason?: string;
+}
+
 export interface TxStep {
   index: number;
   kind: "approve" | "deposit" | "requestDeposit";
@@ -234,6 +270,11 @@ export interface TxStep {
   builtBy: "ixs-mcp" | "local-encoder" | "simulation";
   /** Condition to wait for before sending (public RPC nodes can lag behind the previous receipt). */
   precheck?: { kind: "allowance"; token: `0x${string}`; spender: `0x${string}`; amount: string };
+  /** Amount in asset base units (from the contract's decimals). */
+  units?: string;
+  /** eth_call + state override result when the step is simulated. */
+  simulation?: StepSimulation;
+  note?: string;
 }
 
 export interface PreparedTransaction {
@@ -258,7 +299,12 @@ export interface PreparedTransaction {
     feeUsd: number;
   };
   createdAt: string;
-  mode: "onchain" | "hybrid" | "simulated";
+  mode: "onchain" | "simulated";
+  executionMode: "simulated" | "live";
+  rpcKind: "mainnet" | "fork";
+  /** Honest label shown everywhere: "Live · BNB Chain", "Simulated on BNB mainnet" or "Mainnet fork". */
+  label: string;
+  notes: string[];
 }
 
 export type TxStatus = "prepared" | "pending" | "confirmed" | "failed" | "simulated";
@@ -276,6 +322,8 @@ export interface TransactionRecord {
   explorerUrl?: string;
   createdAt: string;
   kind: string;
+  label?: string;
+  simulation?: StepSimulation;
 }
 
 export interface AgentLog {

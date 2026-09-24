@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { invalidateOnchain, readOnchainTreasury } from "@/lib/chain/treasury";
 import { EXPLORER, publicClient } from "@/lib/chain/client";
-import { CHAIN_NAME } from "@/lib/chain/config";
+import { CHAIN_NAME, LIVE_MODE_MIN_USDC, MODE_LABEL } from "@/lib/chain/config";
 import { getStore, normalizeAddress } from "@/lib/db";
 import { fmtAmount, fmtUsd } from "@/lib/format";
 import { checkWhitelist, getStrategies, vaultAvailability } from "@/lib/ixs/client";
@@ -328,22 +328,28 @@ export async function prepare(address: string, recommendationId: string, simulat
   if (!rec.legs.length) throw new Error("nothing to execute");
   invalidateOnchain(wallet);
   const { user, snapshot, strategies } = await scan(wallet);
-  if (!simulate && !user.demoMode && !snapshot.onchain.rpcOk) {
-    throw new Error(`${CHAIN_NAME} RPC is unavailable right now, so Vaulto cannot verify your on-chain balances. Try again in a few seconds.`);
+  if (!snapshot.onchain.rpcOk) {
+    throw new Error(`${CHAIN_NAME} RPC is unavailable right now, so Vaulto cannot read balances or simulate against the vault. Try again in a few seconds.`);
   }
-  const prepared = await prepareTransaction(rec, strategies, user, snapshot, { simulate });
+  const prepared = await prepareTransaction(rec, strategies, user, snapshot, { forceSimulated: simulate });
   await store.savePrepared(prepared);
   await store.updateRecommendationStatus(rec.id, "approved");
-  const onchain = prepared.steps.filter((s) => s.mode === "onchain");
+  const built = prepared.steps.every((s) => s.builtBy === "ixs-mcp") ? "IXS MCP (vault_build_request_deposit)" : "local ERC-4626 encoder (IXS MCP unreachable)";
+  const sims = prepared.steps.map((s) => s.simulation).filter((s): s is NonNullable<typeof s> => Boolean(s));
+  const simText = sims.length
+    ? sims.every((s) => s.ok)
+      ? `eth_call + state override passed (${sims.map((s) => (s.expectedShares != null ? `expected ${s.expectedShares.toFixed(4)} ${s.shareSymbol ?? "shares"}` : s.requestId ? `deposit request #${s.requestId}` : "approve ok")).join("; ")})`
+      : `simulation reverted: ${sims.find((s) => !s.ok)?.revertReason}`
+    : "";
   await log({
     walletAddress: wallet,
     agentName: "Execution Agent",
     action: "prepare",
     reasoning:
-      onchain.length > 0
-        ? `${onchain.length} unsigned transaction${onchain.length > 1 ? "s" : ""} built via ${onchain[0].builtBy === "ixs-mcp" ? "IXS MCP (vault_build_request_deposit)" : "IXS adapter (ERC-4626 calldata)"} for ${CHAIN_NAME}. Awaiting wallet signature.`
-        : `Transaction workflow prepared via IXS Agent Rail (${prepared.steps.length} step${prepared.steps.length > 1 ? "s" : ""}, simulated rail). Awaiting approval.`,
-    status: "success",
+      prepared.executionMode === "live"
+        ? `${prepared.steps.length} unsigned transaction${prepared.steps.length > 1 ? "s" : ""} built via ${built} for ${CHAIN_NAME} (${MODE_LABEL.live}: wallet holds ≥ ${LIVE_MODE_MIN_USDC} USDC). Awaiting wallet signature.`
+        : `${prepared.steps.length} calldata step${prepared.steps.length > 1 ? "s" : ""} built via ${built}; ${prepared.label}: ${simText || "no simulation result"}. No transaction is sent.`,
+    status: sims.length && !sims.every((s) => s.ok) ? "warn" : "success",
     source: "IXS",
   });
   return prepared;
@@ -381,6 +387,8 @@ export async function finalize(address: string, preparedId: string, results: Ste
       explorerUrl: r.hash && step.mode === "onchain" ? `${EXPLORER}/tx/${r.hash}` : undefined,
       createdAt: new Date().toISOString(),
       kind: step.kind,
+      label: step.mode === "onchain" ? MODE_LABEL.live : prepared.label,
+      simulation: step.simulation,
     };
     records.push(await store.saveTransaction(record));
     const moved = (r.status === "confirmed" || r.status === "simulated") && step.kind !== "approve";
@@ -411,7 +419,7 @@ export async function finalize(address: string, preparedId: string, results: Ste
     action: "execute",
     reasoning: failed
       ? `Execution incomplete: ${results.filter((r) => r.status === "failed").length} step(s) failed or were rejected in the wallet.`
-      : `${confirmedOnchain.length ? `${confirmedOnchain.length} deposit${confirmedOnchain.length > 1 ? "s" : ""} confirmed on ${CHAIN_NAME}` : ""}${confirmedOnchain.length && simulated.length ? "; " : ""}${simulated.length ? `${simulated.length} step${simulated.length > 1 ? "s" : ""} executed on the simulated IXS rail` : ""}. ${fmtUsd(prepared.summary.amountUsd)} allocated.`,
+      : `${confirmedOnchain.length ? `${confirmedOnchain.length} deposit${confirmedOnchain.length > 1 ? "s" : ""} confirmed on ${CHAIN_NAME}` : ""}${confirmedOnchain.length && simulated.length ? "; " : ""}${simulated.length ? `${simulated.length} step${simulated.length > 1 ? "s" : ""} ${prepared.label} (eth_call + state override, no funds moved)` : ""}. ${fmtUsd(prepared.summary.amountUsd)} allocated.`,
     status: failed ? "warn" : "success",
     source: "IXS",
   });
@@ -429,9 +437,9 @@ export async function finalize(address: string, preparedId: string, results: Ste
 }
 
 export async function riskReport(address: string) {
-  const { user, snapshot } = await scan(address);
+  const { user, snapshot, strategies } = await scan(address);
   const [rec, btcVol] = await Promise.all([currentRecommendation(address, snapshot), getBtcVolatility30d()]);
-  return { report: buildRiskReport(snapshot, user, rec, btcVol), snapshot, recommendation: rec };
+  return { report: buildRiskReport(snapshot, user, rec, btcVol, strategies), snapshot, recommendation: rec };
 }
 
 export async function portfolioReport(address: string, periodDays: number) {

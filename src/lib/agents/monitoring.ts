@@ -1,5 +1,5 @@
 import { fmtUsd, vaultLabel } from "@/lib/format";
-import type { PortfolioReport, Recommendation, RiskReport, TreasurySnapshot, UserProfile } from "@/lib/types";
+import type { PortfolioReport, Recommendation, RiskReport, TreasurySnapshot, UserProfile, VaultStrategy } from "@/lib/types";
 import { healthLabel } from "./scoring";
 
 /** Realized 30d BTC volatility (annualized %) above which Vaulto flags exposure. */
@@ -9,7 +9,12 @@ const VOL_HIGH = 60;
 /**
  * Monitoring Agent — scores the treasury against policy and drafts warnings / corrective actions.
  */
-export function buildRiskReport(snapshot: TreasurySnapshot, user: UserProfile, rec: Recommendation | null, btcVol30d: number | null = null): RiskReport {
+export function buildRiskReport(snapshot: TreasurySnapshot, user: UserProfile, rec: Recommendation | null, btcVol30d: number | null = null, strategies: VaultStrategy[] = []): RiskReport {
+  const primary = strategies.find((s) => s.tag === "primary") ?? strategies.find((s) => s.executable);
+  const terms = primary?.terms;
+  const termsText = terms
+    ? ` Redemption: ${terms.redemption.charAt(0).toLowerCase()}${terms.redemption.slice(1)}. Fees: ${terms.depositFeeBps / 100}% on deposit, ${terms.redeemFeeBps != null ? `${terms.redeemFeeBps / 100}% on redemption (${terms.feeSource})` : "redemption fee not exposed on-chain"}. Minimum deposit ${terms.minDepositUsd} ${primary?.asset ?? "USDC"}, enforced by the vault contract (reverts "below min deposit") and by the agent.`
+    : "";
   const lowestVault = snapshot.positions.length ? Math.min(...snapshot.positions.map((p) => p.riskScore)) : null;
   const deviation = snapshot.allocatedPct - snapshot.targetAllocationPct;
   const nearLimit = snapshot.maxExposure.pct > user.maxAssetExposurePct * 0.8;
@@ -30,9 +35,7 @@ export function buildRiskReport(snapshot: TreasurySnapshot, user: UserProfile, r
       key: "vault",
       title: "Vault risk",
       level: lowestVault == null ? "Low" : lowestVault >= user.minVaultRiskScore ? "Low" : "Medium",
-      description: snapshot.positions.length
-        ? `${snapshot.positions.map((p) => `${vaultLabel(p.vaultName)} scores ${p.riskScore}`).join(" and ")}. No leverage, daily or 24h withdrawal.`
-        : "No vault positions yet. Every IXS strategy Vaulto proposes is scored before it reaches you.",
+      description: `${snapshot.positions.length ? `${snapshot.positions.map((p) => `${vaultLabel(p.vaultName)} scores ${p.riskScore}`).join(" and ")}. No leverage.` : "No vault positions yet. Every IXS strategy Vaulto proposes is scored before it reaches you."}${termsText}`,
       value: lowestVault == null ? "—" : String(lowestVault),
       sub: "lowest vault score",
     },
@@ -137,7 +140,7 @@ export function buildPortfolioReport(snapshot: TreasurySnapshot, user: UserProfi
     const date = new Date(new Date(snapshot.scannedAt).getTime() - (periodDays - t * periodDays) * 86_400_000);
     history.push({ date: date.toISOString(), value: Math.round(start + changeUsd * t + noise) });
   }
-  const stable = snapshot.assets.filter((a) => a.symbol === "USDC" || a.symbol === "ixUSDC").reduce((s, a) => s + a.allocationPct, 0);
+  const stable = snapshot.assets.filter((a) => a.symbol === "USDC").reduce((s, a) => s + a.allocationPct, 0);
   const btcPct = btc?.allocationPct ?? 0;
   const rwa = snapshot.allocatedPct;
   // Targets come from the user's policy and risk profile, so they match the Risk Center.

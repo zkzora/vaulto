@@ -165,14 +165,6 @@ export const prismaStore: Store = {
       createdAt: r.createdAt.toISOString(),
     }));
   },
-  async getFaucetClaim(address) {
-    const u = await userRow(address);
-    return u.lastFaucetAt ? u.lastFaucetAt.toISOString() : null;
-  },
-  async setFaucetClaim(address, at) {
-    await userRow(address);
-    await prisma.user.update({ where: { walletAddress: normalizeAddress(address) }, data: { lastFaucetAt: new Date(at) } });
-  },
   async resetUser(address) {
     await prisma.user.deleteMany({ where: { walletAddress: normalizeAddress(address) } });
   },

@@ -75,6 +75,11 @@ export function useUpdateSettings() {
   });
 }
 
+export function useSimulate() {
+  const { address } = useVaultoAccount();
+  return useMutation({ mutationFn: ({ strategyId, amount }: { strategyId: string; amount?: number }) => api.simulate(address!, strategyId, amount) });
+}
+
 export function useResetDemo() {
   const { address } = useVaultoAccount();
   const qc = useQueryClient();

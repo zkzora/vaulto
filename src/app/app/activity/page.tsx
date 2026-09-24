@@ -17,7 +17,7 @@ export default function ActivityPage() {
     <div className="grid content-start gap-5">
       <div>
         <div className="font-display text-[28px] font-semibold tracking-[-0.02em] text-ink">Activity</div>
-        <div className="mt-1 text-[14px] text-muted">Every agent decision and every transaction, logged with reasoning and on-chain hashes.</div>
+        <div className="mt-1 text-[14px] text-muted">Every agent decision and every execution, logged with reasoning, on-chain hashes and simulation results.</div>
       </div>
       <div className="grid gap-5 xl:grid-cols-[1fr_1.2fr]">
         <Card>
@@ -35,7 +35,7 @@ export default function ActivityPage() {
                 <span>Strategy</span>
                 <span>Amount</span>
                 <span>Status</span>
-                <span>Hash</span>
+                <span>Hash / mode</span>
               </div>
               {transactions.map((t) => (
                 <div key={t.id} className="table-row text-ink" style={{ gridTemplateColumns: "1.5fr 1fr .9fr .9fr 1fr" }}>
@@ -55,11 +55,14 @@ export default function ActivityPage() {
                       {shortAddress(t.hash, 4)} {Icons.external}
                     </a>
                   ) : (
-                    <span className="mono text-faint">{t.hash ? `${shortAddress(t.hash, 4)} · sim` : "—"}</span>
+                    <span className="text-[12px] text-faint">
+                      {t.label ?? "—"}
+                      {t.simulation?.expectedShares != null ? ` · ${t.simulation.expectedShares.toFixed(2)} ${t.simulation.shareSymbol ?? "shares"}` : ""}
+                    </span>
                   )}
                 </div>
               ))}
-              {!transactions.length && <div className="py-8 text-center text-[13px] text-muted">No transactions yet. Approve a strategy to prepare one through IXS Agent Rail.</div>}
+              {!transactions.length && <div className="py-8 text-center text-[13px] text-muted">No executions yet. Approve a strategy to build calldata through the IXS MCP.</div>}
             </div>
           </div>
         </Card>

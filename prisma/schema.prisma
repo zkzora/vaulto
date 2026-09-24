@@ -23,7 +23,6 @@ model User {
   monthlyBurnUsd      Float    @default(185000) @map("monthly_burn_usd")
   demoMode            Boolean  @default(true) @map("demo_mode")
   demoState           Json?    @map("demo_state")
-  lastFaucetAt        DateTime? @map("last_faucet_at")
   firstSeenAt         DateTime @default(now()) @map("first_seen_at")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")

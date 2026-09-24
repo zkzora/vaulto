@@ -6,6 +6,7 @@ import type {
   Recommendation,
   RecommendationStatus,
   RiskReport,
+  StepSimulation,
   TransactionRecord,
   TreasurySnapshot,
   TxStatus,
@@ -25,6 +26,8 @@ export interface LiveVault {
   routeId: string;
   name: string;
   symbol: string;
+  chainId: number;
+  chainName: string;
   contractAddress: string;
   requiresWhitelist: boolean;
   status: string;
@@ -50,6 +53,17 @@ export interface MainnetVault {
   ixsRewards: { active: boolean; multiplier: number } | null;
 }
 
+export interface SimulationResponse {
+  label: string;
+  strategyId: string;
+  amount: number;
+  asset: string;
+  builtBy: "ixs-mcp" | "local-encoder";
+  note?: string;
+  mcpRefused?: string;
+  steps: { index: number; kind: string; to: string; data: string; builtBy: string; simulation?: StepSimulation }[];
+}
+
 export interface TreasuryResponse {
   user: UserProfile;
   snapshot: TreasurySnapshot;
@@ -64,7 +78,11 @@ export interface SystemInfo {
   openservWorkspace: boolean;
   openservMode: "inference" | "platform";
   openservModel: string;
-  faucet: boolean;
+  ixsApi: string;
+  rpcKind: "mainnet" | "fork";
+  rpcUrl: string;
+  liveMinUsdc: number;
+  minDepositUsdc: number;
   database: "postgres" | "file";
   chainId: number;
   network: string;
@@ -72,7 +90,7 @@ export interface SystemInfo {
 
 export const api = {
   treasury: (address: string) => request<TreasuryResponse>(`/api/treasury?address=${address}`),
-  vaults: () => request<{ strategies: VaultStrategy[]; liveOk: boolean; liveVaults: LiveVault[] }>("/api/vaults"),
+  vaults: () => request<{ strategies: VaultStrategy[]; liveOk: boolean; liveVaults: LiveVault[]; registry: { source: "api" | "fallback"; apiOk: boolean; fetchedAt: string; onchainOk: boolean } }>("/api/vaults"),
   mainnet: () => request<{ vaults: MainnetVault[]; ok: boolean }>("/api/ixs/mainnet"),
   analyze: (address: string) => request<AnalysisResult>("/api/analyze", { method: "POST", body: JSON.stringify({ address }) }),
   recommendation: (address: string) => request<{ recommendation: Recommendation | null }>(`/api/recommendation?address=${address}`),
@@ -93,4 +111,6 @@ export const api = {
   updateSettings: (address: string, patch: UserPatch) =>
     request<{ user: UserProfile; system: SystemInfo }>("/api/settings", { method: "PATCH", body: JSON.stringify({ address, ...patch }) }),
   reset: (address: string) => request<{ ok: boolean }>(`/api/settings?address=${address}`, { method: "DELETE" }),
+  simulate: (address: string, strategyId: string, amount?: number) =>
+    request<SimulationResponse>("/api/simulate", { method: "POST", body: JSON.stringify({ address, strategyId, amount }) }),
 };

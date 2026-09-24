@@ -3,8 +3,6 @@ const FALLBACK: Record<string, number> = {
   ETH: 3_200,
   BNB: 600,
   USDC: 1,
-  USTB: 1,
-  ixUSDC: 1,
 };
 
 let cache: { at: number; prices: Record<string, number> } | null = null;
@@ -28,7 +26,7 @@ export async function getPrices(): Promise<Record<string, number>> {
       if (json.binancecoin?.usd) prices.BNB = json.binancecoin.usd;
     }
   } catch {
-    // keep fallbacks; prices are illustrative on testnet
+    // keep fallbacks (USDC is always 1)
   }
   cache = { at: Date.now(), prices };
   return prices;

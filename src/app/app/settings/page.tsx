@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useVaultoAccount } from "@/hooks/use-account";
-import { useResetDemo, useSettings, useUpdateSettings } from "@/hooks/use-vaulto";
-import { CHAIN_NAME } from "@/lib/chain/config";
+import { useResetDemo, useSettings, useTreasury, useUpdateSettings } from "@/hooks/use-vaulto";
+import { CHAIN_NAME, MODE_LABEL } from "@/lib/chain/config";
 import { shortAddress } from "@/lib/format";
 import type { RiskProfile, UserPatch } from "@/lib/types";
 import { Card, CardTitle, ErrorState, Pill, Skeleton, cx } from "@/components/ui";
@@ -19,6 +19,7 @@ export default function SettingsPage() {
   const account = useVaultoAccount();
   const update = useUpdateSettings();
   const reset = useResetDemo();
+  const treasury = useTreasury();
   const [draft, setDraft] = useState<UserPatch | null>(null);
   const [saved, setSaved] = useState(false);
 
@@ -104,7 +105,7 @@ export default function SettingsPage() {
             <label className="mt-3 flex items-start gap-3">
               <input type="checkbox" checked={Boolean(form.demoMode)} onChange={(e) => set("demoMode", e.target.checked)} className="mt-1 h-4 w-4 accent-blue" />
               <span className="text-[13px] leading-[1.5] text-body">
-                <b className="text-ink">Add the simulated Acme DAO treasury (≈ $2.8M of fake BTC, USDC and T-bills) on top of my real wallet.</b> Meant for walkthroughs without test funds. Leave it off to see only what your wallet actually holds on {CHAIN_NAME}; on-chain balances, faucet assets and vault positions are always real either way.
+                <b className="text-ink">Add the simulated Acme DAO treasury (≈ $2M of fake BTC and USDC) on top of my real wallet.</b> Meant for walkthroughs without test funds. Leave it off to see only what your wallet actually holds on {CHAIN_NAME}; on-chain balances and vault positions are always real either way, and every deposit is labelled Simulated or Live.
               </span>
             </label>
             {form.demoMode && account.isWallet && (
@@ -148,12 +149,16 @@ export default function SettingsPage() {
                   system.openserv ? "green" : "amber",
                   system.openserv ? "Live" : "Fallback",
                 ],
-                ["IXS adapter", "api-dev-v2.ixs.finance · MCP + Vault API", "green", "Connected"],
+                ["IXS adapter", `${system.ixsApi} · production Vault API + MCP`, "green", "Connected"],
                 [
-                  "Testnet faucet",
-                  system.faucet ? `Sends ${CHAIN_NAME} gas and forwards IXS test USDC while the faucet wallet holds some` : "FAUCET_PRIVATE_KEY missing",
-                  system.faucet ? "green" : "amber",
-                  system.faucet ? "Ready" : "Missing",
+                  "Execution mode",
+                  system.rpcKind === "fork"
+                    ? `RPC ${system.rpcUrl} · local Anvil fork of BNB mainnet`
+                    : treasury.data?.snapshot.executionMode === "live"
+                      ? `Wallet holds ≥ ${system.liveMinUsdc} USDC · real deposits signed by your wallet`
+                      : `eth_call + state override against the real IXS vault · Live at ≥ ${system.liveMinUsdc} USDC · minimum deposit ${system.minDepositUsdc} USDC`,
+                  system.rpcKind === "fork" ? "blue" : treasury.data?.snapshot.executionMode === "live" ? "green" : "amber",
+                  system.rpcKind === "fork" ? MODE_LABEL.fork : treasury.data?.snapshot.executionMode === "live" ? "Live" : "Simulated",
                 ],
                 ["Database", system.database === "postgres" ? "PostgreSQL via Prisma" : "JSON file store (.data/) · set DATABASE_URL for Postgres", system.database === "postgres" ? "green" : "muted", system.database === "postgres" ? "Postgres" : "File"],
               ].map(([k, v, tone, label]) => (

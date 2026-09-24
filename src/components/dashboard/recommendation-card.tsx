@@ -9,7 +9,7 @@ import type { Recommendation, TreasurySnapshot } from "@/lib/types";
 import { OpenServBadge, Pill, cx } from "@/components/ui";
 
 const PROGRESS = [
-  "Treasury Scanner reading balances on BSC Testnet…",
+  "Treasury Scanner reading balances on BNB Chain…",
   "Opportunity Finder matching idle assets to IXS vaults…",
   "Risk Guardian checking liquidity floor and exposure…",
   "Allocation Planner sizing the deposit…",
