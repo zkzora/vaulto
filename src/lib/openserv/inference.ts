@@ -29,8 +29,8 @@ export async function chatCompletion(params: { messages: ChatMessage[]; model?: 
         model: params.model ?? env.openservModel,
         messages: params.messages,
         temperature: params.temperature ?? 0.2,
-        // The gateway derives a default max_tokens from the context window and can exceed the model limit; be explicit.
-        max_tokens: params.maxTokens ?? 4096,
+        // The gateway derives a default completion budget from the context window and can exceed the model limit; be explicit.
+        max_completion_tokens: params.maxTokens ?? 4096,
       }),
       signal: ctrl.signal,
       cache: "no-store",
