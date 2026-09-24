@@ -9,7 +9,11 @@ const STABLE_ASSETS = new Set(["USDC"]);
 export interface LegCap {
   strategyId: string;
   vaultName: string;
+  chainId: number;
+  chainName: string;
   asset: string;
+  /** maxDeposit() for the wallet, null = unlimited. */
+  depositLimitUsd: number | null;
   priceUsd: number;
   apy: number;
   riskScore: number;
@@ -83,9 +87,14 @@ export function planConstraints(snapshot: TreasurySnapshot, approved: Candidate[
         capNote = `keeps two months of burn (${Math.round(stableReserveUsd).toLocaleString("en-US")} USD) in stablecoins`;
       }
     }
+    const limit = c.strategy.preflight ? (c.strategy.preflight.depositLimitUnlimited ? null : c.strategy.preflight.depositLimitUsd) : (c.strategy.depositLimitUsd ?? null);
+    if (limit != null && limit < maxUsd) {
+      maxUsd = limit;
+      capNote = `IXS deposit limit ${limit.toLocaleString("en-US")} ${c.asset} (maxDeposit on-chain)`;
+    }
     const maxAmount = roundAmount(c.asset, maxUsd / price, maxUsd);
     if (maxAmount * price < (c.strategy.terms?.minDepositUsd ?? 10)) continue;
-    caps.push({ strategyId: c.strategy.id, vaultName: c.strategy.vaultName, asset: c.asset, priceUsd: price, apy: c.strategy.apy ?? 0, riskScore: c.strategy.riskScore, maxAmount, maxUsd: Math.round(maxAmount * price), capNote });
+    caps.push({ strategyId: c.strategy.id, vaultName: c.strategy.vaultName, chainId: c.strategy.chainId, chainName: c.strategy.chainName, asset: c.asset, depositLimitUsd: limit, priceUsd: price, apy: c.strategy.apy ?? 0, riskScore: c.strategy.riskScore, maxAmount, maxUsd: Math.round(maxAmount * price), capNote });
   }
   if (!caps.length) return null;
   return { totalUsd: snapshot.totalUsd, idleUsd: snapshot.idleUsd, keepLiquidUsd: Math.round(keepLiquidUsd), budgetUsd: Math.round(budgetUsd), stableReserveUsd: Math.round(stableReserveUsd), minDepositUsd: MIN_DEPOSIT_USDC, caps };
@@ -155,7 +164,9 @@ export function buildPlan(snapshot: TreasurySnapshot, approved: Candidate[], use
       apy: cap.apy,
       riskScore: cap.riskScore,
       executable: cand.strategy.executable,
-      onchainAmount: cand.strategy.executable ? round(Math.min(snapshot.onchain.balances[cap.asset] ?? 0, amount), 6) : 0,
+      onchainAmount: cand.strategy.executable ? round(Math.min(snapshot.onchain.byChain?.[cap.chainId]?.balances[cap.asset] ?? snapshot.onchain.balances[cap.asset] ?? 0, amount), 6) : 0,
+      chainId: cap.chainId,
+      chainName: cap.chainName,
     });
   }
   const sum = legs.reduce((s, l) => s + l.amountUsd, 0);

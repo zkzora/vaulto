@@ -26,10 +26,15 @@ export function findOpportunities(snapshot: TreasurySnapshot, strategies: VaultS
     const available = s.status === "active" && s.availability !== "announced";
     const notes: string[] = [];
     let fit = (s.apy ?? 0) * 10 + s.riskScore * 0.4;
-    if (available && s.chainId === snapshot.chainId && s.executable) {
-      fit += 12;
-      notes.push("Executable on the connected network via IXS MCP");
+    if (available && s.executable) {
+      fit += s.chainId === snapshot.chainId ? 12 : 8;
+      notes.push(`Executable on ${s.chainName} via IXS MCP`);
     }
+    if (s.depositLimitUsd === 0) {
+      fit -= 40;
+      notes.push("Deposit limit 0 (maxDeposit on-chain)");
+    }
+    if (s.nav?.ageHours != null && s.nav.ageHours > 72) notes.push(`NAV last updated ${(s.nav.ageHours / 24).toFixed(1)} days ago`);
     if (s.requiresWhitelist) {
       fit -= 15;
       notes.push("Whitelist required");

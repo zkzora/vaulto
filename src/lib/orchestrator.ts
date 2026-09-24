@@ -1,35 +1,41 @@
 import { randomUUID } from "node:crypto";
 import { invalidateOnchain, readOnchainTreasury } from "@/lib/chain/treasury";
-import { EXPLORER, publicClient } from "@/lib/chain/client";
-import { CHAIN_NAME, LIVE_MODE_MIN_USDC, MODE_LABEL } from "@/lib/chain/config";
+import { publicClient } from "@/lib/chain/client";
+import { CHAIN_NAME, LIVE_MODE_MIN_USDC, MIN_DEPOSIT_USDC, chainInfo } from "@/lib/chain/config";
 import { getStore, normalizeAddress } from "@/lib/db";
 import { fmtAmount, fmtUsd } from "@/lib/format";
-import { checkWhitelist, getStrategies, vaultAvailability } from "@/lib/ixs/client";
+import { getStrategies } from "@/lib/ixs/client";
+import { nextCutoff, type CutoffInfo } from "@/lib/ixs/cutoff";
+import { runPreflight } from "@/lib/ixs/preflight";
+import { findRegistryVault, getRegistry } from "@/lib/ixs/registry";
+import { watchRegistry, watchStatus } from "@/lib/ixs/watch";
 import { getBtcVolatility30d, getPrices } from "@/lib/prices";
 import { scanTreasury } from "@/lib/agents/scanner";
 import { findOpportunities } from "@/lib/agents/finder";
-import { guardCandidates } from "@/lib/agents/risk";
+import { assessCandidates } from "@/lib/agents/risk";
 import { buildPlan, localLegs, planConstraints } from "@/lib/agents/planner";
 import { prepareTransaction } from "@/lib/agents/execution";
 import { buildPortfolioReport, buildRiskReport } from "@/lib/agents/monitoring";
-import { decideAllocation, narrate } from "@/lib/openserv/reasoning";
+import { decideAllocation, narrate, type VaultDecision } from "@/lib/openserv/reasoning";
 import type {
   AgentLog,
   AnalysisResult,
   PreparedTransaction,
   Recommendation,
   RecommendationStatus,
+  RejectedOption,
   TransactionRecord,
   TreasurySnapshot,
   TxStatus,
   UserPatch,
   UserProfile,
+  VaultPreflight,
   VaultStrategy,
 } from "@/lib/types";
 
 /**
- * Agent Orchestrator — coordinates the multi-agent pipeline, the IXS adapter, SERV (OpenServ)
- * reasoning and persistence. Every API route delegates here.
+ * Agent Orchestrator — coordinates the multi-agent pipeline, the IXS adapter, SERV (OpenServ) reasoning and
+ * persistence. Every API route delegates here.
  */
 
 export async function getUser(address: string) {
@@ -56,7 +62,11 @@ export interface ScanResult {
   snapshot: TreasurySnapshot;
   strategies: VaultStrategy[];
   liveOk: boolean;
+  watch: ReturnType<typeof watchStatus>;
+  cutoff: CutoffInfo;
 }
+
+const log = async (entry: Omit<AgentLog, "id" | "createdAt">) => (await getStore()).addLog(entry);
 
 export async function scan(address: string): Promise<ScanResult> {
   const store = await getStore();
@@ -69,10 +79,14 @@ export async function scan(address: string): Promise<ScanResult> {
   ]);
   const snapshot = scanTreasury({ user, onchain, prices, strategies, demoState });
   store.saveTreasurySnapshot(address, snapshot.assets).catch(() => undefined);
-  return { user, snapshot, strategies, liveOk };
-}
 
-const log = async (entry: Omit<AgentLog, "id" | "createdAt">) => (await getStore()).addLog(entry);
+  // NAV / deposit-limit watcher: log every change the Monitoring Agent sees.
+  const events = watchRegistry(await getRegistry());
+  for (const e of events) {
+    await log({ walletAddress: normalizeAddress(address), agentName: "Monitoring Agent", action: "watch", reasoning: e.message, status: e.kind === "limit" && /reopened/.test(e.message) ? "success" : "info", source: "IXS" });
+  }
+  return { user, snapshot, strategies, liveOk, watch: watchStatus(), cutoff: nextCutoff() };
+}
 
 function emptyMetrics(snapshot: TreasurySnapshot) {
   return { liquidPct: snapshot.liquidPct, blendedApy: snapshot.blendedApy, healthScore: snapshot.healthScore, idlePct: snapshot.idlePct, allocatedPct: snapshot.allocatedPct, perStrategyPct: {} };
@@ -82,7 +96,7 @@ export async function analyze(address: string): Promise<AnalysisResult> {
   const started = Date.now();
   const store = await getStore();
   const wallet = normalizeAddress(address);
-  const { user, snapshot, strategies } = await scan(wallet);
+  const { user, snapshot, strategies, cutoff } = await scan(wallet);
   const logs: AgentLog[] = [];
 
   logs.push(
@@ -90,7 +104,7 @@ export async function analyze(address: string): Promise<AnalysisResult> {
       walletAddress: wallet,
       agentName: "Treasury Scanner Agent",
       action: "scan",
-      reasoning: `Scanned ${snapshot.assets.length} assets, ${snapshot.positions.length} IXS positions${snapshot.onchain.rpcOk ? ` (${CHAIN_NAME} block ${snapshot.onchain.blockNumber})` : ""}. ${snapshot.idlePct}% of capital idle.`,
+      reasoning: `Scanned ${snapshot.assets.length} assets, ${snapshot.positions.length} IXS positions${snapshot.onchain.rpcOk ? ` (${Object.entries(snapshot.onchain.byChain ?? {}).filter(([, c]) => c.rpcOk).map(([id, c]) => `${chainInfo(Number(id)).name} block ${c.blockNumber}`).join(", ")})` : ""}. ${snapshot.idlePct}% of capital idle. Execution mode: ${snapshot.executionMode}.`,
       status: "info",
       source: "OpenServ",
     }),
@@ -102,135 +116,95 @@ export async function analyze(address: string): Promise<AnalysisResult> {
       walletAddress: wallet,
       agentName: "Opportunity Finder Agent",
       action: "find",
-      reasoning: `${fmtUsd(snapshot.idleUsd, { compact: true })} inefficient capital, opportunity score ${snapshot.opportunityScore}. ${candidates.length} IXS strategies match idle assets${candidates.some((c) => !c.available) ? ` (${candidates.filter((c) => !c.available).map((c) => c.strategy.vaultName).join(", ")} announced but not deployed)` : ""}.`,
+      reasoning: `${fmtUsd(snapshot.idleUsd, { compact: true })} inefficient capital, opportunity score ${snapshot.opportunityScore}. ${candidates.length} IXS candidates match idle assets: ${candidates.map((c) => `${c.strategy.vaultName}${c.available ? "" : " (announced, not deployed)"}`).join(", ")}.`,
       status: "info",
       source: "OpenServ",
     }),
   );
 
-  // Live checks through IXS: vault availability (Vault API) and eligibility (MCP vault_check_whitelist).
-  const [availability, whitelistEntries] = await Promise.all([
-    vaultAvailability(candidates.map((c) => c.strategy)),
-    Promise.all(
-      candidates
-        .filter((c) => c.strategy.requiresWhitelist && c.strategy.routeId)
-        .map(async (c) => [c.strategy.id, await checkWhitelist(c.strategy.routeId!, wallet)] as const),
-    ),
-  ]);
-  const whitelist = Object.fromEntries(whitelistEntries) as Record<string, boolean | null>;
+  // Pre-flight per candidate vault: deposit limit, NAV age, minimum deposit, MCP build probe, eligibility, cutoff.
+  const registry = await getRegistry();
+  const preflights: Record<string, VaultPreflight> = {};
+  await Promise.all(
+    candidates
+      .filter((c) => c.available && c.strategy.routeId)
+      .map(async (c) => {
+        const rv = findRegistryVault(registry, c.strategy.routeId);
+        if (!rv) return;
+        const p = await runPreflight(rv, wallet, c.idleUsd < MIN_DEPOSIT_USDC ? c.idleUsd : undefined);
+        preflights[c.strategy.id] = p;
+        c.strategy.preflight = p;
+      }),
+  );
 
-  const verdict = guardCandidates(candidates, snapshot, user, whitelist, availability);
+  const verdict = assessCandidates(candidates, snapshot, user, preflights);
   const constraints = planConstraints(snapshot, verdict.approved, user);
   logs.push(
     await log({
       walletAddress: wallet,
       agentName: "Risk Guardian Agent",
       action: "evaluate",
-      reasoning: constraints
-        ? `Validated policy. Budget ${fmtUsd(constraints.budgetUsd)} with ${fmtUsd(constraints.keepLiquidUsd)} kept liquid${constraints.stableReserveUsd ? ` and ${fmtUsd(constraints.stableReserveUsd)} stablecoin runway reserved` : ""}. ${verdict.rejected.filter((r) => r.tone === "warn").length} options rejected${Object.values(availability).some((a) => !a.available) ? `; ${Object.values(availability).filter((a) => !a.available).map((a) => a.detail).join("; ")}` : ""}.`
-        : `No allocation passes policy right now (${verdict.policyChecks.map((c) => `${c.label}: ${c.ok ? "ok" : "fail"}`).join(", ")}).`,
-      status: constraints ? "info" : "warn",
+      reasoning: `Pre-flight: ${verdict.assessments.map((a) => `${a.candidate.strategy.vaultName} → ${a.verdictHint}${a.preflight ? ` (limit ${a.preflight.depositLimitUnlimited ? "unlimited" : `${a.preflight.depositLimitUsd ?? "?"} USDC`}, NAV ${a.preflight.navAgeHours != null ? `${(a.preflight.navAgeHours / 24).toFixed(1)} d old` : "unknown"}, min ${a.preflight.minDepositUsd} USDC${a.preflight.whitelisted === false ? ", not whitelisted" : ""})` : " (no vault deployed)"}`).join("; ")}. ${constraints ? `Budget ${fmtUsd(constraints.budgetUsd)} with ${fmtUsd(constraints.keepLiquidUsd)} kept liquid${constraints.stableReserveUsd ? ` and ${fmtUsd(constraints.stableReserveUsd)} stablecoin runway reserved` : ""}.` : "No vault passes pre-flight and policy, so there is no budget to size."}`,
+      status: verdict.approved.length ? "info" : "warn",
       source: "OpenServ",
     }),
   );
 
-  if (!constraints) {
-    const rec: Recommendation = {
-      id: randomUUID(),
-      walletAddress: wallet,
-      title: "No allocation recommended",
-      headline: verdict.approved.length ? "Treasury is already deployed within policy. Vaulto will keep monitoring." : "No live IXS vault matches the idle assets right now. Vaulto will keep monitoring.",
-      foundLabel: `${fmtUsd(snapshot.idleUsd)} idle capital`,
-      summary: verdict.approved.length
-        ? "There is no idle capital above your liquidity floor to deploy safely. Nothing to approve."
-        : `${verdict.rejected.map((r) => `${r.option}: ${r.reason}`).join("; ") || "Nothing to allocate."} Nothing to approve.`,
-      legs: [],
-      before: emptyMetrics(snapshot),
-      after: emptyMetrics(snapshot),
-      totalUsd: 0,
-      extraMonthlyUsd: 0,
-      confidence: 90,
-      reasons: [{ title: "Policy respected.", body: verdict.policyChecks.map((c) => `${c.label}: ${c.detail}`).join(". ") }],
-      steps: [],
-      rejected: verdict.rejected,
-      status: "dismissed",
-      reasoningSource: "local",
-      durationMs: Date.now() - started,
-      createdAt: new Date().toISOString(),
-      txCount: 0,
-      feeUsd: 0,
-      idleUsd: snapshot.idleUsd,
-      context: { demoMode: snapshot.demoMode, totalUsd: snapshot.totalUsd },
-    };
-    await store.saveRecommendation(rec);
-    return { snapshot, recommendation: rec, logs, user };
-  }
-
-  // SERV reasoning decides the allocation within the Planner's caps; the Planner validates it.
-  const fallback = localLegs(constraints);
-  const decision = await decideAllocation({ user, snapshot, candidates, rejected: verdict.rejected, constraints, policyChecks: verdict.policyChecks, fallback });
-  let plan = buildPlan(snapshot, verdict.approved, user, constraints, decision.legs);
+  // SERV reasoning decides per vault; the Planner validates amounts against caps and pre-flight.
+  const fallback = constraints ? localLegs(constraints) : [];
+  const decision = await decideAllocation({ user, snapshot, assessments: verdict.assessments, constraints, policyChecks: verdict.policyChecks, fallback, fallbackDecisions: verdict.fallbackDecisions, cutoff });
+  const approvedIds = new Set(verdict.approved.map((c) => c.strategy.id));
+  const validatorNotes: string[] = [];
+  const decisions: VaultDecision[] = decision.decisions.map((d) => {
+    if (d.verdict === "allocate" && !approvedIds.has(d.strategyId)) {
+      const hint = verdict.fallbackDecisions.find((f) => f.strategyId === d.strategyId);
+      validatorNotes.push(`${d.strategyId}: SERV proposed an allocation but pre-flight is ${hint?.verdict ?? "not passing"}; validator applied ${hint?.verdict ?? "defer"}`);
+      return { ...d, verdict: hint?.verdict ?? "defer", amount: undefined, reason: `${hint?.reason ?? "pre-flight not passing"} (validator override of a SERV allocation)` };
+    }
+    return d;
+  });
+  let plan = constraints ? buildPlan(snapshot, verdict.approved, user, constraints, decisions.filter((d) => d.verdict === "allocate" && d.amount).map((d) => ({ strategyId: d.strategyId, amount: d.amount! }))) : null;
   let decisionSource = decision.source;
-  if (!plan && decision.source === "openserv") {
+  if (!plan && constraints && decision.source === "openserv" && decision.legs.length) {
     plan = buildPlan(snapshot, verdict.approved, user, constraints, fallback);
     decisionSource = "local";
+    validatorNotes.push("SERV amounts did not survive validation; deterministic sizing used within the same caps");
   }
+
+  const labelOf = (id: string) => {
+    const a = verdict.assessments.find((x) => x.candidate.strategy.id === id);
+    const s = a?.candidate.strategy ?? strategies.find((x) => x.id === id);
+    return s ? `${s.vaultName}${s.apy != null ? ` · ${s.apy.toFixed(2)}%` : ""}${a ? ` · idle ${fmtAmount(a.candidate.idleAmount, a.candidate.asset)}` : ""}` : id;
+  };
+  const rejected: RejectedOption[] = [...decisions.filter((d) => d.verdict === "reject").map((d) => ({ option: labelOf(d.strategyId), reason: d.reason, tone: "warn" as const, verdict: "reject" as const })), ...verdict.notes];
+  const deferred: RejectedOption[] = decisions.filter((d) => d.verdict === "defer").map((d) => ({ option: labelOf(d.strategyId), reason: d.reason, tone: "warn" as const, verdict: "defer" as const }));
+
   logs.push(
     await log({
       walletAddress: wallet,
       agentName: "Allocation Planner Agent",
       action: "plan",
-      reasoning: plan
-        ? `${decisionSource === "openserv" ? `SERV reasoning (${decision.model ?? "OpenServ"}) decided` : "Deterministic sizing chose"} ${plan.legs.map((l) => `${fmtAmount(l.amount, l.asset)} → ${l.vaultName}`).join(", ")} within a ${fmtUsd(constraints.budgetUsd)} budget${decision.rationale ? `: ${decision.rationale}` : "."}`
-        : "SERV reasoning declined to allocate within the current constraints.",
+      reasoning: `${decisionSource === "openserv" ? `SERV reasoning (${decision.model ?? "OpenServ"})` : "Deterministic engine"} verdicts: ${decisions.map((d) => `${strategies.find((s) => s.id === d.strategyId)?.vaultName ?? d.strategyId} → ${d.verdict.toUpperCase()}${d.verdict === "allocate" && d.amount ? ` ${d.amount.toLocaleString("en-US")}` : ""}`).join("; ")}. ${plan ? `Plan: ${plan.legs.map((l) => `${fmtAmount(l.amount, l.asset)} → ${l.vaultName}`).join(", ")} within a ${fmtUsd(constraints!.budgetUsd)} budget.` : "No allocation now."}${decision.rationale ? ` Rationale: ${decision.rationale}` : ""}${validatorNotes.length ? ` Validator: ${validatorNotes.join("; ")}.` : ""}`,
       status: plan ? "success" : "warn",
       source: "OpenServ",
     }),
   );
 
-  if (!plan) {
-    const rec: Recommendation = {
-      id: randomUUID(),
-      walletAddress: wallet,
-      title: "No allocation recommended",
-      headline: "SERV reasoning kept the treasury liquid for now.",
-      foundLabel: `${fmtUsd(snapshot.idleUsd)} idle capital`,
-      summary: decision.rationale || "The reasoning engine decided not to deploy capital under the current policy. Nothing to approve.",
-      legs: [],
-      before: emptyMetrics(snapshot),
-      after: emptyMetrics(snapshot),
-      totalUsd: 0,
-      extraMonthlyUsd: 0,
-      confidence: 85,
-      reasons: [{ title: "Reasoning outcome.", body: decision.rationale || "No allocation within constraints." }],
-      steps: [],
-      rejected: verdict.rejected,
-      status: "dismissed",
-      reasoningSource: decision.source,
-      reasoningModel: decision.model,
-      durationMs: Date.now() - started,
-      createdAt: new Date().toISOString(),
-      txCount: 0,
-      feeUsd: 0,
-      idleUsd: snapshot.idleUsd,
-      context: { demoMode: snapshot.demoMode, totalUsd: snapshot.totalUsd },
-    };
-    await store.saveRecommendation(rec);
-    return { snapshot, recommendation: rec, logs, user };
-  }
-
   const narrative = await narrate({
     user,
     snapshot,
-    candidates,
-    legs: plan.legs,
-    before: plan.before,
-    after: plan.after,
-    rejected: verdict.rejected,
-    extraMonthlyUsd: plan.extraMonthlyUsd,
-    totalUsd: plan.totalUsd,
+    assessments: verdict.assessments,
+    decisions,
+    legs: plan?.legs ?? [],
+    before: plan?.before ?? emptyMetrics(snapshot),
+    after: plan?.after ?? emptyMetrics(snapshot),
+    rejected,
+    deferred,
+    extraMonthlyUsd: plan?.extraMonthlyUsd ?? 0,
+    totalUsd: plan?.totalUsd ?? 0,
     policyChecks: verdict.policyChecks,
     decisionRationale: decision.rationale,
+    cutoff,
   });
 
   logs.push(
@@ -238,7 +212,7 @@ export async function analyze(address: string): Promise<AnalysisResult> {
       walletAddress: wallet,
       agentName: "SERV Reasoning",
       action: "explain",
-      reasoning: `${fmtUsd(plan.totalUsd)} across ${plan.legs.map((l) => l.vaultName).join(" and ")}. Explanation by ${narrative.source === "openserv" ? `OpenServ (${narrative.model ?? "platform model"})` : "Vaulto local engine"}, confidence ${narrative.confidence}%.`,
+      reasoning: `${plan ? `${fmtUsd(plan.totalUsd)} across ${plan.legs.map((l) => l.vaultName).join(" and ")}` : "No allocation"}; ${deferred.length} deferred, ${rejected.length} rejected. Memo + explanation by ${narrative.source === "openserv" ? `OpenServ (${narrative.model ?? "platform model"})` : "Vaulto local engine"}, confidence ${narrative.confidence}%.`,
       status: "success",
       source: "OpenServ",
     }),
@@ -247,28 +221,34 @@ export async function analyze(address: string): Promise<AnalysisResult> {
   const rec: Recommendation = {
     id: randomUUID(),
     walletAddress: wallet,
-    title: narrative.title,
-    headline: narrative.headline,
-    foundLabel: `${fmtUsd(snapshot.idleUsd)} inefficient capital`,
+    title: plan ? narrative.title : "No allocation right now",
+    headline: plan ? narrative.headline : narrative.headline,
+    foundLabel: `${fmtUsd(snapshot.idleUsd)} ${plan ? "inefficient" : "idle"} capital`,
     summary: narrative.summary,
-    legs: plan.legs,
-    before: plan.before,
-    after: plan.after,
-    totalUsd: plan.totalUsd,
-    extraMonthlyUsd: plan.extraMonthlyUsd,
+    legs: plan?.legs ?? [],
+    before: plan?.before ?? emptyMetrics(snapshot),
+    after: plan?.after ?? emptyMetrics(snapshot),
+    totalUsd: plan?.totalUsd ?? 0,
+    extraMonthlyUsd: plan?.extraMonthlyUsd ?? 0,
     confidence: narrative.confidence,
     reasons: narrative.reasons,
     steps: narrative.steps,
-    rejected: verdict.rejected,
-    status: "proposed",
+    rejected,
+    deferred,
+    decisions,
+    memo: narrative.memo,
+    status: plan ? "proposed" : "dismissed",
     reasoningSource: decisionSource === "openserv" || narrative.source === "openserv" ? "openserv" : "local",
     reasoningModel: narrative.model ?? decision.model,
     durationMs: Date.now() - started,
     createdAt: new Date().toISOString(),
-    txCount: plan.txCount,
-    feeUsd: plan.feeUsd,
+    txCount: plan?.txCount ?? 0,
+    feeUsd: plan?.feeUsd ?? 0,
     idleUsd: snapshot.idleUsd,
     context: { demoMode: snapshot.demoMode, totalUsd: snapshot.totalUsd },
+    preflights,
+    trace: { source: decision.source, model: decision.model ?? narrative.model, at: new Date().toISOString(), decision: { input: decision.input, output: decision.output }, narrative: narrative.input ? { input: narrative.input, output: narrative.output } : undefined },
+    cutoff,
   };
   await store.saveRecommendation(rec);
   return { snapshot, recommendation: rec, logs, user };
@@ -296,7 +276,7 @@ export async function currentRecommendation(address: string, snapshot: TreasuryS
     agentName: "Monitoring Agent",
     action: "expire",
     reasoning: demoChanged
-      ? `Recommendation "${rec.title}" expired: the demo layer was turned ${snapshot.demoMode ? "on" : "off"}, so it no longer matches the treasury. Run a new analysis.`
+      ? `Recommendation "${rec.title}" expired: the simulated treasury layer was turned ${snapshot.demoMode ? "on" : "off"}, so it no longer matches the treasury. Run a new analysis.`
       : `Recommendation "${rec.title}" expired: idle capital moved from ${fmtUsd(rec.idleUsd)} to ${fmtUsd(snapshot.idleUsd)}. Run a new analysis.`,
     status: "warn",
     source: "OpenServ",
@@ -325,7 +305,7 @@ export async function prepare(address: string, recommendationId: string, simulat
   const wallet = normalizeAddress(address);
   const rec = await store.getRecommendation(recommendationId);
   if (!rec || rec.walletAddress !== wallet) throw new Error("recommendation not found");
-  if (!rec.legs.length) throw new Error("nothing to execute");
+  if (!rec.legs.length) throw new Error("nothing to execute: every vault was deferred or rejected");
   invalidateOnchain(wallet);
   const { user, snapshot, strategies } = await scan(wallet);
   if (!snapshot.onchain.rpcOk) {
@@ -334,11 +314,11 @@ export async function prepare(address: string, recommendationId: string, simulat
   const prepared = await prepareTransaction(rec, strategies, user, snapshot, { forceSimulated: simulate });
   await store.savePrepared(prepared);
   await store.updateRecommendationStatus(rec.id, "approved");
-  const built = prepared.steps.every((s) => s.builtBy === "ixs-mcp") ? "IXS MCP (vault_build_request_deposit)" : "local ERC-4626 encoder (IXS MCP unreachable)";
+  const built = prepared.steps.every((s) => s.builtBy === "ixs-mcp") ? "IXS MCP (vault_build_request_deposit)" : "direct vault calldata (IXS MCP unreachable)";
   const sims = prepared.steps.map((s) => s.simulation).filter((s): s is NonNullable<typeof s> => Boolean(s));
   const simText = sims.length
     ? sims.every((s) => s.ok)
-      ? `eth_call + state override passed (${sims.map((s) => (s.expectedShares != null ? `expected ${s.expectedShares.toFixed(4)} ${s.shareSymbol ?? "shares"}` : s.requestId ? `deposit request #${s.requestId}` : "approve ok")).join("; ")})`
+      ? `eth_call + state override passed (${sims.map((s) => (s.expectedShares != null ? `expected ${s.expectedShares.toFixed(4)} ${s.shareSymbol ?? "shares"}` : s.requestId ? `deposit request #${s.requestId} accepted` : "approve ok")).join("; ")})`
       : `simulation reverted: ${sims.find((s) => !s.ok)?.revertReason}`
     : "";
   await log({
@@ -347,8 +327,8 @@ export async function prepare(address: string, recommendationId: string, simulat
     action: "prepare",
     reasoning:
       prepared.executionMode === "live"
-        ? `${prepared.steps.length} unsigned transaction${prepared.steps.length > 1 ? "s" : ""} built via ${built} for ${CHAIN_NAME} (${MODE_LABEL.live}: wallet holds ≥ ${LIVE_MODE_MIN_USDC} USDC). Awaiting wallet signature.`
-        : `${prepared.steps.length} calldata step${prepared.steps.length > 1 ? "s" : ""} built via ${built}; ${prepared.label}: ${simText || "no simulation result"}. No transaction is sent.`,
+        ? `${prepared.steps.length} unsigned transaction${prepared.steps.length > 1 ? "s" : ""} built via ${built} (${prepared.label}: wallet holds ≥ ${LIVE_MODE_MIN_USDC} USDC on that chain, hard cap per transaction applies). Awaiting wallet signature.`
+        : `${prepared.steps.length} calldata step${prepared.steps.length > 1 ? "s" : ""} built via ${built}; ${prepared.label}: ${simText || "no simulation result"}. No transaction is sent.${prepared.notes.length ? ` Notes: ${prepared.notes.join("; ")}.` : ""}`,
     status: sims.length && !sims.every((s) => s.ok) ? "warn" : "success",
     source: "IXS",
   });
@@ -370,10 +350,13 @@ export async function finalize(address: string, preparedId: string, results: Ste
   const rec = await store.getRecommendation(prepared.recommendationId);
   const demo = await store.getDemoState(wallet);
   const records: TransactionRecord[] = [];
+  const cutoff = nextCutoff();
 
   for (const step of prepared.steps) {
     const r = results.find((x) => x.index === step.index);
     if (!r) continue;
+    const asyncRequest = step.kind === "requestDeposit";
+    const settlementNote = asyncRequest && r.status === "confirmed" ? ` · Request submitted — pending operator settlement (next cutoff ${cutoff.nextCutoffSgt}, est. settlement ${cutoff.estimatedSettlementSgt})` : "";
     const record: TransactionRecord = {
       id: randomUUID(),
       walletAddress: wallet,
@@ -382,12 +365,12 @@ export async function finalize(address: string, preparedId: string, results: Ste
       amountUsd: step.amountUsd,
       status: r.status,
       strategy: step.vaultName,
-      description: step.description,
+      description: `${step.description}${settlementNote}`,
       chainId: step.chainId,
-      explorerUrl: r.hash && step.mode === "onchain" ? `${EXPLORER}/tx/${r.hash}` : undefined,
+      explorerUrl: r.hash && step.mode === "onchain" ? `${chainInfo(step.chainId).explorer}/tx/${r.hash}` : undefined,
       createdAt: new Date().toISOString(),
       kind: step.kind,
-      label: step.mode === "onchain" ? MODE_LABEL.live : prepared.label,
+      label: step.label ?? prepared.label,
       simulation: step.simulation,
     };
     records.push(await store.saveTransaction(record));
@@ -397,11 +380,12 @@ export async function finalize(address: string, preparedId: string, results: Ste
     }
   }
   await store.setDemoState(wallet, demo);
-  const lastHash = [...results].reverse().find((r) => r.status === "confirmed" && r.hash?.startsWith("0x") && r.hash.length === 66)?.hash;
+  const lastConfirmed = [...prepared.steps].reverse().find((s) => results.find((r) => r.index === s.index && r.status === "confirmed" && r.hash?.startsWith("0x") && r.hash.length === 66));
   let confirmedBlock: number | undefined;
-  if (lastHash) {
+  if (lastConfirmed) {
+    const hash = results.find((r) => r.index === lastConfirmed.index)!.hash as `0x${string}`;
     try {
-      confirmedBlock = Number((await publicClient().getTransactionReceipt({ hash: lastHash as `0x${string}` })).blockNumber);
+      confirmedBlock = Number((await publicClient(lastConfirmed.chainId).getTransactionReceipt({ hash })).blockNumber);
     } catch {
       confirmedBlock = undefined;
     }
@@ -419,7 +403,7 @@ export async function finalize(address: string, preparedId: string, results: Ste
     action: "execute",
     reasoning: failed
       ? `Execution incomplete: ${results.filter((r) => r.status === "failed").length} step(s) failed or were rejected in the wallet.`
-      : `${confirmedOnchain.length ? `${confirmedOnchain.length} deposit${confirmedOnchain.length > 1 ? "s" : ""} confirmed on ${CHAIN_NAME}` : ""}${confirmedOnchain.length && simulated.length ? "; " : ""}${simulated.length ? `${simulated.length} step${simulated.length > 1 ? "s" : ""} ${prepared.label} (eth_call + state override, no funds moved)` : ""}. ${fmtUsd(prepared.summary.amountUsd)} allocated.`,
+      : `${confirmedOnchain.length ? `${confirmedOnchain.length} ${confirmedOnchain.some((r) => r.kind === "requestDeposit") ? "deposit request(s) submitted (pending operator settlement)" : "deposit(s) confirmed"} on-chain` : ""}${confirmedOnchain.length && simulated.length ? "; " : ""}${simulated.length ? `${simulated.length} step${simulated.length > 1 ? "s" : ""} ${prepared.label} (eth_call + state override, no funds moved)` : ""}. ${fmtUsd(prepared.summary.amountUsd)} allocated.`,
     status: failed ? "warn" : "success",
     source: "IXS",
   });
@@ -428,7 +412,7 @@ export async function finalize(address: string, preparedId: string, results: Ste
       walletAddress: wallet,
       agentName: "Monitoring Agent",
       action: "monitor",
-      reasoning: `Now tracking ${rec.legs.map((l) => `${l.vaultName} (${fmtAmount(l.amount, l.asset)})`).join(" and ")}. Expected +${fmtUsd(rec.extraMonthlyUsd)} / month; health ${rec.before.healthScore} → ${rec.after.healthScore}.`,
+      reasoning: `Now tracking ${rec.legs.map((l) => `${l.vaultName} (${fmtAmount(l.amount, l.asset)})`).join(" and ")}. Expected +${fmtUsd(rec.extraMonthlyUsd)} / month; health ${rec.before.healthScore} → ${rec.after.healthScore}. Watching NAV updates and deposit limits on every scan.`,
       status: "info",
       source: "OpenServ",
     });
@@ -437,9 +421,9 @@ export async function finalize(address: string, preparedId: string, results: Ste
 }
 
 export async function riskReport(address: string) {
-  const { user, snapshot, strategies } = await scan(address);
+  const { user, snapshot, strategies, watch } = await scan(address);
   const [rec, btcVol] = await Promise.all([currentRecommendation(address, snapshot), getBtcVolatility30d()]);
-  return { report: buildRiskReport(snapshot, user, rec, btcVol, strategies), snapshot, recommendation: rec };
+  return { report: buildRiskReport(snapshot, user, rec, btcVol, strategies, watch), snapshot, recommendation: rec };
 }
 
 export async function portfolioReport(address: string, periodDays: number) {

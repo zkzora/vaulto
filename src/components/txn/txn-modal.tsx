@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { fmtUsd, shortAddress } from "@/lib/format";
 import type { PreparedTransaction, StepSimulation } from "@/lib/types";
-import { CHAIN_NAME, EXPLORER, LIVE_MODE_MIN_USDC } from "@/lib/chain/config";
+import { LIVE_MODE_MIN_USDC, chainInfo } from "@/lib/chain/config";
 import { Icons, IxsMark, Pill, Skeleton, cx } from "@/components/ui";
 import type { StepState } from "./txn-provider";
 
@@ -14,6 +14,7 @@ interface Props {
   steps: StepState[];
   executing: boolean;
   isDemo: boolean;
+  cutoff?: { nextCutoffSgt: string; estimatedSettlementSgt: string; hoursUntilCutoff: number } | null;
   onClose: () => void;
   onExecute: () => void;
   onSimulate: () => void;
@@ -40,11 +41,11 @@ function simText(sim: StepSimulation | undefined, kind: string) {
         {sim.gasEstimate ? ` · ~${sim.gasEstimate.toLocaleString("en-US")} gas` : ""}
       </span>
     );
-  if (sim.requestId) return <span className="text-green">deposit request #{sim.requestId} accepted (async vault)</span>;
+  if (sim.requestId) return <span className="text-green">deposit request #{sim.requestId} accepted · would be pending operator settlement</span>;
   return <span className="text-green">ok</span>;
 }
 
-export function TxnModal({ prepared, loading, error, steps, executing, isDemo, onClose, onExecute, onSimulate }: Props) {
+export function TxnModal({ prepared, loading, error, steps, executing, isDemo, cutoff, onClose, onExecute, onSimulate }: Props) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -55,12 +56,13 @@ export function TxnModal({ prepared, loading, error, steps, executing, isDemo, o
   const live = prepared?.mode === "onchain";
   const started = steps.some((st) => st.status !== "idle");
   const riskTone = s?.riskLevel === "Low" ? "green" : s?.riskLevel === "Medium" ? "amber" : "red";
-  const simFailed = prepared?.steps.some((st) => st.simulation && !st.simulation.ok) ?? false;
+  const hasAsync = prepared?.steps.some((st) => st.kind === "requestDeposit") ?? false;
+  const chains = [...new Set((prepared?.steps ?? []).map((st) => chainInfo(st.chainId).name))].join(" + ");
 
   return (
     <>
       <div className="fixed inset-0 z-50 bg-navy/45" onClick={onClose} />
-      <div role="dialog" aria-modal className="rise fixed left-1/2 top-1/2 z-[60] max-h-[92vh] w-[min(94vw,580px)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[20px] bg-white shadow-modal">
+      <div role="dialog" aria-modal className="rise fixed left-1/2 top-1/2 z-[60] max-h-[92vh] w-[min(94vw,600px)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-[20px] bg-white shadow-modal">
         <div className="flex items-start justify-between px-7 pt-6">
           <div>
             <div className="eyebrow">{loading ? "Preparing" : live ? "Review transaction" : "Review simulation"}</div>
@@ -90,13 +92,11 @@ export function TxnModal({ prepared, loading, error, steps, executing, isDemo, o
 
         {prepared && s && !loading && (
           <>
-            <div className="mx-7 mt-4 flex items-center gap-2">
+            <div className="mx-7 mt-4 flex flex-wrap items-center gap-2">
               <Pill tone={live ? "green" : prepared.rpcKind === "fork" ? "blue" : "amber"} className="h-6 px-2.5 text-[12px]">
                 {prepared.label}
               </Pill>
-              <span className="text-[12px] text-muted">
-                {live ? "real deposit · your wallet signs" : "eth_call + state override · nothing is sent"}
-              </span>
+              <span className="text-[12px] text-muted">{live ? `real ${hasAsync ? "deposit request" : "deposit"} on ${chains} · your wallet signs` : "eth_call + state override · nothing is sent"}</span>
             </div>
 
             <div className="mx-7 mt-3 flex items-center gap-4 rounded-[14px] bg-canvas px-5 py-4">
@@ -135,6 +135,13 @@ export function TxnModal({ prepared, loading, error, steps, executing, isDemo, o
                   {s.rail}
                 </span>
               </Row>
+              {hasAsync && cutoff && (
+                <Row label="Settlement">
+                  <span className="text-[13px]">
+                    async ERC-7540 · next cutoff {cutoff.nextCutoffSgt} (in {cutoff.hoursUntilCutoff} h) · est. settlement {cutoff.estimatedSettlementSgt}
+                  </span>
+                </Row>
+              )}
               <Row label="Network fee">{s.feeUsd > 0 ? `≈ ${fmtUsd(s.feeUsd, { decimals: 2 })}` : "— (simulation)"}</Row>
             </div>
 
@@ -144,6 +151,7 @@ export function TxnModal({ prepared, loading, error, steps, executing, isDemo, o
                 const state = steps.find((x) => x.index === st.index);
                 const status = state?.status ?? "idle";
                 const sim = st.simulation;
+                const chain = chainInfo(st.chainId);
                 return (
                   <div key={st.index} className="flex items-start gap-3 border-b border-line-3 px-4 py-2.5 text-[13px] last:border-0">
                     <span
@@ -158,16 +166,17 @@ export function TxnModal({ prepared, loading, error, steps, executing, isDemo, o
                       <div className="truncate font-medium text-ink">{st.description}</div>
                       <div className="text-[11px] leading-relaxed text-faint">
                         {st.mode === "onchain"
-                          ? `${CHAIN_NAME} · ${st.builtBy === "ixs-mcp" ? "calldata by IXS MCP" : "ERC-4626 calldata (IXS MCP unreachable)"} · to ${shortAddress(st.to)}`
-                          : `${prepared.label} · eth_call${sim?.overrides.length ? ` with state override (${sim.overrides.join(", ")})` : ""} · to ${shortAddress(st.to)}${sim?.block ? ` · block ${sim.block.toLocaleString("en-US")}` : ""}`}
+                          ? `${chain.name} · ${st.builtBy === "ixs-mcp" ? "calldata by IXS MCP" : "direct vault calldata (IXS MCP unreachable)"} · to ${shortAddress(st.to)}`
+                          : `${st.label ?? prepared.label} · eth_call${sim?.overrides.length ? ` with state override (${sim.overrides.join(", ")})` : ""} · to ${shortAddress(st.to)}${sim?.block ? ` · block ${sim.block.toLocaleString("en-US")}` : ""}`}
                         {status === "signing" && " · confirm in your wallet"}
                         {status === "pending" && st.mode === "onchain" && " · waiting for confirmation"}
+                        {status === "confirmed" && st.kind === "requestDeposit" && " · Request submitted — pending operator settlement"}
                         {status === "failed" && state?.error && ` · ${state.error}`}
                       </div>
                       {st.mode === "simulated" && <div className="mt-0.5 text-[12px] font-medium">{simText(sim, st.kind)}</div>}
                     </div>
                     {state?.hash && st.mode === "onchain" && (
-                      <a href={`${EXPLORER}/tx/${state.hash}`} target="_blank" rel="noreferrer" className="text-blue-deep">
+                      <a href={`${chain.explorer}/tx/${state.hash}`} target="_blank" rel="noreferrer" className="text-blue-deep">
                         {Icons.external}
                       </a>
                     )}
@@ -182,8 +191,8 @@ export function TxnModal({ prepared, loading, error, steps, executing, isDemo, o
               <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-blue text-white">{Icons.check}</span>
               <span className="text-[13px] leading-relaxed text-body">
                 {live
-                  ? `I understand my wallet will ask me to sign ${prepared.steps.length} transaction${prepared.steps.length > 1 ? "s" : ""} on ${CHAIN_NAME} (real USDC into the IX High Yield Bond vault). Vaulto never holds my funds or keys; nothing moves without my signature.`
-                  : `${prepared.label}: the approve and deposit calldata built by the IXS MCP run through eth_call with a state override (USDC balance + allowance) against the real IX High Yield Bond vault. No transaction is sent and no funds move.${isDemo ? " Connect a wallet holding" : " Hold"} ≥ ${LIVE_MODE_MIN_USDC} USDC on ${CHAIN_NAME} to switch to Live mode.`}
+                  ? `I understand my wallet will ask me to sign ${prepared.steps.length} transaction${prepared.steps.length > 1 ? "s" : ""} on ${chains} (real USDC into the IX High Yield Bond vault; approvals are for the exact amount). ${hasAsync ? "An async request is not a deposit until the IXS operator settles it. " : ""}Vaulto never holds my funds or keys; nothing moves without my signature.`
+                  : `${prepared.label}: the approve and deposit calldata built by the IXS MCP run through eth_call with a state override (USDC balance + allowance) against the real IX High Yield Bond vault. No transaction is sent and no funds move.${isDemo ? " Connect a wallet holding" : " Hold"} ≥ ${LIVE_MODE_MIN_USDC} USDC on the vault's chain to switch to Live mode.`}
               </span>
             </div>
 
@@ -196,9 +205,9 @@ export function TxnModal({ prepared, loading, error, steps, executing, isDemo, o
                   Simulate first
                 </button>
               )}
-              <button className={cx("btn btn-primary h-12 rounded-xl px-5 text-[15px]", !live && "ml-auto")} onClick={onExecute} disabled={executing || started || (!live && simFailed && false)}>
+              <button className={cx("btn btn-primary h-12 rounded-xl px-5 text-[15px]", !live && "ml-auto")} onClick={onExecute} disabled={executing || started}>
                 {executing && <span className="spinner" />}
-                {executing ? (live ? "Executing…" : "Simulating…") : live ? "Execute transaction" : "Run simulation"}
+                {executing ? (live ? "Executing…" : "Simulating…") : live ? "Approve & execute (Live)" : "Approve & execute (Simulate)"}
               </button>
             </div>
           </>

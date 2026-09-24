@@ -1,19 +1,22 @@
 import { randomUUID } from "node:crypto";
 import { parseUnits } from "viem";
 import { simulateDepositSteps } from "@/lib/chain/simulate";
-import { MODE_LABEL, type ExecutionMode } from "@/lib/chain/config";
+import { rpcKind } from "@/lib/chain/client";
+import { chainInfo, modeLabel, type ExecutionMode } from "@/lib/chain/config";
+import { env } from "@/lib/env";
 import { buildDepositSteps } from "@/lib/ixs/client";
 import { fmtAmount, fmtUsd, shortAddress } from "@/lib/format";
 import type { PreparedTransaction, Recommendation, TxStep, UserProfile, VaultStrategy, TreasurySnapshot } from "@/lib/types";
 
 /**
- * Execution Agent — turns an approved recommendation into a transaction workflow against the real IXS vault.
+ * Execution Agent — turns an approved recommendation into a transaction workflow against the real IXS vaults.
  *
- * - Every leg is built as approve + deposit calldata by the IXS MCP (asset units read from the contract).
- * - Live mode (wallet holds >= 100 USDC): the steps are returned unsigned for the wallet to sign on BNB Chain.
- * - Simulated mode: the same calldata is run through eth_call with a state override (balance + allowance)
- *   against the vault on BNB mainnet (or a local Anvil fork), and the expected shares / revert reason are
- *   attached to each step. Nothing is signed here and nothing moves.
+ * - Every leg is built as approve (exact amount) + deposit / requestDeposit calldata by the IXS MCP.
+ * - Legs whose pre-flight did not pass (deferred / rejected) are never built.
+ * - Live mode (wallet holds >= 100 USDC on the vault's chain): steps are returned unsigned for the wallet to sign,
+ *   capped at MAX_LIVE_TX_USDC per transaction.
+ * - Simulated mode: the same calldata runs through eth_call with a state override (balance + allowance) against the
+ *   vault on that chain's mainnet (or a local Anvil fork); expected shares / revert reason are attached.
  */
 export async function prepareTransaction(
   rec: Recommendation,
@@ -23,11 +26,10 @@ export async function prepareTransaction(
   opts: { forceSimulated: boolean },
 ): Promise<PreparedTransaction> {
   const byId = new Map(strategies.map((s) => [s.id, s]));
-  const mode: ExecutionMode = opts.forceSimulated ? "simulated" : snapshot.executionMode;
-  const rpcKind = snapshot.onchain.rpcKind;
-  const label = mode === "live" ? MODE_LABEL.live : rpcKind === "fork" ? MODE_LABEL.fork : MODE_LABEL.simulated;
   const steps: TxStep[] = [];
   const notes: string[] = [];
+  const modes = new Set<ExecutionMode>();
+  const labels = new Set<string>();
   let index = 0;
 
   for (const leg of rec.legs) {
@@ -36,22 +38,39 @@ export async function prepareTransaction(
       notes.push(`${leg.vaultName}: not executable (no live IXS vault)`);
       continue;
     }
-    const price = snapshot.prices[leg.asset] ?? 1;
-    const balance = snapshot.onchain.balances[leg.asset] ?? 0;
-    // Live mode can only deposit what the wallet really holds; simulation runs the full recommended amount.
-    const amount = mode === "live" ? Math.min(leg.amount, balance) : leg.amount;
-    if (amount <= 0) {
-      notes.push(`${leg.vaultName}: wallet holds no ${leg.asset}`);
+    const preflight = rec.preflights?.[s.id];
+    if (preflight && preflight.verdict !== "allocate") {
+      notes.push(`${leg.vaultName}: pre-flight ${preflight.verdict} (${preflight.checks.filter((c) => !c.ok && c.severity !== "info").map((c) => c.label).join(", ")}); nothing built`);
       continue;
     }
-    const built = await buildDepositSteps(s, user.walletAddress, amount, { allowLocalFallback: mode === "simulated" });
+    const chain = chainInfo(s.chainId);
+    const kind = rpcKind(s.chainId);
+    const balanceOnChain = snapshot.onchain.byChain?.[s.chainId]?.balances[leg.asset] ?? 0;
+    const liveHere = !opts.forceSimulated && snapshot.liveChainIds.includes(s.chainId) && balanceOnChain > 0;
+    const mode: ExecutionMode = liveHere ? "live" : "simulated";
+    const price = snapshot.prices[leg.asset] ?? 1;
+    let amount = mode === "live" ? Math.min(leg.amount, balanceOnChain) : leg.amount;
+    if (mode === "live" && amount > env.maxLiveTxUsdc / price) {
+      amount = Math.floor(env.maxLiveTxUsdc / price);
+      notes.push(`${leg.vaultName}: capped at the ${env.maxLiveTxUsdc.toLocaleString("en-US")} USDC per-transaction hard cap (MAX_LIVE_TX_USDC)`);
+    }
+    if (amount <= 0) {
+      notes.push(`${leg.vaultName}: wallet holds no ${leg.asset} on ${chain.name}`);
+      continue;
+    }
+    const label = modeLabel(mode, s.chainId, kind);
+    modes.add(mode);
+    labels.add(label);
+
+    const built = await buildDepositSteps(s, user.walletAddress, amount, { preflightOk: preflight?.verdict === "allocate" || !preflight, simulation: mode === "simulated" });
     if (built.note) notes.push(built.note);
-    const legSteps: TxStep[] = built.steps.map((st) => ({ ...st, index: index++, mode: mode === "live" ? "onchain" : "simulated", amountUsd: Math.round(st.amount * price), note: built.note }));
+    const legSteps: TxStep[] = built.steps.map((st) => ({ ...st, index: index++, mode: mode === "live" ? "onchain" : "simulated", amountUsd: Math.round(st.amount * price), note: built.note, label }));
 
     if (mode === "simulated") {
       const units = parseUnits(amount.toFixed(Math.min(s.assetDecimals, 6)), s.assetDecimals);
       try {
         const sims = await simulateDepositSteps({
+          chainId: s.chainId,
           owner: user.walletAddress as `0x${string}`,
           steps: legSteps,
           asset: { address: s.assetAddress as `0x${string}`, decimals: s.assetDecimals, symbol: s.asset },
@@ -71,13 +90,16 @@ export async function prepareTransaction(
 
   if (!steps.length) throw new Error(`Nothing to execute: ${notes.join("; ") || "no executable leg"}`);
 
+  const mode: ExecutionMode = modes.has("live") && !modes.has("simulated") ? "live" : "simulated";
+  const label = [...labels].join(" + ");
+  const chainIds = [...new Set(steps.map((s) => s.chainId))];
   const scores = rec.legs.map((l) => l.riskScore);
   const minScore = Math.min(...scores);
   const destination = rec.legs.map((l) => l.vaultName).join(" + ");
   const destAddress = strategies.find((s) => s.id === rec.legs[0]?.strategyId)?.contractAddress ?? "";
   const amountUsd = steps.filter((s) => s.kind !== "approve").reduce((sum, s) => sum + s.amountUsd, 0);
   const amountLabel = steps.filter((s) => s.kind !== "approve").map((s) => fmtAmount(s.amount, s.asset)).join(" + ");
-  const builtBy = steps.every((s) => s.builtBy === "ixs-mcp") ? "IXS MCP calldata" : "ERC-4626 calldata (IXS MCP unreachable)";
+  const builtBy = steps.every((s) => s.builtBy === "ixs-mcp") ? "IXS MCP calldata" : "direct vault calldata (IXS MCP unreachable)";
 
   return {
     id: randomUUID(),
@@ -85,7 +107,7 @@ export async function prepareTransaction(
     walletAddress: user.walletAddress,
     steps,
     summary: {
-      from: user.demoMode ? `${user.daoName} Treasury` : "Connected wallet",
+      from: user.demoMode ? `${user.daoName} Treasury (simulated treasury)` : "Connected wallet",
       fromAddress: user.walletAddress,
       destination,
       destinationAddress: destAddress ? `IXS vault · ${shortAddress(destAddress)}` : "IXS vault",
@@ -98,12 +120,12 @@ export async function prepareTransaction(
       liquidityAfterPct: rec.after.liquidPct,
       liquidityFloorPct: user.liquidityFloorPct,
       rail: `${builtBy} · ${label}`,
-      feeUsd: mode === "live" ? Math.round(steps.length * 0.02 * 100) / 100 : 0,
+      feeUsd: mode === "live" ? Math.round(steps.filter((s) => s.mode === "onchain").length * 0.02 * 100) / 100 : 0,
     },
     createdAt: new Date().toISOString(),
     mode: mode === "live" ? "onchain" : "simulated",
     executionMode: mode,
-    rpcKind,
+    rpcKind: rpcKind(chainIds[0] ?? 56),
     label,
     notes,
   };

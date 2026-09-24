@@ -10,6 +10,7 @@ import { api } from "@/lib/client-api";
 import { fmtUsd } from "@/lib/format";
 import type { PreparedTransaction, TxStatus } from "@/lib/types";
 import { useVaultoAccount } from "@/hooks/use-account";
+import { useTreasury } from "@/hooks/use-vaulto";
 import { TxnModal } from "./txn-modal";
 import { Toast, type ToastData } from "./toast";
 
@@ -25,6 +26,7 @@ const Ctx = createContext<TxnContext | null>(null);
 
 export function TxnProvider({ children }: { children: ReactNode }) {
   const account = useVaultoAccount();
+  const treasury = useTreasury();
   const router = useRouter();
   const qc = useQueryClient();
   const publicClient = usePublicClient({ chainId: CHAIN_ID });
@@ -161,9 +163,10 @@ export function TxnProvider({ children }: { children: ReactNode }) {
       setVisible(false);
       setPrepared(null);
       const onchain = results.some((r) => r.status === "confirmed");
+      const asyncRequest = prepared.steps.some((s) => s.kind === "requestDeposit" && results.find((r) => r.index === s.index)?.status === "confirmed");
       setToast({
-        title: onchain ? `Deposit confirmed on ${CHAIN_NAME} via IXS` : `${prepared.label} · simulation passed`,
-        body: `Allocate ${fmtUsd(prepared.summary.amountUsd)} → ${prepared.summary.destination}${onchain ? " · view on BscScan from Activity" : " · eth_call + state override, no funds moved · logged in Activity"}`,
+        title: onchain ? (asyncRequest ? "Request submitted — pending operator settlement" : `Deposit confirmed on ${CHAIN_NAME} via IXS`) : `${prepared.label} · simulation passed`,
+        body: `Allocate ${fmtUsd(prepared.summary.amountUsd)} → ${prepared.summary.destination}${onchain ? " · hashes in Activity" : " · eth_call + state override, no funds moved · logged in Activity"}`,
       });
       router.push("/app");
       setTimeout(() => setToast(null), 7000);
@@ -191,6 +194,7 @@ export function TxnProvider({ children }: { children: ReactNode }) {
           onExecute={() => void execute()}
           onSimulate={() => recId && void load(recId, true)}
           isDemo={account.isDemo}
+          cutoff={treasury.data?.cutoff ?? null}
         />
       )}
       {toast && <Toast data={toast} onClose={() => setToast(null)} />}

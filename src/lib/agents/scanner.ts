@@ -172,7 +172,8 @@ export function scanTreasury(input: ScanInput): TreasurySnapshot {
     idlePct,
   });
   const stableSymbol = strategies.find((s) => s.executable)?.asset ?? "USDC";
-  const executionMode: TreasurySnapshot["executionMode"] = user.walletAddress.toLowerCase() !== DEMO_ADDRESS && (onchain.balances[stableSymbol] ?? 0) >= LIVE_MODE_MIN_USDC ? "live" : "simulated";
+  const liveChainIds = user.walletAddress.toLowerCase() === DEMO_ADDRESS ? [] : Object.entries(onchain.byChain ?? {}).filter(([, c]) => (c.balances[stableSymbol] ?? 0) >= LIVE_MODE_MIN_USDC).map(([id]) => Number(id));
+  const executionMode: TreasurySnapshot["executionMode"] = liveChainIds.length ? "live" : "simulated";
   const bestApy = strategies.filter((s) => s.apy != null && s.status === "active").reduce((m, s) => Math.max(m, s.apy ?? 0), 0);
   const opportunityScore = totalUsd > 0 ? computeOpportunity({ idlePct, idleDays, bestApy }) : 0;
 
@@ -202,5 +203,6 @@ export function scanTreasury(input: ScanInput): TreasurySnapshot {
     maxExposure,
     targetAllocationPct: targetAllocationFor(user.riskProfile),
     executionMode,
+    liveChainIds,
   };
 }

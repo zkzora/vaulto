@@ -1,9 +1,11 @@
 import { env } from "@/lib/env";
+import { recordEvidence } from "@/lib/evidence";
 
 /**
  * IXS MCP client (JSON-RPC 2.0 over Streamable HTTP, production endpoint).
  * Tools used: vault_get, vault_check_whitelist, vault_build_request_deposit, vault_request_status.
  * The MCP only builds unsigned calldata; nothing is ever signed or submitted server-side.
+ * Every call and its response is written to the evidence log.
  */
 
 const TIMEOUT_MS = 8_000;
@@ -34,6 +36,7 @@ function parseSse<T>(text: string): JsonRpcResult<T> | null {
 export async function mcpCall<T = McpToolResult>(tool: string, args: Record<string, unknown>): Promise<T> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  const started = Date.now();
   try {
     const res = await fetch(env.ixsMcpUrl, {
       method: "POST",
@@ -46,7 +49,13 @@ export async function mcpCall<T = McpToolResult>(tool: string, args: Record<stri
     const parsed: JsonRpcResult<T> | null = text.trim().startsWith("{") ? (JSON.parse(text) as JsonRpcResult<T>) : parseSse<T>(text);
     if (!parsed) throw new Error("IXS MCP: empty response");
     if (parsed.error) throw new Error(`IXS MCP ${tool}: ${parsed.error.message}`);
-    return parsed.result as T;
+    const result = parsed.result as T;
+    const r = result as unknown as McpToolResult;
+    recordEvidence({ kind: "mcp", label: `IXS MCP · ${tool}`, request: { url: env.ixsMcpUrl, tool, arguments: args }, response: r?.structuredContent ?? r?.content?.find((c) => c.type === "text")?.text ?? result, ok: !r?.isError, durationMs: Date.now() - started });
+    return result;
+  } catch (e) {
+    recordEvidence({ kind: "mcp", label: `IXS MCP · ${tool}`, request: { url: env.ixsMcpUrl, tool, arguments: args }, response: { error: e instanceof Error ? e.message : String(e) }, ok: false, durationMs: Date.now() - started });
+    throw e;
   } finally {
     clearTimeout(t);
   }
@@ -72,13 +81,14 @@ export type Settlement = "sync" | "async-erc7540";
 export interface McpVaultGet {
   ok?: boolean;
   settlement?: Settlement | "queued";
+  pricing?: { totalAssets?: string; totalSupply?: string; pricePerShare?: string };
   vault?: Record<string, unknown>;
 }
 
 const vaultGetCache = new Map<string, { at: number; value: McpVaultGet | null }>();
 const VAULT_GET_TTL = 10 * 60_000;
 
-/** `vault_get`: metadata plus the settlement kind (sync vs async ERC-7540). Cached 10 minutes. */
+/** `vault_get`: metadata, pricing and the settlement kind (sync vs async ERC-7540). Cached 10 minutes. */
 export async function vaultGet(vaultId: string): Promise<McpVaultGet | null> {
   const hit = vaultGetCache.get(vaultId);
   if (hit && Date.now() - hit.at < VAULT_GET_TTL) return hit.value;
@@ -127,10 +137,23 @@ export async function buildDepositRequest(vaultId: string, owner: string, units:
   return plan;
 }
 
-/** `vault_request_status`: pending / claimable deposit and redeem requests of a wallet on an async vault. */
+/**
+ * Probe: would the MCP build a deposit of `units` for `owner`? Returns the refusal text when it will not
+ * (e.g. "Deposit amount exceeds the current vault limit of 0 USDC."). Used by the pre-flight checks.
+ */
+export async function probeDeposit(vaultId: string, owner: string, units: bigint): Promise<{ ok: true; settlement?: Settlement } | { ok: false; reason: string }> {
+  try {
+    const plan = await buildDepositRequest(vaultId, owner, units);
+    return { ok: true, settlement: plan.settlement };
+  } catch (e) {
+    return { ok: false, reason: (e instanceof Error ? e.message : String(e)).replace(/^IXS MCP:\s*/, "") };
+  }
+}
+
+/** `vault_request_status` (upstream currently answers with a subgraph schema error; callers fall back to the subgraph). */
 export async function requestStatus(vaultId: string, wallet: string): Promise<unknown> {
   try {
-    const r = await mcpCall("vault_request_status", { vaultId, walletAddress: wallet });
+    const r = await mcpCall("vault_request_status", { vaultId, ownerAddress: wallet });
     return r.isError ? { error: mcpErrorText(r) } : (unwrap<unknown>(r) ?? r);
   } catch (e) {
     return { error: e instanceof Error ? e.message : "request status unavailable" };

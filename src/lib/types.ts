@@ -85,9 +85,11 @@ export interface OnchainReadout {
   nativeBalance: number;
   /** Wallet balances keyed by the asset symbol read from the vault's asset() (USDC). */
   balances: Record<string, number>;
+  /** Per-chain figures (Live mode needs the balance on the vault's chain). */
+  byChain: Record<number, { rpcOk: boolean; rpcKind: "mainnet" | "fork"; blockNumber: number | null; native: number; nativeSymbol: string; balances: Record<string, number>; error?: string }>;
   /** IXS vault share positions, in asset units. */
-  positions: { strategyId: string; shares: number; assets: number }[];
-  vaults: Record<string, { address: string; tvl: number; sharePrice: number }>;
+  positions: { strategyId: string; shares: number; assets: number; chainId: number }[];
+  vaults: Record<string, { address: string; tvl: number; sharePrice: number; chainId: number }>;
   /** Symbol of the vault asset as read on-chain. */
   assetSymbol?: string;
   error?: string;
@@ -120,6 +122,8 @@ export interface TreasurySnapshot {
   targetAllocationPct: number;
   /** "live" when the wallet holds >= LIVE_MODE_MIN_USDC of the vault asset; otherwise deposits are simulated. */
   executionMode: "simulated" | "live";
+  /** Chains on which the wallet holds >= LIVE_MODE_MIN_USDC of the vault asset. */
+  liveChainIds: number[];
 }
 
 export interface VaultStrategy {
@@ -159,6 +163,79 @@ export interface VaultStrategy {
   capacityNote?: string;
   /** Vault terms Vaulto enforces and displays (minimum deposit, fees read on-chain, redemption cadence). */
   terms?: VaultTerms;
+  apiId?: string;
+  subgraphUrl?: string;
+  /** maxDeposit() for a new depositor: null = unlimited, 0 = closed. */
+  depositLimitUsd?: number | null;
+  depositLimitSource?: string;
+  nav?: VaultNav;
+  /** Median hours from deposit request to processing observed on the IXS subgraph (async vaults). */
+  observedSettlementHours?: number | null;
+  cutoffNote?: string;
+  /** Block number of the last contract read behind these figures. */
+  readBlock?: number | null;
+  /** Pre-flight result for the analysed wallet (attached during analysis). */
+  preflight?: VaultPreflight;
+}
+
+export interface CutoffInfoLite {
+  nextCutoffUtc: string;
+  nextCutoffSgt: string;
+  hoursUntilCutoff: number;
+  todayCutoffStillOpen: boolean;
+  estimatedSettlementUtc: string;
+  estimatedSettlementSgt: string;
+  skipped: { date: string; reason: string }[];
+  holidayAssumption: string;
+  source: string;
+}
+
+export interface VaultNav {
+  pricePerShare: number | null;
+  updatedAt: string | null;
+  ageHours: number | null;
+  block: number | null;
+  /** Transaction of the last on-chain NAV change (from the IXS subgraph, verified by receipt). */
+  lastChangeTx?: string | null;
+  source: string;
+  history: { at: string; pricePerShare: number; block: number | null }[];
+}
+
+export interface VaultCheck {
+  key: string;
+  label: string;
+  ok: boolean;
+  /** block → REJECT when failing, defer → DEFER (waiting NAV refresh) when failing, info → never blocks. */
+  severity: "block" | "defer" | "info";
+  value: string;
+  detail: string;
+  source: string;
+}
+
+export interface VaultPreflight {
+  ok: boolean;
+  /** Deterministic hint: allocate (all pass), defer (limit 0 / stale NAV), reject (whitelist, pause, minimum). */
+  verdict: "allocate" | "defer" | "reject";
+  checkedAt: string;
+  wallet: string;
+  chainId: number;
+  blockNumber: number | null;
+  checks: VaultCheck[];
+  depositLimitUsd: number | null;
+  depositLimitUnlimited: boolean;
+  navUpdatedAt: string | null;
+  navAgeHours: number | null;
+  navLastChangeTx: string | null;
+  navLastChangeBlock: number | null;
+  minDepositUsd: number;
+  settlement: "sync" | "async-erc7540";
+  observedSettlementHours: number | null;
+  /** Next IXS cutoff and settlement estimate (async vaults only). */
+  cutoff: CutoffInfoLite | null;
+  redeemPath: string;
+  mcpAccepts: boolean | null;
+  mcpReason?: string;
+  whitelisted: boolean | null;
 }
 
 export interface VaultTerms {
@@ -179,6 +256,8 @@ export interface AllocationLeg {
   riskScore: number;
   executable: boolean;
   onchainAmount: number;
+  chainId: number;
+  chainName: string;
 }
 
 export interface Metrics {
@@ -200,6 +279,7 @@ export interface RejectedOption {
   option: string;
   reason: string;
   tone: "warn" | "muted";
+  verdict?: "reject" | "defer";
 }
 
 export type RecommendationStatus =
@@ -235,6 +315,31 @@ export interface Recommendation {
   idleUsd: number;
   /** Treasury context at creation; used to expire proposals when conditions change. */
   context?: { demoMode: boolean; totalUsd: number };
+  /** Investment-committee style memo written by SERV reasoning. */
+  memo?: Memo;
+  /** Exact input handed to SERV reasoning and the raw output it returned. */
+  trace?: ReasoningTrace;
+  /** Pre-flight results per strategy id at analysis time. */
+  preflights?: Record<string, VaultPreflight>;
+  /** Vaults deferred ("temporarily paused — waiting NAV refresh"). */
+  deferred?: RejectedOption[];
+  /** One verdict per candidate vault, as returned by SERV reasoning (or the local engine). */
+  decisions?: { strategyId: string; verdict: "allocate" | "defer" | "reject"; amount?: number; reason: string }[];
+  /** Next IXS cutoff at analysis time. */
+  cutoff?: CutoffInfoLite;
+}
+
+export interface Memo {
+  title: string;
+  sections: { heading: string; body: string }[];
+}
+
+export interface ReasoningTrace {
+  source: "openserv" | "local";
+  model?: string;
+  at: string;
+  decision: { input: unknown; output: unknown };
+  narrative?: { input: unknown; output: unknown };
 }
 
 export interface StepSimulation {
@@ -275,6 +380,8 @@ export interface TxStep {
   /** eth_call + state override result when the step is simulated. */
   simulation?: StepSimulation;
   note?: string;
+  /** Honest label for this step's chain and mode. */
+  label?: string;
 }
 
 export interface PreparedTransaction {

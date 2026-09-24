@@ -9,11 +9,16 @@ const VOL_HIGH = 60;
 /**
  * Monitoring Agent — scores the treasury against policy and drafts warnings / corrective actions.
  */
-export function buildRiskReport(snapshot: TreasurySnapshot, user: UserProfile, rec: Recommendation | null, btcVol30d: number | null = null, strategies: VaultStrategy[] = []): RiskReport {
+export interface WatchSummary {
+  waiting: { vault: string; chainName: string; navAgeHours: number | null; navUpdatedAt: number | null; depositLimitUsd: number | null }[];
+  events: { id: string; at: string; message: string; kind: "limit" | "nav" }[];
+}
+
+export function buildRiskReport(snapshot: TreasurySnapshot, user: UserProfile, rec: Recommendation | null, btcVol30d: number | null = null, strategies: VaultStrategy[] = [], watch?: WatchSummary): RiskReport {
   const primary = strategies.find((s) => s.tag === "primary") ?? strategies.find((s) => s.executable);
   const terms = primary?.terms;
   const termsText = terms
-    ? ` Redemption: ${terms.redemption.charAt(0).toLowerCase()}${terms.redemption.slice(1)}. Fees: ${terms.depositFeeBps / 100}% on deposit, ${terms.redeemFeeBps != null ? `${terms.redeemFeeBps / 100}% on redemption (${terms.feeSource})` : "redemption fee not exposed on-chain"}. Minimum deposit ${terms.minDepositUsd} ${primary?.asset ?? "USDC"}, enforced by the vault contract (reverts "below min deposit") and by the agent.`
+    ? ` Redemption path: requested → awaiting RWA sale & operator finalization → paid (no claim step; operator sends USDC to the receiver). Fees: ${terms.depositFeeBps / 100}% on deposit, ${terms.redeemFeeBps != null ? `${terms.redeemFeeBps / 100}% on redemption (${terms.feeSource})` : "redemption fee not exposed on-chain"}. Minimum deposit ${terms.minDepositUsd} ${primary?.asset ?? "USDC"} (confirmed by IXS, enforced on-chain). Async vaults: daily cutoff 17:00 SGT on Singapore business days, settlement ≈ 1 business day (per IXS, 24 Sep 2026).`
     : "";
   const lowestVault = snapshot.positions.length ? Math.min(...snapshot.positions.map((p) => p.riskScore)) : null;
   const deviation = snapshot.allocatedPct - snapshot.targetAllocationPct;
@@ -62,6 +67,18 @@ export function buildRiskReport(snapshot: TreasurySnapshot, user: UserProfile, r
   ];
 
   const alerts: RiskReport["alerts"] = [];
+  for (const w of watch?.waiting ?? []) {
+    alerts.push({
+      id: `nav-${w.vault}-${w.chainName}`,
+      kind: "info",
+      title: `${w.chainName} vault temporarily paused — waiting NAV refresh`,
+      body: `Deposit limit is 0 while the NAV is stale (last update ${w.navUpdatedAt ? new Date(w.navUpdatedAt * 1000).toISOString().slice(0, 16).replace("T", " ") + " UTC" : "unknown"}${w.navAgeHours != null ? `, ${(w.navAgeHours / 24).toFixed(1)} days ago` : ""}). Per IXS (24 Sep 2026) this is the NAV-staleness effect, not a closed vault. Vaulto watches the limit and NAV on every scan and will flag the vault the moment it reopens.`,
+      cta: "analyze",
+    });
+  }
+  for (const e of (watch?.events ?? []).slice(0, 3)) {
+    alerts.push({ id: e.id, kind: e.kind === "limit" ? "action" : "info", title: e.kind === "limit" ? "Deposit limit changed" : "NAV refreshed", body: e.message, cta: "analyze" });
+  }
   if (rec && rec.status === "proposed") {
     alerts.push({
       id: "idle",
