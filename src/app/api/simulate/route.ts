@@ -3,8 +3,9 @@ import { z } from "zod";
 import { addressSchema, bad, handle } from "@/lib/api-utils";
 import { rpcKind } from "@/lib/chain/client";
 import { MIN_DEPOSIT_USDC, modeLabel } from "@/lib/chain/config";
-import { simulateDepositSteps } from "@/lib/chain/simulate";
+import { simulateDepositSteps, simulateRedeem } from "@/lib/chain/simulate";
 import { buildDepositSteps, getStrategies } from "@/lib/ixs/client";
+import { buildRedeemRequest } from "@/lib/ixs/mcp";
 import { runPreflight } from "@/lib/ixs/preflight";
 import { findRegistryVault, getRegistry } from "@/lib/ixs/registry";
 
@@ -16,6 +17,9 @@ const body = z.object({
   address: addressSchema,
   strategyId: z.string().min(1),
   amount: z.number().positive().optional(),
+  action: z.enum(["deposit", "redeem"]).optional().default("deposit"),
+  /** Shares to redeem (asset-denominated `amount` is converted at the current price when omitted). */
+  shares: z.number().positive().optional(),
 });
 
 /**
@@ -38,6 +42,27 @@ export async function POST(req: Request) {
     const rv = findRegistryVault(registry, strategy.routeId);
     if (!rv) throw new Error("vault not in the registry");
     const label = modeLabel("simulated", strategy.chainId, rpcKind(strategy.chainId));
+
+    if (parsed.data.action === "redeem") {
+      const shareDecimals = strategy.shareDecimals ?? 18;
+      const sharesNum = parsed.data.shares ?? (rv.sharePrice ? amount / rv.sharePrice : amount);
+      const shareUnits = parseUnits(sharesNum.toFixed(Math.min(shareDecimals, 12)), shareDecimals);
+      const plan = await buildRedeemRequest(strategy.routeId!, address, shareUnits);
+      const st = plan.steps![0];
+      const sim = await simulateRedeem({
+        chainId: strategy.chainId,
+        owner: address as `0x${string}`,
+        vault: strategy.contractAddress as `0x${string}`,
+        step: { to: st.tx.to as `0x${string}`, data: st.tx.data as `0x${string}`, value: st.tx.value },
+        shares: shareUnits,
+        shareDecimals,
+        shareSymbol: strategy.shareSymbol ?? "shares",
+        assetDecimals: strategy.assetDecimals,
+        assetSymbol: strategy.asset,
+      });
+      return { label, strategyId, action: "redeem" as const, chainId: strategy.chainId, asset: strategy.asset, amount, builtBy: "ixs-mcp" as const, settlement: plan.settlement, mcpDescription: st.description, minRedeemUsd: rv.redeem.minAssetsUsd, feeBps: rv.redeem.feeBps, redeem: sim, steps: [], verdict: sim.ok ? ("allocate" as const) : ("reject" as const), preflight: null };
+    }
+
     const preflight = await runPreflight(rv, address, amount);
     if (preflight.verdict !== "allocate") {
       return { label, strategyId, amount, asset: strategy.asset, chainId: strategy.chainId, preflight, verdict: preflight.verdict, builtBy: null, steps: [], note: preflight.verdict === "defer" ? "Temporarily paused — waiting NAV refresh: per IXS (24 Sep 2026) Vaulto does not build calldata while the deposit limit is 0 or the NAV is stale." : "Rejected by pre-flight: nothing is built." };

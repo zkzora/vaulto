@@ -2,15 +2,15 @@
   "label": "Mainnet fork (Anvil)",
   "chainId": 56,
   "chain": "BNB Chain",
-  "forkBlock": 123779792,
-  "amount": "100 USDC",
+  "forkBlock": 123785153,
+  "amount": "101 USDC",
   "demoWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
   "vaults": [
     {
       "label": "Mainnet fork (Anvil)",
       "chainId": 56,
       "chain": "BNB Chain",
-      "forkBlock": 123779792,
+      "forkBlock": 123785153,
       "vault": {
         "name": "IX High Yield Bond (USDC)",
         "symbol": "ix7540v1",
@@ -42,7 +42,7 @@
       "label": "Mainnet fork (Anvil)",
       "chainId": 56,
       "chain": "BNB Chain",
-      "forkBlock": 123779792,
+      "forkBlock": 123785153,
       "vault": {
         "name": "IX High Yield Bond (USDC)",
         "symbol": "ixv1",
@@ -72,26 +72,40 @@
       "txs": [
         {
           "step": "erc20_approve_exact",
-          "hash": "0x856f62c48f4645e1df1ea6acc08528129943bf7c5fd03d8ea667e1fe2719513e",
+          "hash": "0xf16048fa3d604e157307ba4ea8a2b24f05b117868cdd69b21517df0ef3f2c13f",
           "status": "success",
           "gasUsed": 53452
         },
         {
           "step": "vault_deposit",
-          "hash": "0xce79d69bbd4eb417fa2f11b2d563d2ed8468600380b88572eed0d9cc3f706a1c",
+          "hash": "0x580e15049670a530fce83e5d53a0e904ecf98ab68105915dfa15015ead58ae90",
           "status": "success",
           "gasUsed": 119563
         }
       ],
       "pricePerShare": 1.091092,
       "verdict": "ALLOCATE",
-      "sharesReceived": 91.65129979873375,
-      "sharesValue": 100,
+      "sharesReceived": 92.56781279672109,
+      "sharesValue": 101,
       "depositEvent": {
-        "assets": 100,
-        "shares": 91.65129979873375
+        "assets": 101,
+        "shares": 92.56781279672109
       },
-      "status": "Deposited (sync ERC-4626): 91.65129979873375 ixv1 ≈ 100 USDC minted in the deposit transaction."
+      "status": "Deposited (sync ERC-4626): 92.56781279672109 ixv1 ≈ 101 USDC minted in the deposit transaction.",
+      "redeem": {
+        "shares": 92.56781279672109,
+        "minRedeemAssets": 100,
+        "previewNetAssets": 100.495,
+        "path": "requestRedeem → queued → operator sells RWA and finalizes → USDC paid to the receiver (no claim step)",
+        "tx": {
+          "hash": "0xe7fca32148c027604b58ed2cb02ed097fe391e9d4f7451b037847f423e31dc14",
+          "status": "success",
+          "gasUsed": 228595
+        },
+        "settlement": "queued",
+        "sharesAfter": 0,
+        "status": "Redemption requested → awaiting RWA sale & operator finalization → paid (fork: IXS operator not present, stays queued)"
+      }
     }
   ]
 }

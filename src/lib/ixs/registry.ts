@@ -72,7 +72,9 @@ export interface RegistryVault {
   /** maxDeposit() for a brand-new depositor: null = unlimited (2^256-1), 0 = closed. */
   depositLimit: { usd: number | null; unlimited: boolean; source: string };
   minDeposit: { usd: number; source: string };
-  nav: { pricePerShare: number | null; updatedAt: number | null; ageHours: number | null; block: number | null; lastChangeTx: string | null; lastChangeVerified: boolean; source: string; history: { at: number; pricePerShare: number; block: number | null; txHash?: string }[] };
+  nav: { pricePerShare: number | null; updatedAt: number | null; ageHours: number | null; block: number | null; lastChangeTx: string | null; lastChangeVerified: boolean; contractThresholdHours: number | null; source: string; history: { at: number; pricePerShare: number; block: number | null; txHash?: string }[] };
+  /** Redemption terms read on-chain: minimum (minRedeemAssets) and fee (feeBps); settlement "queued" = request, operator finalizes, no claim. */
+  redeem: { minAssetsUsd: number | null; feeBps: number | null; path: string };
   settlementObserved: { samples: number; medianHours: number | null; pendingCount: number };
   cutoff: { known: false; note: string };
 }
@@ -118,7 +120,7 @@ async function readChain(chainId: number, list: Skeleton[]): Promise<RegistryVau
   const client = publicClient(chainId);
   const info = chainInfo(chainId);
   const addr = (s: Skeleton) => s.contractAddress as `0x${string}`;
-  const FIELDS = ["asset", "decimals", "totalAssets", "totalSupply", "paused", "whitelistEnabled", "feeBps", "redeemFeeBps"] as const;
+  const FIELDS = ["asset", "decimals", "totalAssets", "totalSupply", "paused", "whitelistEnabled", "feeBps", "redeemFeeBps", "priceUpdatedAt", "navStalenessThreshold", "minRedeemAssets"] as const;
   let first: McResult[] | null = null;
   let block: bigint | null = null;
   const started = Date.now();
@@ -192,7 +194,10 @@ async function readChain(chainId: number, list: Skeleton[]): Promise<RegistryVau
     const wl = get(i, "whitelistEnabled");
     const maxDep = get(i, "maxDeposit") as bigint | null;
     const sg: SubgraphVaultInfo | null = subgraphs[i];
-    const navAt = sg?.navUpdatedAt ?? null;
+    const navAtChain = num(get(i, "priceUpdatedAt"));
+    const navAt = navAtChain && navAtChain > 0 ? navAtChain : (sg?.navUpdatedAt ?? null);
+    const thresholdSec = num(get(i, "navStalenessThreshold")) ?? sg?.navStalenessThreshold ?? null;
+    const minRedeemRaw = get(i, "minRedeemAssets") as bigint | null;
     const navPps = sg?.pricePerShare != null ? Number(formatUnits(sg.pricePerShare, asset.decimals)) : one != null ? Number(formatUnits(one, asset.decimals)) : null;
     const minFromSg = sg?.minDepositAssets != null ? Number(formatUnits(sg.minDepositAssets, asset.decimals)) : null;
     const settlementGuess: Settlement = /7540/i.test(`${s.subgraphUrl ?? ""} ${s.symbol}`) ? "async-erc7540" : "sync";
@@ -235,10 +240,12 @@ async function readChain(chainId: number, list: Skeleton[]): Promise<RegistryVau
         block: sg?.navUpdatedBlock ?? null,
         lastChangeTx: sg?.navHistory[0]?.txHash ?? null,
         lastChangeVerified: false,
-        source: sg ? (sg.kind === "erc7540" ? "subgraph Vault.priceUpdatedAt / navUpdates (on-chain NAV events)" : "subgraph vaultActivities NAV_UPDATED (on-chain events)") : "unavailable",
+        contractThresholdHours: thresholdSec != null ? Math.round((thresholdSec / 3600) * 10) / 10 : null,
+        source: navAtChain && navAtChain > 0 ? "priceUpdatedAt() on-chain" + (sg ? " · history from the IXS subgraph (NAV events)" : "") : sg ? (sg.kind === "erc7540" ? "subgraph Vault.priceUpdatedAt / navUpdates (on-chain NAV events)" : "subgraph vaultActivities NAV_UPDATED (on-chain events)") : "unavailable",
         history: (sg?.navHistory ?? []).slice(0, 8).map((h) => ({ at: h.at, pricePerShare: Number(formatUnits(h.pricePerShare, asset.decimals)), block: h.block, txHash: h.txHash })),
       },
       settlementObserved: { samples: sg?.settlement.samples ?? 0, medianHours: sg?.settlement.medianHours ?? null, pendingCount: sg?.settlement.pendingCount ?? 0 },
+      redeem: { minAssetsUsd: minRedeemRaw != null ? Number(formatUnits(minRedeemRaw, asset.decimals)) : null, feeBps: fee ?? sg?.redeemFeeBps ?? null, path: "requestRedeem → queued → operator sells RWA and finalizes → USDC paid to the receiver (no claim step)" },
       cutoff: { known: false, note: settlementGuess === "sync" ? "not applicable: sync ERC-4626, settles in the deposit transaction" : "unconfirmed: IXS publishes no cutoff time on the API, MCP or subgraph; requests settle after the operator's next cycle" },
     });
   }
@@ -262,7 +269,7 @@ async function readChain(chainId: number, list: Skeleton[]): Promise<RegistryVau
     chainId,
     blockNumber: block != null ? Number(block) : null,
     request: { rpc: chainId === 43114 ? env.avaxRpcUrl : env.rpcUrl, vaults: list.map((s) => s.contractAddress), multicall: CHAINS[chainId].multicall },
-    response: out.map((v) => ({ vault: v.address, symbol: v.symbol, asset: v.asset, sharePrice: v.sharePrice, totalAssets: v.totalAssets, totalSupply: v.totalSupply, paused: v.paused, whitelistEnabled: v.whitelistEnabled, redeemFeeBps: v.redeemFeeBps, depositLimit: v.depositLimit, navUpdatedAt: v.nav.updatedAt, navAgeHours: v.nav.ageHours })),
+    response: out.map((v) => ({ vault: v.address, symbol: v.symbol, asset: v.asset, sharePrice: v.sharePrice, totalAssets: v.totalAssets, totalSupply: v.totalSupply, paused: v.paused, whitelistEnabled: v.whitelistEnabled, redeemFeeBps: v.redeemFeeBps, depositLimit: v.depositLimit, navUpdatedAt: v.nav.updatedAt, navAgeHours: v.nav.ageHours, navSource: v.nav.source, navStalenessThresholdHours: v.nav.contractThresholdHours, minRedeemAssets: v.redeem.minAssetsUsd })),
     ok: first != null,
     durationMs: Date.now() - started,
   });

@@ -21,6 +21,8 @@ async function systemInfo() {
     rpcKind: RPC_KIND,
     rpcUrl: env.rpcUrl,
     liveMinUsdc: LIVE_MODE_MIN_USDC,
+    maxLiveTxUsdc: env.maxLiveTxUsdc,
+    navStaleHours: env.navStaleHours,
     minDepositUsdc: MIN_DEPOSIT_USDC,
     database: store.kind,
     chainId: CHAIN_ID,

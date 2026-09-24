@@ -81,7 +81,7 @@ export function useEvidence() {
 
 export function useSimulate() {
   const { address } = useVaultoAccount();
-  return useMutation({ mutationFn: ({ strategyId, amount }: { strategyId: string; amount?: number }) => api.simulate(address!, strategyId, amount) });
+  return useMutation({ mutationFn: ({ strategyId, amount, action, shares }: { strategyId: string; amount?: number; action?: "deposit" | "redeem"; shares?: number }) => api.simulate(address!, strategyId, amount, action ?? "deposit", shares) });
 }
 
 export function useResetDemo() {

@@ -93,7 +93,7 @@ export function rpcKindOf(url: string): RpcKind {
 
 export const MODE_LABEL = {
   simulated: "Simulated on BNB mainnet",
-  live: "Live · BNB Chain",
+  live: "Live mainnet · BNB",
   mainnet: "BNB mainnet",
   fork: "Mainnet fork",
 } as const;
@@ -102,5 +102,5 @@ export const MODE_LABEL = {
 export function modeLabel(mode: ExecutionMode, chainId: number, rpcKind: RpcKind = "mainnet"): string {
   const c = chainInfo(chainId);
   if (rpcKind === "fork") return `Mainnet fork (${c.short})`;
-  return mode === "live" ? `Live · ${c.name}` : `Simulated on ${c.short} mainnet`;
+  return mode === "live" ? `Live mainnet · ${c.short}` : `Simulated on ${c.short} mainnet`;
 }

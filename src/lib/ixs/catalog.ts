@@ -14,6 +14,8 @@ function termsFor(v: RegistryVault): NonNullable<VaultStrategy["terms"]> {
     redeemFeeBps: v.redeemFeeBps,
     redemption: REDEMPTION_NOTE,
     feeSource: v.redeemFeeBps != null ? "on-chain (feeBps)" : "not exposed by the contract",
+    minRedeemUsd: v.redeem.minAssetsUsd,
+    redeemPath: v.redeem.path,
   };
 }
 
@@ -63,6 +65,7 @@ function fromVault(v: RegistryVault): VaultStrategy {
       ageHours: v.nav.ageHours,
       block: v.nav.block,
       lastChangeTx: v.nav.lastChangeTx,
+      contractThresholdHours: v.nav.contractThresholdHours,
       source: `${v.nav.source}${v.nav.lastChangeVerified ? " · receipt verified on-chain" : ""}`,
       history: v.nav.history.map((h) => ({ at: new Date(h.at * 1000).toISOString(), pricePerShare: h.pricePerShare, block: h.block })),
     },

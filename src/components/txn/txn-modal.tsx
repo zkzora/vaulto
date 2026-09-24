@@ -15,6 +15,7 @@ interface Props {
   executing: boolean;
   isDemo: boolean;
   cutoff?: { nextCutoffSgt: string; estimatedSettlementSgt: string; hoursUntilCutoff: number } | null;
+  maxLiveTxUsdc?: number;
   onClose: () => void;
   onExecute: () => void;
   onSimulate: () => void;
@@ -45,7 +46,7 @@ function simText(sim: StepSimulation | undefined, kind: string) {
   return <span className="text-green">ok</span>;
 }
 
-export function TxnModal({ prepared, loading, error, steps, executing, isDemo, cutoff, onClose, onExecute, onSimulate }: Props) {
+export function TxnModal({ prepared, loading, error, steps, executing, isDemo, cutoff, maxLiveTxUsdc, onClose, onExecute, onSimulate }: Props) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -191,7 +192,7 @@ export function TxnModal({ prepared, loading, error, steps, executing, isDemo, c
               <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-blue text-white">{Icons.check}</span>
               <span className="text-[13px] leading-relaxed text-body">
                 {live
-                  ? `I understand my wallet will ask me to sign ${prepared.steps.length} transaction${prepared.steps.length > 1 ? "s" : ""} on ${chains} (real USDC into the IX High Yield Bond vault; approvals are for the exact amount). ${hasAsync ? "An async request is not a deposit until the IXS operator settles it. " : ""}Vaulto never holds my funds or keys; nothing moves without my signature.`
+                  ? `I understand my wallet will ask me to sign ${prepared.steps.length} transaction${prepared.steps.length > 1 ? "s" : ""} on ${chains} (real USDC into the IX High Yield Bond vault; approvals are for the exact amount; guardrail: at most ${(maxLiveTxUsdc ?? 0).toLocaleString("en-US")} USDC per transaction). ${hasAsync ? "An async request is not a deposit until the IXS operator settles it. " : ""}Vaulto never holds my funds or keys; nothing moves without my signature.`
                   : `${prepared.label}: the approve and deposit calldata built by the IXS MCP run through eth_call with a state override (USDC balance + allowance) against the real IX High Yield Bond vault. No transaction is sent and no funds move.${isDemo ? " Connect a wallet holding" : " Hold"} ≥ ${LIVE_MODE_MIN_USDC} USDC on the vault's chain to switch to Live mode.`}
               </span>
             </div>

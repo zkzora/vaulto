@@ -1,4 +1,4 @@
-import { BaseError, ContractFunctionRevertedError, RawContractError, decodeErrorResult, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, formatUnits, keccak256, numberToHex } from "viem";
+import { BaseError, ContractFunctionRevertedError, RawContractError, decodeErrorResult, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, formatUnits, hexToBigInt, keccak256, numberToHex, toBytes } from "viem";
 import { erc20Abi, erc4626Abi, vaultErrorsAbi } from "./abi";
 import { publicClient, rpcKind } from "./client";
 import { modeLabel } from "./config";
@@ -174,6 +174,117 @@ export async function simulateDepositSteps(input: SimulateInput): Promise<Record
     request: { owner: input.owner, vault: input.vault, asset: input.asset, amountUnits: input.amountUnits.toString(), slots, steps: input.steps.map((s) => ({ index: s.index, kind: s.kind, to: s.to, data: s.data })) },
     response: out,
     ok: !failed,
+    durationMs: Date.now() - started,
+  });
+  return out;
+}
+
+/* ------------------------------------------------------------------ redeem ------------------------------------------------------------------ */
+
+export interface RedeemSimInput {
+  chainId: number;
+  owner: `0x${string}`;
+  vault: `0x${string}`;
+  step: { to: `0x${string}`; data: `0x${string}`; value?: string };
+  shares: bigint;
+  shareDecimals: number;
+  shareSymbol: string;
+  assetDecimals: number;
+  assetSymbol: string;
+}
+
+export interface RedeemSimulation {
+  ok: boolean;
+  label: string;
+  overrides: string[];
+  block?: number;
+  gasEstimate?: number;
+  requestId?: string;
+  revertReason?: string;
+  shares: number;
+  /** previewRedeem: USDC the receiver gets after the fee. */
+  netAssets: number | null;
+  grossAssets: number | null;
+  feeAssets: number | null;
+  path: string;
+}
+
+/** ERC-7201 namespaced ERC20 storage (OpenZeppelin upgradeable v5): _balances at base, _totalSupply at base + 2. */
+function erc7201Base(): bigint {
+  return hexToBigInt(keccak256(encodeAbiParameters([{ type: "uint256" }], [hexToBigInt(keccak256(toBytes("openzeppelin.storage.ERC20"))) - 1n]))) & ~0xffn;
+}
+
+/**
+ * "Simulated on <chain> mainnet" for a redemption: runs the requestRedeem calldata the IXS MCP built through eth_call,
+ * giving the wallet the vault shares via a state override (ERC-7201 ERC20 storage, else probed slots). Returns the
+ * request id or the decoded revert (e.g. "below min redeem") plus previewRedeem (net USDC after the 0.5% fee).
+ */
+export async function simulateRedeem(i: RedeemSimInput): Promise<RedeemSimulation> {
+  const client = publicClient(i.chainId);
+  const label = modeLabel("simulated", i.chainId, rpcKind(i.chainId));
+  const started = Date.now();
+  const path = "requestRedeem → queued → operator sells RWA and finalizes → USDC paid to the receiver (no claim step)";
+  const [block, balance, preview, gross, supply] = await Promise.all([
+    client.getBlockNumber().catch(() => null),
+    client.readContract({ address: i.vault, abi: erc4626Abi, functionName: "balanceOf", args: [i.owner] }).catch(() => 0n),
+    client.readContract({ address: i.vault, abi: erc4626Abi, functionName: "previewRedeem", args: [i.shares] }).catch(() => null),
+    client.readContract({ address: i.vault, abi: erc4626Abi, functionName: "convertToAssets", args: [i.shares] }).catch(() => null),
+    client.readContract({ address: i.vault, abi: erc4626Abi, functionName: "totalSupply" }).catch(() => null),
+  ]);
+  const net = preview != null ? Number(formatUnits(preview, i.assetDecimals)) : null;
+  const grossN = gross != null ? Number(formatUnits(gross, i.assetDecimals)) : null;
+  const base: Omit<RedeemSimulation, "ok" | "overrides"> = { label, block: block != null ? Number(block) : undefined, shares: Number(formatUnits(i.shares, i.shareDecimals)), netAssets: net, grossAssets: grossN, feeAssets: net != null && grossN != null ? Math.round((grossN - net) * 1e6) / 1e6 : null, path };
+
+  // State override: give the wallet the shares (and bump totalSupply) when it does not hold them.
+  const overrides: string[] = [];
+  let stateOverride: { address: `0x${string}`; stateDiff: { slot: `0x${string}`; value: `0x${string}` }[] }[] | undefined;
+  if (balance < i.shares) {
+    const balOf = encodeFunctionData({ abi: erc20Abi, functionName: "balanceOf", args: [i.owner] });
+    const probe = 987_654_321n * 10n ** 18n;
+    const candidates: { balSlot: `0x${string}`; supplySlot?: `0x${string}`; name: string }[] = [];
+    const b = erc7201Base();
+    candidates.push({ balSlot: mappingSlot(i.owner, b), supplySlot: numberToHex(b + 2n, { size: 32 }), name: "ERC-7201 openzeppelin.storage.ERC20" });
+    for (let s = 0; s < MAX_SLOT; s++) candidates.push({ balSlot: mappingSlot(i.owner, s), name: `slot ${s}` });
+    for (const cnd of candidates) {
+      try {
+        const r = await client.call({ to: i.vault, data: balOf, stateOverride: [{ address: i.vault, stateDiff: [{ slot: cnd.balSlot, value: word(probe) }] }] });
+        if (r.data && decodeFunctionResult({ abi: erc20Abi, functionName: "balanceOf", data: r.data }) === probe) {
+          const diff = [{ slot: cnd.balSlot, value: word(i.shares) }];
+          if (cnd.supplySlot && supply != null) diff.push({ slot: cnd.supplySlot, value: word(supply + i.shares) });
+          stateOverride = [{ address: i.vault, stateDiff: diff }];
+          overrides.push(`${i.shareSymbol} balance → ${formatUnits(i.shares, i.shareDecimals)} (${cnd.name})`);
+          if (cnd.supplySlot && supply != null) overrides.push("totalSupply += shares");
+          break;
+        }
+      } catch {
+        // keep probing
+      }
+    }
+    if (!stateOverride) {
+      const out: RedeemSimulation = { ...base, ok: false, overrides, revertReason: "could not locate the vault share balance slot for the override" };
+      recordEvidence({ kind: "simulation", label: `${label} · redeem simulation · slot not found`, chainId: i.chainId, blockNumber: base.block ?? null, request: { owner: i.owner, vault: i.vault, shares: i.shares.toString() }, response: out, ok: false, durationMs: Date.now() - started });
+      return out;
+    }
+  } else {
+    overrides.push("real share balance (no override needed)");
+  }
+
+  const call = { account: i.owner, to: i.step.to, data: i.step.data, value: BigInt(i.step.value || "0"), stateOverride };
+  let out: RedeemSimulation;
+  try {
+    const [res, gas] = await Promise.all([client.call(call), client.estimateGas(call).catch(() => null)]);
+    out = { ...base, ok: true, overrides, gasEstimate: gas != null ? Number(gas) : undefined, requestId: res.data && res.data !== "0x" ? BigInt(res.data).toString() : undefined };
+  } catch (e) {
+    out = { ...base, ok: false, overrides, revertReason: revertReason(e) };
+  }
+  recordEvidence({
+    kind: "simulation",
+    label: `${label} · redeem simulation · ${formatUnits(i.shares, i.shareDecimals)} ${i.shareSymbol} → ${i.vault.slice(0, 10)}…`,
+    chainId: i.chainId,
+    blockNumber: base.block ?? null,
+    request: { owner: i.owner, vault: i.vault, shares: i.shares.toString(), step: i.step },
+    response: out,
+    ok: out.ok,
     durationMs: Date.now() - started,
   });
   return out;

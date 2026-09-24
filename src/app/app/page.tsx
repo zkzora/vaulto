@@ -61,7 +61,7 @@ export default function HomePage() {
         <span>
           <b className="text-ink">{snapshot.liveChainIds.length ? snapshot.liveChainIds.map((c) => modeLabel("live", c)).join(" + ") : snapshot.onchain.rpcKind === "fork" ? modeLabel("simulated", 56, "fork") : "Simulated on BNB + Avalanche mainnet"}.</b>{" "}
           {snapshot.executionMode === "live"
-            ? `This wallet holds ${snapshot.liveChainIds.map((c) => `${fmtUsd(snapshot.onchain.byChain?.[c]?.balances.USDC ?? 0)} USDC on ${chainInfo(c).name}`).join(" and ")}: approved deposits there are real and signed by your wallet, capped per transaction.`
+            ? `This wallet holds ${snapshot.liveChainIds.map((c) => `${fmtUsd(snapshot.onchain.byChain?.[c]?.balances.USDC ?? 0)} USDC on ${chainInfo(c).name}`).join(" and ")}: approved deposits there are real and signed by your wallet (exact-amount approvals, hard cap per transaction).`
             : `${account.isWallet ? `This wallet holds ${fmtUsd(snapshot.onchain.balances.USDC ?? 0)} USDC across BNB Chain and Avalanche (under ${LIVE_MODE_MIN_USDC} on each).` : "Simulated treasury (Acme DAO)."} Approve + deposit calldata from the IXS MCP is simulated with eth_call + state override against the real IX High Yield Bond vaults; nothing is sent. Hold ≥ ${LIVE_MODE_MIN_USDC} USDC on a vault's chain to go live there.`}
         </span>
         <Link href="/app/vaults" className="btn btn-soft h-9 text-[13px]">IXS vault terms</Link>

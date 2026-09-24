@@ -197,6 +197,8 @@ export interface VaultNav {
   block: number | null;
   /** Transaction of the last on-chain NAV change (from the IXS subgraph, verified by receipt). */
   lastChangeTx?: string | null;
+  /** navStalenessThreshold() read from the contract, in hours (null when not exposed). */
+  contractThresholdHours?: number | null;
   source: string;
   history: { at: string; pricePerShare: number; block: number | null }[];
 }
@@ -244,6 +246,9 @@ export interface VaultTerms {
   redeemFeeBps: number | null;
   redemption: string;
   feeSource: string;
+  /** minRedeemAssets() on-chain, in asset units (null when not exposed). */
+  minRedeemUsd?: number | null;
+  redeemPath?: string;
 }
 
 export interface AllocationLeg {
@@ -327,6 +332,10 @@ export interface Recommendation {
   decisions?: { strategyId: string; verdict: "allocate" | "defer" | "reject"; amount?: number; reason: string }[];
   /** Next IXS cutoff at analysis time. */
   cutoff?: CutoffInfoLite;
+  /** Times the deterministic validator overrode a SERV allocation (0 in a clean run). */
+  validatorOverrides?: string[];
+  /** Hard limits the deterministic guardrails enforce around SERV's decisions. */
+  guardrails?: { liquidityFloorPct: number; maxAssetExposurePct: number; minVaultRiskScore: number; minDepositUsd: number; maxLiveTxUsdc: number; navStaleHours: number };
 }
 
 export interface Memo {

@@ -195,6 +195,7 @@ export function TxnProvider({ children }: { children: ReactNode }) {
           onSimulate={() => recId && void load(recId, true)}
           isDemo={account.isDemo}
           cutoff={treasury.data?.cutoff ?? null}
+          maxLiveTxUsdc={treasury.data?.recommendation?.guardrails?.maxLiveTxUsdc}
         />
       )}
       {toast && <Toast data={toast} onClose={() => setToast(null)} />}

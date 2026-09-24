@@ -6,7 +6,7 @@ import { useEvidence } from "@/hooks/use-vaulto";
 import { chainInfo } from "@/lib/chain/config";
 import { Card, ErrorState, Icons, Pill, Skeleton, VaultoLogo, cx } from "@/components/ui";
 
-const KINDS = ["all", "mcp", "ixs-api", "subgraph", "onchain", "simulation", "serv", "fork"] as const;
+const KINDS = ["all", "live", "mcp", "ixs-api", "subgraph", "onchain", "simulation", "serv", "fork"] as const;
 
 const ageText = (h: number | null | undefined) => (h == null ? "unknown" : h < 48 ? `${h.toFixed(1)} h ago` : `${(h / 24).toFixed(1)} days ago`);
 
@@ -165,7 +165,7 @@ export default function EvidencePage() {
             ]
               .filter(([, run]) => run)
               .map(([chain, run]) => {
-                const r = run as { label?: string; forkBlock?: number; vaults?: { vault: { symbol: string; address: string }; verdict: string; status: string; txs?: { step: string; hash: string; status: string }[] }[] };
+                const r = run as { label?: string; forkBlock?: number; vaults?: { vault: { symbol: string; address: string }; verdict: string; status: string; txs?: { step: string; hash: string; status: string }[]; redeem?: { status?: string; previewNetAssets?: number | null; tx?: { hash: string; status: string } } }[] };
                 return (
                   <Card key={String(chain)}>
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -183,6 +183,7 @@ export default function EvidencePage() {
                             <span className="mono text-faint">{v.vault.address.slice(0, 10)}…</span>
                           </div>
                           <div className="mt-1 text-muted">{v.status}</div>
+                          {v.redeem && <div className="mt-1 text-amber">Redeem: {v.redeem.status}{v.redeem.previewNetAssets != null ? ` · previewRedeem ${v.redeem.previewNetAssets.toFixed(4)} USDC net` : ""}{v.redeem.tx ? ` · fork tx ${v.redeem.tx.hash}` : ""}</div>}
                           {v.txs?.map((t) => (
                             <div key={t.hash} className="mono text-[11px] text-faint">
                               {t.step} · {t.status} · fork tx {t.hash}

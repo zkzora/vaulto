@@ -77,8 +77,16 @@ function Facts({ s }: { s: VaultStrategy }) {
       </div>
       <div className="flex justify-between gap-3">
         <span className="shrink-0">Redemption</span>
-        <span className="text-right font-semibold text-ink">requested → awaiting RWA sale &amp; operator finalization → paid · no claim step</span>
+        <span className="text-right font-semibold text-ink">
+          requested → awaiting RWA sale &amp; operator finalization → paid · no claim step{s.terms?.minRedeemUsd != null ? ` · min ${s.terms.minRedeemUsd} ${s.asset} net (minRedeemAssets)` : ""}
+        </span>
       </div>
+      {s.nav?.contractThresholdHours != null && (
+        <div className="flex justify-between gap-3">
+          <span>NAV staleness threshold (contract)</span>
+          <span className="font-semibold text-ink">{s.nav.contractThresholdHours >= 48 ? `${(s.nav.contractThresholdHours / 24).toFixed(0)} days` : `${s.nav.contractThresholdHours} h`} · Vaulto policy 72 h</span>
+        </div>
+      )}
       <div className="flex justify-between gap-3">
         <span>Eligibility</span>
         <span className={cx("font-semibold", s.requiresWhitelist ? "text-amber" : "text-green")}>{s.requiresWhitelist ? "KYC whitelist required" : "Open"}</span>
@@ -182,12 +190,36 @@ export default function VaultsPage() {
                     <span className="font-semibold text-ink">
                       {modeLabel("simulated", s.chainId, snapshot?.onchain.byChain?.[s.chainId]?.rpcKind ?? "mainnet")} · {s.terms?.minDepositUsd ?? 100} {s.asset}
                     </span>
-                    <button className="btn btn-soft h-8 text-[12px]" disabled={simulate.isPending} onClick={() => simulate.mutate({ strategyId: s.id })}>
-                      {simulate.isPending && simulate.variables?.strategyId === s.id ? "Checking…" : "Pre-flight + simulate"}
-                    </button>
+                    <div className="flex gap-1.5">
+                      <button className="btn btn-soft h-8 text-[12px]" disabled={simulate.isPending} onClick={() => simulate.mutate({ strategyId: s.id })}>
+                        {simulate.isPending && simulate.variables?.strategyId === s.id && simulate.variables?.action !== "redeem" ? "Checking…" : "Pre-flight + simulate"}
+                      </button>
+                      {s.settlement === "sync" && (
+                        <button className="btn btn-soft h-8 text-[12px]" disabled={simulate.isPending} onClick={() => simulate.mutate({ strategyId: s.id, action: "redeem", shares: p?.shares && p.shares > 0 ? p.shares : s.sharePrice ? Math.ceil(((s.terms?.minRedeemUsd ?? 100) / (1 - (s.terms?.redeemFeeBps ?? 50) / 10_000) / s.sharePrice) * 1e4) / 1e4 : 100 })} title="Simulate requestRedeem for your position (or the minimum redeemable amount)">
+                          {simulate.isPending && simulate.variables?.strategyId === s.id && simulate.variables?.action === "redeem" ? "Checking…" : "Simulate redeem"}
+                        </button>
+                      )}
+                    </div>
                   </div>
                   {simulate.variables?.strategyId === s.id && simulate.isError && <div className="mt-2 text-red">{simulate.error.message}</div>}
-                  {sim && (
+                  {sim && sim.action === "redeem" && sim.redeem && (
+                    <div className="mt-2 grid gap-1 text-muted">
+                      <div className="flex items-center gap-2">
+                        <Pill tone={sim.redeem.ok ? "green" : "red"}>{sim.redeem.ok ? "requestRedeem OK" : "requestRedeem reverts"}</Pill>
+                        <span className="text-faint">{sim.redeem.shares.toFixed(4)} {s.shareSymbol} · block {sim.redeem.block?.toLocaleString("en-US") ?? "?"}</span>
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        <span>USDC received (previewRedeem, net of {((sim.feeBps ?? 0) / 100).toFixed(2)}% fee)</span>
+                        <span className="font-semibold text-ink">{sim.redeem.netAssets?.toFixed(4) ?? "—"} {s.asset}{sim.redeem.grossAssets != null ? ` (gross ${sim.redeem.grossAssets.toFixed(4)}, fee ${sim.redeem.feeAssets?.toFixed(4)})` : ""}</span>
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        <span>Result</span>
+                        <span className={cx("text-right font-semibold", sim.redeem.ok ? "text-green" : "text-red")}>{sim.redeem.ok ? `queued${sim.redeem.requestId ? ` · request #${sim.redeem.requestId}` : ""} · awaiting RWA sale & operator finalization → paid` : `revert: ${sim.redeem.revertReason}`}</span>
+                      </div>
+                      <div className="text-faint">{sim.mcpDescription} · minimum {sim.minRedeemUsd ?? "?"} {s.asset} net · override: {sim.redeem.overrides.join(", ") || "none"}</div>
+                    </div>
+                  )}
+                  {sim && sim.action !== "redeem" && sim.preflight && (
                     <div className="mt-2 grid gap-1.5 text-muted">
                       <div className="flex items-center gap-2">
                         <VerdictPill verdict={sim.verdict} />

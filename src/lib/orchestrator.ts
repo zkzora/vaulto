@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { invalidateOnchain, readOnchainTreasury } from "@/lib/chain/treasury";
 import { publicClient } from "@/lib/chain/client";
-import { CHAIN_NAME, LIVE_MODE_MIN_USDC, MIN_DEPOSIT_USDC, chainInfo } from "@/lib/chain/config";
+import { CHAIN_NAME, LIVE_MODE_MIN_USDC, MIN_DEPOSIT_USDC, chainInfo, modeLabel } from "@/lib/chain/config";
+import { erc4626Abi } from "@/lib/chain/abi";
+import { formatUnits } from "viem";
+import { env } from "@/lib/env";
+import { recordEvidence } from "@/lib/evidence";
 import { getStore, normalizeAddress } from "@/lib/db";
 import { fmtAmount, fmtUsd } from "@/lib/format";
 import { getStrategies } from "@/lib/ixs/client";
@@ -247,6 +251,8 @@ export async function analyze(address: string): Promise<AnalysisResult> {
     idleUsd: snapshot.idleUsd,
     context: { demoMode: snapshot.demoMode, totalUsd: snapshot.totalUsd },
     preflights,
+    validatorOverrides: validatorNotes,
+    guardrails: { liquidityFloorPct: user.liquidityFloorPct, maxAssetExposurePct: user.maxAssetExposurePct, minVaultRiskScore: user.minVaultRiskScore, minDepositUsd: MIN_DEPOSIT_USDC, maxLiveTxUsdc: env.maxLiveTxUsdc, navStaleHours: env.navStaleHours },
     trace: { source: decision.source, model: decision.model ?? narrative.model, at: new Date().toISOString(), decision: { input: decision.input, output: decision.output }, narrative: narrative.input ? { input: narrative.input, output: narrative.output } : undefined },
     cutoff,
   };
@@ -380,6 +386,39 @@ export async function finalize(address: string, preparedId: string, results: Ste
     }
   }
   await store.setDemoState(wallet, demo);
+
+  // Live mainnet evidence: receipt (block, gas, status) per confirmed step, then the vault shares now held.
+  const strategiesNow = (await loadStrategies()).strategies;
+  for (const step of prepared.steps) {
+    const r = results.find((x) => x.index === step.index);
+    if (!r || r.status !== "confirmed" || step.mode !== "onchain" || !r.hash?.startsWith("0x")) continue;
+    const client = publicClient(step.chainId);
+    const label = modeLabel("live", step.chainId, prepared.rpcKind);
+    try {
+      const receipt = await client.getTransactionReceipt({ hash: r.hash as `0x${string}` });
+      let shares: { balance: number; valueUsdc: number; symbol: string } | null = null;
+      if (step.kind !== "approve") {
+        const s = strategiesNow.find((x) => x.id === step.strategyId);
+        if (s?.contractAddress) {
+          const bal = await client.readContract({ address: s.contractAddress as `0x${string}`, abi: erc4626Abi, functionName: "balanceOf", args: [wallet as `0x${string}`] }).catch(() => 0n);
+          const val = await client.readContract({ address: s.contractAddress as `0x${string}`, abi: erc4626Abi, functionName: "convertToAssets", args: [bal] }).catch(() => 0n);
+          shares = { balance: Number(formatUnits(bal, s.shareDecimals ?? 18)), valueUsdc: Number(formatUnits(val, s.assetDecimals ?? 18)), symbol: s.shareSymbol ?? "shares" };
+        }
+      }
+      recordEvidence({
+        kind: "live",
+        label: `${label} · ${step.kind === "approve" ? "approve (exact amount)" : step.kind === "requestDeposit" ? "requestDeposit — pending operator settlement" : "deposit confirmed"} · ${step.vaultName}`,
+        chainId: step.chainId,
+        blockNumber: Number(receipt.blockNumber),
+        request: { hash: r.hash, to: step.to, kind: step.kind, amount: step.amount, asset: step.asset, wallet, builtBy: step.builtBy, explorer: `${chainInfo(step.chainId).explorer}/tx/${r.hash}` },
+        response: { status: receipt.status, gasUsed: Number(receipt.gasUsed), block: Number(receipt.blockNumber), sharesAfter: shares },
+        ok: receipt.status === "success",
+      });
+    } catch (e) {
+      recordEvidence({ kind: "live", label: `${label} · ${step.kind} · receipt unavailable`, chainId: step.chainId, request: { hash: r.hash }, response: { error: e instanceof Error ? e.message : String(e) }, ok: false });
+    }
+  }
+
   const lastConfirmed = [...prepared.steps].reverse().find((s) => results.find((r) => r.index === s.index && r.status === "confirmed" && r.hash?.startsWith("0x") && r.hash.length === 66));
   let confirmedBlock: number | undefined;
   if (lastConfirmed) {

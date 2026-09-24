@@ -159,3 +159,19 @@ export async function requestStatus(vaultId: string, wallet: string): Promise<un
     return { error: e instanceof Error ? e.message : "request status unavailable" };
   }
 }
+
+export interface McpRedeemPlan {
+  ok?: boolean;
+  settlement?: Settlement | "queued";
+  shares?: { baseUnits?: string; decimals?: number; symbol?: string };
+  steps?: McpDepositStep[];
+}
+
+/** `vault_build_request_redeem`: requestRedeem calldata for `owner` (queued vaults: no claim step; the operator finalizes and pays USDC to the receiver). */
+export async function buildRedeemRequest(vaultId: string, owner: string, shareUnits: bigint): Promise<McpRedeemPlan> {
+  const r = await mcpCall("vault_build_request_redeem", { vaultId, ownerAddress: owner, shareAmount: shareUnits.toString() });
+  if (r.isError) throw new Error(`IXS MCP: ${mcpErrorText(r)}`);
+  const plan = unwrap<McpRedeemPlan>(r);
+  if (!plan?.steps?.length) throw new Error("IXS MCP returned no redeem steps");
+  return plan;
+}

@@ -55,16 +55,37 @@ export interface MainnetVault {
   ixsRewards: { active: boolean; multiplier: number } | null;
 }
 
+export interface RedeemSimulation {
+  ok: boolean;
+  label: string;
+  overrides: string[];
+  block?: number;
+  gasEstimate?: number;
+  requestId?: string;
+  revertReason?: string;
+  shares: number;
+  netAssets: number | null;
+  grossAssets: number | null;
+  feeAssets: number | null;
+  path: string;
+}
+
 export interface SimulationResponse {
   label: string;
   strategyId: string;
+  action?: "deposit" | "redeem";
   amount: number;
   asset: string;
   chainId: number;
-  preflight: VaultPreflight;
+  preflight: VaultPreflight | null;
   verdict: "allocate" | "defer" | "reject";
   builtBy: "ixs-mcp" | "local-encoder" | null;
   note?: string;
+  settlement?: string;
+  mcpDescription?: string;
+  minRedeemUsd?: number | null;
+  feeBps?: number | null;
+  redeem?: RedeemSimulation;
   steps: { index: number; kind: string; to: string; data: string; builtBy: string; simulation?: StepSimulation }[];
 }
 
@@ -119,6 +140,8 @@ export interface SystemInfo {
   rpcKind: "mainnet" | "fork";
   rpcUrl: string;
   liveMinUsdc: number;
+  maxLiveTxUsdc: number;
+  navStaleHours: number;
   minDepositUsdc: number;
   database: "postgres" | "file";
   chainId: number;
@@ -149,6 +172,6 @@ export const api = {
     request<{ user: UserProfile; system: SystemInfo }>("/api/settings", { method: "PATCH", body: JSON.stringify({ address, ...patch }) }),
   reset: (address: string) => request<{ ok: boolean }>(`/api/settings?address=${address}`, { method: "DELETE" }),
   evidence: () => request<EvidenceResponse>("/api/evidence"),
-  simulate: (address: string, strategyId: string, amount?: number) =>
-    request<SimulationResponse>("/api/simulate", { method: "POST", body: JSON.stringify({ address, strategyId, amount }) }),
+  simulate: (address: string, strategyId: string, amount?: number, action: "deposit" | "redeem" = "deposit", shares?: number) =>
+    request<SimulationResponse>("/api/simulate", { method: "POST", body: JSON.stringify({ address, strategyId, amount, action, shares }) }),
 };

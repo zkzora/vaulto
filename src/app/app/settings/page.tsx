@@ -160,6 +160,12 @@ export default function SettingsPage() {
                   system.rpcKind === "fork" ? "blue" : treasury.data?.snapshot.liveChainIds.length ? "green" : "amber",
                   system.rpcKind === "fork" ? modeLabel("simulated", 56, "fork") : treasury.data?.snapshot.liveChainIds.length ? "Live" : "Simulated",
                 ],
+                [
+                  "Guardrails (deterministic)",
+                  `Liquidity floor ${u.liquidityFloorPct}% · exposure cap ${u.maxAssetExposurePct}% · min vault score ${u.minVaultRiskScore} · min deposit ${system.minDepositUsdc} USDC · Live hard cap ${system.maxLiveTxUsdc.toLocaleString("en-US")} USDC per transaction · NAV stale after ${system.navStaleHours} h`,
+                  "green",
+                  "Enforced",
+                ],
                 ["Database", system.database === "postgres" ? "PostgreSQL via Prisma" : "JSON file store (.data/) · set DATABASE_URL for Postgres", system.database === "postgres" ? "green" : "muted", system.database === "postgres" ? "Postgres" : "File"],
               ].map(([k, v, tone, label]) => (
                 <div key={k as string} className="flex items-center justify-between gap-3 border-b border-line-3 pb-3 last:border-0 last:pb-0">

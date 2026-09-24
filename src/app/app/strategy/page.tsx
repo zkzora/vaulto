@@ -115,7 +115,12 @@ export default function StrategyPage() {
 
       {/* Verdicts: one per candidate vault, from SERV reasoning */}
       <Card>
-        <CardTitle action={<span className="text-[12px] font-medium text-faint">{decisions.length} vault{decisions.length === 1 ? "" : "s"} · every candidate gets a verdict</span>}>SERV verdicts per vault</CardTitle>
+        <CardTitle action={<span className="text-[12px] font-medium text-faint">{decisions.length} vault{decisions.length === 1 ? "" : "s"} · every candidate gets a verdict · {rec.validatorOverrides?.length ?? 0} validator override{(rec.validatorOverrides?.length ?? 0) === 1 ? "" : "s"}</span>}>SERV verdicts per vault</CardTitle>
+        <div className="mt-1 text-[12px] text-muted">
+          <b className="text-ink">SERV decides; deterministic policy guardrails enforce hard limits</b>
+          {rec.guardrails ? ` (liquidity floor ${rec.guardrails.liquidityFloorPct}%, exposure cap ${rec.guardrails.maxAssetExposurePct}%, min vault score ${rec.guardrails.minVaultRiskScore}, min deposit ${rec.guardrails.minDepositUsd} USDC, Live cap ${rec.guardrails.maxLiveTxUsdc.toLocaleString("en-US")} USDC per tx, NAV stale after ${rec.guardrails.navStaleHours} h)` : ""}.
+          {rec.validatorOverrides?.length ? ` Validator overrides in this run: ${rec.validatorOverrides.join("; ")}.` : " No validator override was needed in this run."}
+        </div>
         <div className="mt-3 grid gap-2">
           {decisions.map((d) => {
             const s = byId.get(d.strategyId);
@@ -290,7 +295,7 @@ export default function StrategyPage() {
                       </button>
                     </div>
                     <div className="mt-3 text-center text-[12px] leading-[1.5] text-faint">
-                      {rec.txCount} calldata step{rec.txCount > 1 ? "s" : ""} via IXS MCP · {live ? `wallet signature required · est. fee ${fmtUsd(rec.feeUsd, { decimals: 2 })}` : `${execLabel} · nothing is sent`}
+                      {rec.txCount} calldata step{rec.txCount > 1 ? "s" : ""} via IXS MCP · {live ? `wallet signature required · approve exact amount · hard cap ${(rec.guardrails?.maxLiveTxUsdc ?? 0).toLocaleString("en-US")} USDC per tx · est. fee ${fmtUsd(rec.feeUsd, { decimals: 2 })}` : `${execLabel} · nothing is sent`}
                     </div>
                   </>
                 )}

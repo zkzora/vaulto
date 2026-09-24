@@ -40,6 +40,7 @@ const API = (process.env.IXS_API_BASE_URL || "https://api-v2.ixs.finance").repla
 const MCP = process.env.IXS_MCP_URL || "https://api-v2.ixs.finance/mcp";
 const AMOUNT = process.env.AMOUNT || "100";
 const KEEP = /^(1|true|yes)$/i.test(process.env.KEEP || "");
+const REDEEM = /^(1|true|yes)$/i.test(process.env.REDEEM || "");
 // Anvil's well-known test account #0 (never holds real value).
 const DEMO_KEY = process.env.DEMO_PRIVATE_KEY || "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 const demoAccount = privateKeyToAccount(DEMO_KEY);
@@ -71,6 +72,8 @@ const vaultAbi = parseAbi([
   "function requestDeposit(uint256,address,address) returns (uint256)",
   "function pendingDepositRequest(uint256,address) view returns (uint256)",
   "function claimableDepositRequest(uint256,address) view returns (uint256)",
+  "function previewRedeem(uint256) view returns (uint256)",
+  "function minRedeemAssets() view returns (uint256)",
   "event Deposit(address indexed sender, address indexed owner, uint256 assets, uint256 shares)",
   "event DepositRequest(address indexed controller, address indexed owner, uint256 indexed requestId, address sender, uint256 assets)",
 ]);
@@ -266,6 +269,29 @@ async function main() {
         const dep = decoded.find((d) => d.eventName === "Deposit");
         entry.depositEvent = dep ? { assets: Number(formatUnits(dep.args.assets, assetDecimals)), shares: Number(formatUnits(dep.args.shares, shareDecimals)) } : null;
         entry.status = `Deposited (sync ERC-4626): ${entry.sharesReceived} ${shareSymbol} ≈ ${entry.sharesValue} ${assetSymbol} minted in the deposit transaction.`;
+        if (REDEEM && shares > 0n) {
+          // Redemption path: requestRedeem (queued) → operator sells RWA and finalizes → USDC paid to the receiver, no claim.
+          const minRedeem = await pub.readContract({ address: VAULT, abi: vaultAbi, functionName: "minRedeemAssets" }).catch(() => null);
+          const preview = await pub.readContract({ address: VAULT, abi: vaultAbi, functionName: "previewRedeem", args: [shares] }).catch(() => null);
+          const redeemEntry = { shares: Number(formatUnits(shares, shareDecimals)), minRedeemAssets: minRedeem != null ? Number(formatUnits(minRedeem, assetDecimals)) : null, previewNetAssets: preview != null ? Number(formatUnits(preview, assetDecimals)) : null, path: "requestRedeem → queued → operator sells RWA and finalizes → USDC paid to the receiver (no claim step)" };
+          entry.redeem = redeemEntry;
+          try {
+            const rplan = await mcp("vault_build_request_redeem", { vaultId: v.routeId, ownerAddress: DEMO_WALLET, shareAmount: shares.toString() });
+            const rs = rplan.steps[0];
+            const hash = IMPERSONATE_DEMO
+              ? await rpc("eth_sendTransaction", [{ from: DEMO_WALLET, to: rs.tx.to, data: rs.tx.data, value: "0x0" }])
+              : await wallet.sendTransaction({ to: rs.tx.to, data: rs.tx.data, value: 0n });
+            const receipt = await pub.waitForTransactionReceipt({ hash });
+            redeemEntry.tx = { hash, status: receipt.status, gasUsed: Number(receipt.gasUsed) };
+            redeemEntry.settlement = rplan.settlement;
+            redeemEntry.sharesAfter = Number(formatUnits(await pub.readContract({ address: VAULT, abi: vaultAbi, functionName: "balanceOf", args: [DEMO_WALLET] }), shareDecimals));
+            redeemEntry.status = receipt.status === "success" ? "Redemption requested → awaiting RWA sale & operator finalization → paid (fork: IXS operator not present, stays queued)" : "requestRedeem reverted on the fork";
+            log(`${v.symbol}: requestRedeem ${receipt.status} · fork tx ${hash} · ${redeemEntry.status}`);
+          } catch (e) {
+            redeemEntry.status = `requestRedeem not sent: ${e.message}`;
+            log(`${v.symbol}: ${redeemEntry.status}`);
+          }
+        }
       } else {
         entry.verdict = "ALLOCATE";
         const req = decoded.find((d) => d.eventName === "DepositRequest");

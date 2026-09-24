@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
  * so the /evidence page can show and export it. In-memory ring buffer; the newest 400 entries are kept.
  */
 
-export type EvidenceKind = "mcp" | "ixs-api" | "subgraph" | "onchain" | "simulation" | "serv" | "fork";
+export type EvidenceKind = "mcp" | "ixs-api" | "subgraph" | "onchain" | "simulation" | "serv" | "fork" | "live";
 
 export interface EvidenceEntry {
   id: string;
