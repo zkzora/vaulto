@@ -10,7 +10,7 @@ import { api } from "@/lib/client-api";
 import { fmtUsd } from "@/lib/format";
 import type { PreparedTransaction, TxStatus } from "@/lib/types";
 import { useVaultoAccount } from "@/hooks/use-account";
-import { useTreasury } from "@/hooks/use-vaulto";
+import { recallRecommendation, rememberRecommendation, useTreasury } from "@/hooks/use-vaulto";
 import { TxnModal } from "./txn-modal";
 import { Toast, type ToastData } from "./toast";
 
@@ -41,6 +41,7 @@ export function TxnProvider({ children }: { children: ReactNode }) {
   const [steps, setSteps] = useState<StepState[]>([]);
   const [executing, setExecuting] = useState(false);
   const [toast, setToast] = useState<ToastData | null>(null);
+  const heldRec = treasury.data?.recommendation ?? null;
 
   /** Prepares the workflow. The server picks the mode (Live at >= 100 USDC, otherwise simulated); `simulate` forces a simulation. */
   const load = useCallback(
@@ -51,7 +52,8 @@ export function TxnProvider({ children }: { children: ReactNode }) {
       setPrepared(null);
       setRecId(recommendationId);
       try {
-        const { prepared } = await api.prepare(account.address, recommendationId, simulate);
+        const held = heldRec?.id === recommendationId ? heldRec : recallRecommendation(account.address);
+        const { prepared } = await api.prepare(account.address, recommendationId, simulate, held?.id === recommendationId ? held : null);
         setPrepared(prepared);
         setSteps(prepared.steps.map((s) => ({ index: s.index, status: "idle" })));
       } catch (e) {
@@ -60,7 +62,7 @@ export function TxnProvider({ children }: { children: ReactNode }) {
         setLoading(false);
       }
     },
-    [account.address],
+    [account.address, heldRec],
   );
 
   const open = useCallback(
@@ -148,7 +150,10 @@ export function TxnProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      await api.finalize(account.address, prepared.id, results);
+      const held = heldRec?.id === prepared.recommendationId ? heldRec : recallRecommendation(account.address);
+      const fin = await api.finalize(account.address, prepared.id, results, { prepared, recommendation: held?.id === prepared.recommendationId ? held : null });
+      if (fin.recommendation) rememberRecommendation(account.address, fin.recommendation);
+      else if (held && held.id === prepared.recommendationId) rememberRecommendation(account.address, { ...held, status: results.some((r) => r.status === "failed") && !results.some((r) => r.status === "confirmed" || r.status === "simulated") ? "approved" : "executed" });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not record execution");
     }
@@ -171,7 +176,7 @@ export function TxnProvider({ children }: { children: ReactNode }) {
       router.push("/app");
       setTimeout(() => setToast(null), 7000);
     }
-  }, [prepared, account.address, account.chainId, publicClient, qc, router, sendTransactionAsync, switchChainAsync]);
+  }, [prepared, account.address, account.chainId, publicClient, qc, router, sendTransactionAsync, switchChainAsync, heldRec]);
 
   const notify = useCallback((data: ToastData) => {
     setToast(data);

@@ -3,6 +3,7 @@ import { addressFrom, addressSchema, bad, handle } from "@/lib/api-utils";
 import { CHAIN_ID, CHAIN_NAME, LIVE_MODE_MIN_USDC, MIN_DEPOSIT_USDC } from "@/lib/chain/config";
 import { RPC_KIND } from "@/lib/chain/client";
 import { env, openservConfigured } from "@/lib/env";
+import { checkInference } from "@/lib/openserv/inference";
 import { getStore } from "@/lib/db";
 import { getUser, resetUser, updateUser } from "@/lib/orchestrator";
 
@@ -34,7 +35,8 @@ async function systemInfo() {
 export async function GET(req: Request) {
   const address = addressFrom(req);
   if (!address) return bad("address query param required");
-  return handle(async () => ({ user: await getUser(address), system: await systemInfo() }));
+  const ping = new URL(req.url).searchParams.get("ping") === "1";
+  return handle(async () => ({ user: await getUser(address), system: await systemInfo(), ...(ping ? { openservPing: await checkInference() } : {}) }));
 }
 
 const patchBody = z.object({

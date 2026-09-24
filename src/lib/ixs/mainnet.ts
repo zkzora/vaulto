@@ -1,6 +1,6 @@
-import { createPublicClient, formatUnits, http } from "viem";
-import { avalanche, bsc } from "viem/chains";
+import { formatUnits } from "viem";
 import { erc4626Abi } from "@/lib/chain/abi";
+import { publicClient } from "@/lib/chain/client";
 
 /**
  * Read-only view of the IXS production vaults (IX High Yield Bond on BNB Chain and Avalanche).
@@ -48,10 +48,8 @@ interface ProdItem {
 let cache: { at: number; value: MainnetVault[] } | null = null;
 const TTL_MS = 5 * 60 * 1000;
 
-const clients = {
-  56: createPublicClient({ chain: bsc, transport: http(undefined, { timeout: 8_000 }) }),
-  43114: createPublicClient({ chain: avalanche, transport: http(undefined, { timeout: 8_000 }) }),
-} as const;
+/** Same configured RPCs as the rest of the app (RPC_URL / AVAX_RPC_URL), not viem defaults. */
+const clients = { 56: publicClient(56), 43114: publicClient(43114) } as const;
 
 export async function getMainnetVaults(): Promise<{ vaults: MainnetVault[]; ok: boolean }> {
   if (cache && Date.now() - cache.at < TTL_MS) return { vaults: cache.value, ok: true };

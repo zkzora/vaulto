@@ -306,11 +306,35 @@ export async function setRecommendationStatus(address: string, id: string, statu
   return rec;
 }
 
-export async function prepare(address: string, recommendationId: string, simulate = false): Promise<PreparedTransaction> {
+/**
+ * On serverless hosting the JSON store lives in memory per instance, so the client sends the recommendation it
+ * holds back with the request; it is only accepted for the same wallet and id, and pre-flight is re-run before any
+ * calldata is built (execution.ts checks rec.preflights, which are refreshed here).
+ */
+async function recoverRecommendation(store: Awaited<ReturnType<typeof getStore>>, wallet: string, id: string, fromClient?: Recommendation): Promise<Recommendation | null> {
+  const stored = await store.getRecommendation(id);
+  if (stored) return stored;
+  if (!fromClient || fromClient.id !== id || normalizeAddress(fromClient.walletAddress) !== wallet) return null;
+  const registry = await getRegistry();
+  const { strategies } = await loadStrategies();
+  const preflights: Record<string, VaultPreflight> = {};
+  await Promise.all(
+    fromClient.legs.map(async (l) => {
+      const s = strategies.find((x) => x.id === l.strategyId);
+      const rv = s ? findRegistryVault(registry, s.routeId) : undefined;
+      if (rv) preflights[l.strategyId] = await runPreflight(rv, wallet, l.amountUsd);
+    }),
+  );
+  const rec: Recommendation = { ...fromClient, walletAddress: wallet, preflights: { ...(fromClient.preflights ?? {}), ...preflights } };
+  await store.saveRecommendation(rec);
+  return rec;
+}
+
+export async function prepare(address: string, recommendationId: string, simulate = false, fromClient?: Recommendation): Promise<PreparedTransaction> {
   const store = await getStore();
   const wallet = normalizeAddress(address);
-  const rec = await store.getRecommendation(recommendationId);
-  if (!rec || rec.walletAddress !== wallet) throw new Error("recommendation not found");
+  const rec = await recoverRecommendation(store, wallet, recommendationId, fromClient);
+  if (!rec || rec.walletAddress !== wallet) throw new Error("recommendation not found (run the analysis again)");
   if (!rec.legs.length) throw new Error("nothing to execute: every vault was deferred or rejected");
   invalidateOnchain(wallet);
   const { user, snapshot, strategies } = await scan(wallet);
@@ -348,12 +372,16 @@ export interface StepResult {
   error?: string;
 }
 
-export async function finalize(address: string, preparedId: string, results: StepResult[]) {
+export async function finalize(address: string, preparedId: string, results: StepResult[], fromClient?: { prepared?: PreparedTransaction; recommendation?: Recommendation }) {
   const store = await getStore();
   const wallet = normalizeAddress(address);
-  const prepared = await store.getPrepared(preparedId);
+  let prepared = await store.getPrepared(preparedId);
+  if (!prepared && fromClient?.prepared && fromClient.prepared.id === preparedId && normalizeAddress(fromClient.prepared.walletAddress) === wallet) {
+    prepared = { ...fromClient.prepared, walletAddress: wallet };
+    await store.savePrepared(prepared);
+  }
   if (!prepared || prepared.walletAddress !== wallet) throw new Error("prepared transaction not found");
-  const rec = await store.getRecommendation(prepared.recommendationId);
+  const rec = (await store.getRecommendation(prepared.recommendationId)) ?? (await recoverRecommendation(store, wallet, prepared.recommendationId, fromClient?.recommendation));
   const demo = await store.getDemoState(wallet);
   const records: TransactionRecord[] = [];
   const cutoff = nextCutoff();

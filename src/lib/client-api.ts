@@ -156,12 +156,12 @@ export const api = {
   recommendation: (address: string) => request<{ recommendation: Recommendation | null }>(`/api/recommendation?address=${address}`),
   setRecommendationStatus: (address: string, id: string, status: RecommendationStatus) =>
     request<{ recommendation: Recommendation | null }>("/api/recommendation", { method: "PATCH", body: JSON.stringify({ address, id, status }) }),
-  prepare: (address: string, recommendationId: string, simulate: boolean) =>
-    request<{ prepared: PreparedTransaction }>("/api/execute", { method: "POST", body: JSON.stringify({ address, recommendationId, simulate }) }),
-  finalize: (address: string, preparedId: string, results: { index: number; hash?: string; status: TxStatus; error?: string }[]) =>
+  prepare: (address: string, recommendationId: string, simulate: boolean, recommendation?: Recommendation | null) =>
+    request<{ prepared: PreparedTransaction }>("/api/execute", { method: "POST", body: JSON.stringify({ address, recommendationId, simulate, recommendation: recommendation ?? undefined }) }),
+  finalize: (address: string, preparedId: string, results: { index: number; hash?: string; status: TxStatus; error?: string }[], extra?: { prepared?: PreparedTransaction; recommendation?: Recommendation | null }) =>
     request<{ transactions: TransactionRecord[]; recommendation: Recommendation | null }>("/api/execute", {
       method: "PUT",
-      body: JSON.stringify({ address, preparedId, results }),
+      body: JSON.stringify({ address, preparedId, results, prepared: extra?.prepared, recommendation: extra?.recommendation ?? undefined }),
     }),
   activity: (address: string) => request<{ logs: AgentLog[]; transactions: TransactionRecord[] }>(`/api/activity?address=${address}`),
   risk: (address: string) => request<{ report: RiskReport; snapshot: TreasurySnapshot; recommendation: Recommendation | null }>(`/api/risk?address=${address}`),
