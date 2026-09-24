@@ -78,7 +78,7 @@ function Facts({ s }: { s: VaultStrategy }) {
       <div className="flex justify-between gap-3">
         <span className="shrink-0">Redemption</span>
         <span className="text-right font-semibold text-ink">
-          requested → awaiting RWA sale &amp; operator finalization → paid · no claim step{s.terms?.minRedeemUsd != null ? ` · min ${s.terms.minRedeemUsd} ${s.asset} net (minRedeemAssets)` : ""}
+          requested → awaiting RWA sale &amp; operator finalization → paid · no claim step{s.terms?.minRedeemUsd != null ? (s.terms.minRedeemUsd >= 0.01 ? ` · min ${s.terms.minRedeemUsd} ${s.asset} net (minRedeemAssets)` : " · no practical minimum (minRedeemAssets ≈ 0)") : ""}
         </span>
       </div>
       {s.nav?.contractThresholdHours != null && (
