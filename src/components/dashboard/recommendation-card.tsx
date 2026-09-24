@@ -121,6 +121,20 @@ export function RecommendationCard({ rec, snapshot }: { rec: Recommendation | nu
           </div>
         ))}
       </div>
+      {((rec.deferred?.length ?? 0) > 0 || rec.rejected.length > 0) && (
+        <div className="mt-3 flex flex-wrap gap-1.5 text-[11px]">
+          {(rec.deferred ?? []).map((d) => (
+            <Pill key={`d-${d.option}`} tone="amber" className="h-5 px-1.5 text-[10px]">
+              DEFER · {d.option.split(" · ")[0]}
+            </Pill>
+          ))}
+          {rec.rejected.filter((r) => r.verdict === "reject").map((r) => (
+            <Pill key={`r-${r.option}`} tone="red" className="h-5 px-1.5 text-[10px]">
+              REJECT · {r.option.split(" · ")[0]}
+            </Pill>
+          ))}
+        </div>
+      )}
       <div className="mt-3.5 grid grid-cols-3 gap-3 rounded-[10px] bg-canvas px-3.5 py-3">
         <div>
           <div className="text-[12px] font-medium text-muted">Expected</div>

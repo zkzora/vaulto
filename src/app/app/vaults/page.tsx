@@ -2,9 +2,90 @@
 
 import { useRouter } from "next/navigation";
 import { useAnalyze, useMainnetVaults, useSimulate, useStrategies, useTreasury } from "@/hooks/use-vaulto";
-import { CHAIN_ID, CHAIN_NAME, MODE_LABEL } from "@/lib/chain/config";
+import { chainInfo, modeLabel } from "@/lib/chain/config";
 import { fmtUsd } from "@/lib/format";
+import type { VaultStrategy } from "@/lib/types";
 import { Card, ErrorState, Icons, IxsMark, Pill, Skeleton, cx } from "@/components/ui";
+
+const ageText = (h: number | null | undefined) => (h == null ? "unknown" : h < 48 ? `${h.toFixed(1)} h ago` : `${(h / 24).toFixed(1)} days ago`);
+
+function VerdictPill({ verdict }: { verdict: "allocate" | "defer" | "reject" }) {
+  return <Pill tone={verdict === "allocate" ? "green" : verdict === "defer" ? "amber" : "red"}>{verdict === "allocate" ? "ALLOCATE" : verdict === "defer" ? "DEFER · waiting NAV refresh" : "REJECT"}</Pill>;
+}
+
+function Facts({ s }: { s: VaultStrategy }) {
+  const limit = s.depositLimitUsd === null || s.depositLimitUsd === undefined ? (s.depositLimitSource?.includes("2^256") ? "unlimited" : "unknown") : `${s.depositLimitUsd.toLocaleString("en-US")} ${s.asset}`;
+  const chain = chainInfo(s.chainId);
+  return (
+    <div className="mt-4 grid gap-1.5 text-[12px] text-muted">
+      <div className="flex justify-between gap-3">
+        <span>Asset (asset() on-chain)</span>
+        <span className="font-semibold text-ink">
+          {s.asset} · {s.assetDecimals} dec
+        </span>
+      </div>
+      <div className="flex justify-between gap-3">
+        <span>Settlement</span>
+        <span className="text-right font-semibold text-ink">{s.settlement === "sync" ? "Sync (ERC-4626)" : "Async (ERC-7540)"}</span>
+      </div>
+      <div className="flex justify-between gap-3">
+        <span>Deposit limit (maxDeposit)</span>
+        <span className={cx("text-right font-semibold", s.depositLimitUsd === 0 ? "text-amber" : "text-ink")}>
+          {limit}
+          {s.depositLimitUsd === 0 ? " · waiting NAV refresh" : ""}
+        </span>
+      </div>
+      <div className="flex justify-between gap-3">
+        <span>NAV</span>
+        <span className={cx("text-right font-semibold", (s.nav?.ageHours ?? 0) > 72 ? "text-amber" : "text-ink")}>
+          {s.nav?.pricePerShare != null ? `${s.nav.pricePerShare.toFixed(6)} / share` : "—"} · {ageText(s.nav?.ageHours)}
+        </span>
+      </div>
+      {s.nav?.lastChangeTx && (
+        <div className="flex justify-between gap-3">
+          <span>Last NAV change</span>
+          <a href={`${chain.explorer}/tx/${s.nav.lastChangeTx}`} target="_blank" rel="noreferrer" className="mono inline-flex items-center gap-1 text-blue-deep">
+            {s.nav.lastChangeTx.slice(0, 10)}… {s.nav.block ? `· block ${s.nav.block.toLocaleString("en-US")}` : ""} {Icons.external}
+          </a>
+        </div>
+      )}
+      {s.tvlUsd != null && (
+        <div className="flex justify-between gap-3">
+          <span>Vault TVL (totalAssets)</span>
+          <span className="font-semibold text-ink">{fmtUsd(s.tvlUsd, { decimals: 2 })}</span>
+        </div>
+      )}
+      {s.terms && (
+        <>
+          <div className="flex justify-between gap-3">
+            <span>Minimum deposit</span>
+            <span className="font-semibold text-ink">
+              {s.terms.minDepositUsd} {s.asset} · confirmed by IXS
+            </span>
+          </div>
+          <div className="flex justify-between gap-3">
+            <span>Fees</span>
+            <span className="text-right font-semibold text-ink">
+              {s.terms.depositFeeBps / 100}% deposit · {s.terms.redeemFeeBps != null ? `${s.terms.redeemFeeBps / 100}% redeem (feeBps on-chain)` : "redeem fee not exposed"}
+            </span>
+          </div>
+        </>
+      )}
+      <div className="flex justify-between gap-3">
+        <span className="shrink-0">Cutoff</span>
+        <span className="text-right font-semibold text-ink">{s.settlement === "sync" ? "n/a · settles in the deposit tx" : "17:00 SGT, SG business days (IXS, 24 Sep 2026)"}</span>
+      </div>
+      <div className="flex justify-between gap-3">
+        <span className="shrink-0">Redemption</span>
+        <span className="text-right font-semibold text-ink">requested → awaiting RWA sale &amp; operator finalization → paid · no claim step</span>
+      </div>
+      <div className="flex justify-between gap-3">
+        <span>Eligibility</span>
+        <span className={cx("font-semibold", s.requiresWhitelist ? "text-amber" : "text-green")}>{s.requiresWhitelist ? "KYC whitelist required" : "Open"}</span>
+      </div>
+    </div>
+  );
+}
 
 export default function VaultsPage() {
   const q = useStrategies();
@@ -18,9 +99,8 @@ export default function VaultsPage() {
   if (!q.data) return <Skeleton className="h-96" />;
   const { strategies, liveOk, registry } = q.data;
   const positions = new Map(treasury.data?.snapshot.positions.map((p) => [p.strategyId, p]) ?? []);
-  const mode = treasury.data?.snapshot.executionMode ?? "simulated";
-  const rpcKind = treasury.data?.snapshot.onchain.rpcKind ?? "mainnet";
-  const modeLabel = mode === "live" ? MODE_LABEL.live : rpcKind === "fork" ? MODE_LABEL.fork : MODE_LABEL.simulated;
+  const snapshot = treasury.data?.snapshot;
+  const waiting = treasury.data?.watch.waiting ?? [];
 
   const allocate = async () => {
     await analyze.mutateAsync();
@@ -33,30 +113,37 @@ export default function VaultsPage() {
         <div>
           <div className="font-display text-[28px] font-semibold tracking-[-0.02em] text-ink">IXS Strategies</div>
           <div className="mt-1 text-[14px] text-muted">
-            The IX High Yield Bond vaults on {CHAIN_NAME} mainnet. Addresses from the IXS Vault API; asset, decimals, fees and whitelist state read from the contracts; deposits built by the IXS MCP.
+            The IX High Yield Bond vaults on BNB Chain and Avalanche mainnet. Addresses from the IXS Vault API; asset, decimals, fees, limits and NAV read from the contracts and the IXS subgraphs; deposits built by the IXS MCP.
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Pill tone={mode === "live" ? "green" : rpcKind === "fork" ? "blue" : "amber"}>{modeLabel}</Pill>
-          <button className="btn btn-primary" disabled={analyze.isPending} onClick={allocate}>
-            {analyze.isPending && <span className="spinner" />}
-            {analyze.isPending ? "Analyzing…" : "Allocate with Vaulto"}
-          </button>
-        </div>
+        <button className="btn btn-primary" disabled={analyze.isPending} onClick={allocate}>
+          {analyze.isPending && <span className="spinner" />}
+          {analyze.isPending ? "Analyzing…" : "Allocate with Vaulto"}
+        </button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {waiting.length > 0 && (
+        <div className="rounded-xl border border-amber-line bg-amber-tint px-4 py-3 text-[13px] text-amber">
+          <b>NAV / deposit-limit watcher:</b> {waiting.map((w) => `${w.chainName} ${w.symbol} is temporarily paused — waiting NAV refresh (limit 0, NAV ${ageText(w.navAgeHours)})`).join(" · ")}. Vaulto re-checks on every scan and will flag the vault the moment its limit is above 0.
+        </div>
+      )}
+
+      <div className="grid gap-4 md:grid-cols-2">
         {strategies.map((s) => {
           const p = positions.get(s.id);
           const announced = s.availability === "announced";
+          const chain = chainInfo(s.chainId);
+          const mode = snapshot?.liveChainIds.includes(s.chainId) ? "live" : "simulated";
+          const sim = simulate.data?.strategyId === s.id ? simulate.data : null;
           return (
             <Card key={s.id} className={cx("flex flex-col", s.tag === "primary" && "card-accent", announced && "opacity-90")}>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <IxsMark size={24} />
                   <Pill tone={s.tag === "primary" ? "blue" : s.tag === "opportunity" ? "amber" : announced ? "muted" : "green"} className="uppercase tracking-[0.04em]">
-                    {s.tag === "primary" ? "IXS official" : announced ? "Announced" : s.tag === "opportunity" ? "Licensed" : s.tag}
+                    {s.tag === "primary" ? "Primary" : announced ? "Announced" : s.tag === "opportunity" ? "Licensed" : "Open"}
                   </Pill>
+                  {!announced && <Pill tone="muted">{chain.name}</Pill>}
                 </div>
                 <Pill tone={s.status === "active" ? "green" : "muted"}>{announced ? "not deployed" : s.status}</Pill>
               </div>
@@ -78,98 +165,71 @@ export default function VaultsPage() {
                   <div className="mt-1 text-[12px] font-semibold text-ink">{s.liquidity}</div>
                 </div>
               </div>
-              <div className="mt-4 grid gap-1.5 text-[12px] text-muted">
-                <div className="flex justify-between">
-                  <span>Asset (asset() on-chain)</span>
-                  <span className="font-semibold text-ink">
-                    {s.asset}
-                    {s.assetDecimals != null ? ` · ${s.assetDecimals} dec` : ""}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Settlement</span>
-                  <span className="font-semibold text-ink">{announced ? "—" : s.settlement === "sync" ? "Sync (ERC-4626)" : "Async (ERC-7540)"}</span>
-                </div>
-                {s.tvlUsd != null && (
-                  <div className="flex justify-between">
-                    <span>Vault TVL (totalAssets)</span>
-                    <span className="font-semibold text-ink">{fmtUsd(s.tvlUsd, { decimals: 2 })}</span>
-                  </div>
-                )}
-                {s.sharePrice != null && (
-                  <div className="flex justify-between">
-                    <span>Price per share</span>
-                    <span className="font-semibold text-ink">{s.sharePrice.toFixed(4)}</span>
-                  </div>
-                )}
-                {s.terms && (
-                  <>
-                    <div className="flex justify-between">
-                      <span>Minimum deposit</span>
-                      <span className="font-semibold text-ink">{s.terms.minDepositUsd} {s.asset} · enforced on-chain</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Fees</span>
-                      <span className="font-semibold text-ink">
-                        {s.terms.depositFeeBps / 100}% deposit · {s.terms.redeemFeeBps != null ? `${s.terms.redeemFeeBps / 100}% redeem (feeBps on-chain)` : "redeem fee not exposed"}
-                      </span>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <span className="shrink-0">Redemption</span>
-                      <span className="text-right font-semibold text-ink">{s.terms.redemption}</span>
-                    </div>
-                  </>
-                )}
-                <div className="flex justify-between">
-                  <span>Eligibility</span>
-                  <span className={cx("font-semibold", announced ? "text-muted" : s.requiresWhitelist ? "text-amber" : "text-green")}>{announced ? "n/a" : s.requiresWhitelist ? "KYC whitelist required" : "Open"}</span>
-                </div>
-                <div className="flex justify-between">
+              {announced ? (
+                <div className="mt-4 text-[12px] text-muted">Asset BTC · no contract on the IXS Vault API · Vaulto checks availability on every analysis.</div>
+              ) : (
+                <Facts s={s} />
+              )}
+              {!announced && (
+                <div className="mt-2 flex justify-between gap-3 text-[12px] text-muted">
                   <span>Your position</span>
                   <span className="font-semibold text-ink">{p ? fmtUsd(p.valueUsd) : "—"}</span>
                 </div>
-              </div>
+              )}
               {s.executable && (
                 <div className="mt-4 rounded-xl border border-line bg-canvas px-3.5 py-3 text-[12px]">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-semibold text-ink">
-                      {rpcKind === "fork" ? MODE_LABEL.fork : MODE_LABEL.simulated} · {s.terms?.minDepositUsd ?? 100} {s.asset}
+                      {modeLabel("simulated", s.chainId, snapshot?.onchain.byChain?.[s.chainId]?.rpcKind ?? "mainnet")} · {s.terms?.minDepositUsd ?? 100} {s.asset}
                     </span>
                     <button className="btn btn-soft h-8 text-[12px]" disabled={simulate.isPending} onClick={() => simulate.mutate({ strategyId: s.id })}>
-                      {simulate.isPending && simulate.variables?.strategyId === s.id ? "Simulating…" : "Simulate deposit"}
+                      {simulate.isPending && simulate.variables?.strategyId === s.id ? "Checking…" : "Pre-flight + simulate"}
                     </button>
                   </div>
                   {simulate.variables?.strategyId === s.id && simulate.isError && <div className="mt-2 text-red">{simulate.error.message}</div>}
-                  {simulate.data?.strategyId === s.id && (
-                    <div className="mt-2 grid gap-1 text-muted">
-                      {simulate.data.mcpRefused ? (
-                        <div className="text-amber">IXS MCP refused to build the deposit: {simulate.data.mcpRefused}</div>
-                      ) : (
-                        simulate.data.steps.map((st) => (
-                          <div key={st.index} className="flex justify-between gap-2">
-                            <span className="capitalize">
-                              {st.kind} · {st.builtBy === "ixs-mcp" ? "IXS MCP" : "local ERC-4626"}
-                            </span>
-                            <span className={cx("text-right font-semibold", st.simulation?.ok ? "text-green" : "text-red")}>
-                              {st.simulation?.ok
-                                ? st.simulation.expectedShares != null
-                                  ? `${st.simulation.expectedShares.toFixed(4)} ${st.simulation.shareSymbol}`
-                                  : st.simulation.requestId
-                                    ? `request #${st.simulation.requestId}`
-                                    : "ok"
-                                : `revert: ${st.simulation?.revertReason ?? "unknown"}`}
-                            </span>
-                          </div>
-                        ))
-                      )}
-                      {simulate.data.note && <div className="text-amber">{simulate.data.note}</div>}
-                      <div className="text-faint">eth_call + state override (balance + allowance) · nothing is sent</div>
+                  {sim && (
+                    <div className="mt-2 grid gap-1.5 text-muted">
+                      <div className="flex items-center gap-2">
+                        <VerdictPill verdict={sim.verdict} />
+                        <span className="text-faint">wallet {sim.preflight.wallet.slice(0, 8)}… · block {sim.preflight.blockNumber?.toLocaleString("en-US") ?? "?"}</span>
+                      </div>
+                      {sim.preflight.checks.map((c) => (
+                        <div key={c.key} className="flex justify-between gap-2">
+                          <span>
+                            <span className={cx("mr-1 font-semibold", c.ok ? "text-green" : c.severity === "info" ? "text-faint" : c.severity === "defer" ? "text-amber" : "text-red")}>{c.ok ? "✓" : c.severity === "info" ? "·" : "✗"}</span>
+                            {c.label}
+                          </span>
+                          <span className="text-right text-ink" title={`${c.detail} · ${c.source}`}>
+                            {c.value}
+                          </span>
+                        </div>
+                      ))}
+                      {sim.steps.map((st) => (
+                        <div key={st.index} className="flex justify-between gap-2 border-t border-line-3 pt-1.5">
+                          <span className="capitalize">
+                            {st.kind} · {st.builtBy === "ixs-mcp" ? "IXS MCP" : "direct vault ABI"}
+                          </span>
+                          <span className={cx("text-right font-semibold", st.simulation?.ok ? "text-green" : "text-red")}>
+                            {st.simulation?.ok
+                              ? st.simulation.expectedShares != null
+                                ? `${st.simulation.expectedShares.toFixed(4)} ${st.simulation.shareSymbol}`
+                                : st.simulation.requestId
+                                  ? `request #${st.simulation.requestId} · pending operator settlement`
+                                  : "ok"
+                              : `revert: ${st.simulation?.revertReason ?? "unknown"}`}
+                          </span>
+                        </div>
+                      ))}
+                      {sim.note && <div className="text-amber">{sim.note}</div>}
+                      <div className="text-faint">{sim.steps.length ? "eth_call + state override (balance + allowance) · nothing is sent" : "no calldata built"}</div>
                     </div>
                   )}
                 </div>
               )}
               <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-4">
-                <Pill tone={s.executable ? "green" : "muted"}>{s.executable ? `Executable · IXS MCP · ${mode === "live" ? "Live" : "Simulated"}` : (s.capacityNote ?? "Not executable")}</Pill>
+                <Pill tone={s.executable ? (s.depositLimitUsd === 0 ? "amber" : "green") : "muted"}>
+                  {s.executable ? (s.depositLimitUsd === 0 ? "Temporarily paused · waiting NAV refresh" : `Executable · IXS MCP · ${mode === "live" ? "Live" : "Simulated"}`) : (s.capacityNote ?? "Not executable")}
+                </Pill>
                 {s.explorerUrl && (
                   <a href={s.explorerUrl} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 text-[12px] font-semibold text-blue-deep">
                     Contract {Icons.external}
@@ -190,7 +250,7 @@ export default function VaultsPage() {
           </div>
         </div>
         <div className="mt-1 text-[13px] text-muted">
-          Every vault the IXS Vault API lists (BNB Chain and Avalanche). Vaulto targets the {CHAIN_NAME} vaults; the Avalanche ones are shown for context only. TVL and price per share are read on-chain.
+          Every vault the IXS Vault API lists (BNB Chain and Avalanche). TVL and price per share are read on-chain.
           {!liveOk && " IXS API unreachable, showing cached data."}
         </div>
         <div className="mt-4 overflow-x-auto">
@@ -221,7 +281,7 @@ export default function VaultsPage() {
                   <span className="font-display font-semibold">{v.apy != null ? `${v.apy}%` : "—"}</span>
                   <span className="font-display font-semibold">{v.tvlUsd != null ? fmtUsd(v.tvlUsd) : "—"}</span>
                   <span className={v.requiresWhitelist ? "text-amber" : "text-green"}>{v.requiresWhitelist ? "Required" : "Open"}</span>
-                  <span className="text-[12px]">{target ? (v.chainId === CHAIN_ID ? target.vaultName : "—") : v.chainId === CHAIN_ID ? "—" : "read-only"}</span>
+                  <span className="text-[12px]">{target ? target.vaultName : "—"}</span>
                   <a href={v.explorerUrl} target="_blank" rel="noreferrer" className="mono inline-flex items-center gap-1 text-blue-deep">
                     {v.contractAddress.slice(0, 8)}… {Icons.external}
                   </a>

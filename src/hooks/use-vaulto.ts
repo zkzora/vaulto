@@ -75,6 +75,10 @@ export function useUpdateSettings() {
   });
 }
 
+export function useEvidence() {
+  return useQuery({ queryKey: ["evidence"], queryFn: api.evidence, refetchInterval: 30_000 });
+}
+
 export function useSimulate() {
   const { address } = useVaultoAccount();
   return useMutation({ mutationFn: ({ strategyId, amount }: { strategyId: string; amount?: number }) => api.simulate(address!, strategyId, amount) });

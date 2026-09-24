@@ -5,7 +5,7 @@ import { RecommendationCard } from "@/components/dashboard/recommendation-card";
 import { AgentActivityList } from "@/components/dashboard/agent-activity";
 import { useVaultoAccount } from "@/hooks/use-account";
 import { useActivity, useAnalyze, useTreasury } from "@/hooks/use-vaulto";
-import { CHAIN_NAME, LIVE_MODE_MIN_USDC, MODE_LABEL } from "@/lib/chain/config";
+import { CHAIN_NAME, LIVE_MODE_MIN_USDC, chainInfo, modeLabel } from "@/lib/chain/config";
 import { fmtDate, fmtUsd, greeting, timeAgo } from "@/lib/format";
 import { Card, CardTitle, Donut, ErrorState, Pill, Skeleton, Stat, cx } from "@/components/ui";
 
@@ -42,7 +42,7 @@ export default function HomePage() {
           <div className="mt-1 text-[14px] text-muted">
             {fmtDate(snapshot.scannedAt)} · Risk preference: <b className="text-ink">{user.riskProfile}</b>
             {snapshot.onchain.rpcOk ? (
-              <span> · {CHAIN_NAME} block {snapshot.onchain.blockNumber?.toLocaleString()}</span>
+              <span> · {CHAIN_NAME} block {snapshot.onchain.blockNumber?.toLocaleString()}{snapshot.onchain.byChain?.[43114]?.rpcOk ? ` · Avalanche block ${snapshot.onchain.byChain[43114].blockNumber?.toLocaleString()}` : ""}</span>
             ) : (
               <span className="text-amber"> · RPC unavailable, showing cached demo values</span>
             )}
@@ -59,10 +59,10 @@ export default function HomePage() {
 
       <div className={cx("flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line px-4 py-3 text-[13px] text-body", snapshot.executionMode === "live" ? "bg-green-tint" : "bg-tint")}>
         <span>
-          <b className="text-ink">{snapshot.onchain.rpcKind === "fork" ? MODE_LABEL.fork : snapshot.executionMode === "live" ? MODE_LABEL.live : MODE_LABEL.simulated}.</b>{" "}
+          <b className="text-ink">{snapshot.liveChainIds.length ? snapshot.liveChainIds.map((c) => modeLabel("live", c)).join(" + ") : snapshot.onchain.rpcKind === "fork" ? modeLabel("simulated", 56, "fork") : "Simulated on BNB + Avalanche mainnet"}.</b>{" "}
           {snapshot.executionMode === "live"
-            ? `This wallet holds ${fmtUsd(snapshot.onchain.balances[snapshot.onchain.assetSymbol ?? "USDC"] ?? 0)} USDC on ${CHAIN_NAME}: approved deposits into the IX High Yield Bond vault are real and signed by your wallet.`
-            : `${account.isWallet ? `This wallet holds ${fmtUsd(snapshot.onchain.balances[snapshot.onchain.assetSymbol ?? "USDC"] ?? 0)} USDC on ${CHAIN_NAME} (under ${LIVE_MODE_MIN_USDC}).` : "Demo treasury."} Approve + deposit calldata from the IXS MCP is simulated with eth_call + state override against the real vault; nothing is sent. Hold ≥ ${LIVE_MODE_MIN_USDC} USDC to switch to Live.`}
+            ? `This wallet holds ${snapshot.liveChainIds.map((c) => `${fmtUsd(snapshot.onchain.byChain?.[c]?.balances.USDC ?? 0)} USDC on ${chainInfo(c).name}`).join(" and ")}: approved deposits there are real and signed by your wallet, capped per transaction.`
+            : `${account.isWallet ? `This wallet holds ${fmtUsd(snapshot.onchain.balances.USDC ?? 0)} USDC across BNB Chain and Avalanche (under ${LIVE_MODE_MIN_USDC} on each).` : "Simulated treasury (Acme DAO)."} Approve + deposit calldata from the IXS MCP is simulated with eth_call + state override against the real IX High Yield Bond vaults; nothing is sent. Hold ≥ ${LIVE_MODE_MIN_USDC} USDC on a vault's chain to go live there.`}
         </span>
         <Link href="/app/vaults" className="btn btn-soft h-9 text-[13px]">IXS vault terms</Link>
       </div>
