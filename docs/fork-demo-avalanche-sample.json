@@ -1,0 +1,74 @@
+{
+  "label": "Mainnet fork (Anvil)",
+  "chainId": 43114,
+  "chain": "Avalanche C-Chain",
+  "forkBlock": 96060879,
+  "amount": "100 USDC",
+  "demoWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "vaults": [
+    {
+      "label": "Mainnet fork (Anvil)",
+      "chainId": 43114,
+      "chain": "Avalanche C-Chain",
+      "forkBlock": 96060879,
+      "vault": {
+        "name": "IX High Yield Bond (USDC)",
+        "symbol": "IXHYB",
+        "address": "0x864E9C192a724773C2bB8C1e84572996074F0B41",
+        "routeId": "43114-0x864e9c192a724773c2bb8c1e84572996074f0b41",
+        "requiresWhitelist": true
+      },
+      "demoWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "asset": {
+        "address": "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "shares": {
+        "symbol": "IXHYB",
+        "decimals": 18
+      },
+      "redeemFeeBps": 50,
+      "preflight": {
+        "depositLimit": "0 USDC",
+        "whitelistEnabled": true,
+        "whitelisted": false,
+        "paused": false
+      },
+      "verdict": "REJECT",
+      "status": "Demo wallet is not whitelisted (KYC vault); nothing built."
+    },
+    {
+      "label": "Mainnet fork (Anvil)",
+      "chainId": 43114,
+      "chain": "Avalanche C-Chain",
+      "forkBlock": 96060879,
+      "vault": {
+        "name": "IX High Yield Bond (USDC)",
+        "symbol": "IXHYB",
+        "address": "0xaD01573b459805E3954398796203d830B57A8bD9",
+        "routeId": "43114-0xad01573b459805e3954398796203d830b57a8bd9",
+        "requiresWhitelist": false
+      },
+      "demoWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "asset": {
+        "address": "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "shares": {
+        "symbol": "IXHYB",
+        "decimals": 18
+      },
+      "redeemFeeBps": 50,
+      "preflight": {
+        "depositLimit": "0 USDC",
+        "whitelistEnabled": false,
+        "whitelisted": true,
+        "paused": false
+      },
+      "verdict": "DEFER",
+      "status": "Deposit limit 0 USDC below 100 USDC: temporarily paused — waiting NAV refresh (per IXS, 24 Sep 2026). Nothing built."
+    }
+  ]
+}

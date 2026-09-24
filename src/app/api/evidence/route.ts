@@ -11,9 +11,9 @@ import { watchStatus } from "@/lib/ixs/watch";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-function forkSample(): unknown {
+function forkSample(file: string): unknown {
   try {
-    return JSON.parse(readFileSync(join(process.cwd(), "docs", "fork-demo-sample.json"), "utf8"));
+    return JSON.parse(readFileSync(join(process.cwd(), "docs", file), "utf8"));
   } catch {
     return null;
   }
@@ -74,7 +74,8 @@ export async function GET() {
       registrySource: registry.source,
       cutoff: nextCutoff(),
       watch: watchStatus(),
-      forkRun: forkSample(),
+      forkRun: forkSample("fork-demo-sample.json"),
+      forkRunAvalanche: forkSample("fork-demo-avalanche-sample.json"),
       log: listEvidence(),
     };
   });

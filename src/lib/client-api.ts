@@ -95,6 +95,7 @@ export interface EvidenceResponse {
   cutoff: CutoffInfoLite;
   watch: WatchStatus;
   forkRun: Record<string, unknown> | null;
+  forkRunAvalanche: Record<string, unknown> | null;
   log: { id: string; at: string; kind: string; label: string; chainId?: number; blockNumber?: number | null; request?: unknown; response?: unknown; ok: boolean; durationMs?: number }[];
 }
 

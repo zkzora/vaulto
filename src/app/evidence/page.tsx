@@ -159,15 +159,45 @@ export default function EvidencePage() {
               </Card>
             </div>
 
-            {q.data.forkRun && (
-              <Card>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="font-display text-[16px] font-semibold text-ink">Mainnet fork run (Anvil) · scripts/fork-demo.mjs</div>
-                  <Pill tone="blue">{String((q.data.forkRun as { label?: string }).label ?? "Mainnet fork")}</Pill>
-                </div>
-                <pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-xl bg-canvas p-4 text-[11px] text-muted">{JSON.stringify(q.data.forkRun, null, 2)}</pre>
-              </Card>
-            )}
+            {[
+              ["BNB Chain", q.data.forkRun],
+              ["Avalanche C-Chain", q.data.forkRunAvalanche],
+            ]
+              .filter(([, run]) => run)
+              .map(([chain, run]) => {
+                const r = run as { label?: string; forkBlock?: number; vaults?: { vault: { symbol: string; address: string }; verdict: string; status: string; txs?: { step: string; hash: string; status: string }[] }[] };
+                return (
+                  <Card key={String(chain)}>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="font-display text-[16px] font-semibold text-ink">Mainnet fork run (Anvil) · {String(chain)} · scripts/fork-demo.mjs</div>
+                      <Pill tone="blue">
+                        {r.label ?? "Mainnet fork"} · block {r.forkBlock?.toLocaleString("en-US")}
+                      </Pill>
+                    </div>
+                    <div className="mt-3 grid gap-2">
+                      {(r.vaults ?? []).map((v) => (
+                        <div key={v.vault.address} className="rounded-xl border border-line px-4 py-2.5 text-[12px]">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Pill tone={v.verdict === "ALLOCATE" ? "green" : v.verdict === "DEFER" ? "amber" : "red"}>{v.verdict}</Pill>
+                            <span className="font-semibold text-ink">{v.vault.symbol}</span>
+                            <span className="mono text-faint">{v.vault.address.slice(0, 10)}…</span>
+                          </div>
+                          <div className="mt-1 text-muted">{v.status}</div>
+                          {v.txs?.map((t) => (
+                            <div key={t.hash} className="mono text-[11px] text-faint">
+                              {t.step} · {t.status} · fork tx {t.hash}
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                    <details className="mt-3 text-[12px]">
+                      <summary className="cursor-pointer font-semibold text-ink">Raw JSON</summary>
+                      <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-xl bg-canvas p-4 text-[11px] text-muted">{JSON.stringify(run, null, 2)}</pre>
+                    </details>
+                  </Card>
+                );
+              })}
 
             <Card>
               <div className="flex flex-wrap items-center justify-between gap-2">
