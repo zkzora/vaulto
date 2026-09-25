@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { addressFrom, addressSchema, bad, handle } from "@/lib/api-utils";
-import { CHAIN_ID, CHAIN_NAME, LIVE_MODE_MIN_USDC, MIN_DEPOSIT_USDC, REDEEM_NAV_BUFFER_PCT } from "@/lib/chain/config";
+import { CHAIN_ID, CHAIN_NAME, LIVE_MODE_MIN_USDC, MIN_DEPOSIT_USDC, REDEEM_NAV_BUFFER_PCT, redeemableMinimum } from "@/lib/chain/config";
+import { getRegistry } from "@/lib/ixs/registry";
 import { RPC_KIND } from "@/lib/chain/client";
 import { env, openservConfigured } from "@/lib/env";
 import { liveOptedIn, setLiveOptIn } from "@/lib/live-optin";
@@ -13,6 +14,8 @@ export const runtime = "nodejs";
 
 async function systemInfo(liveOptIn: boolean) {
   const store = await getStore();
+  const registry = await getRegistry().catch(() => null);
+  const liveDepositMinimums = (registry?.vaults ?? []).map((v) => ({ vault: v.symbol, chainId: v.chainId, ...redeemableMinimum(v.redeem.minAssetsUsd, v.redeem.feeBps, v.asset.symbol) })).map(({ vault, chainId, usd, formula }) => ({ vault, chainId, usd, formula }));
   return {
     openserv: openservConfigured(),
     openservKey: Boolean(env.openservApiKey),
@@ -22,7 +25,10 @@ async function systemInfo(liveOptIn: boolean) {
     ixsApi: env.ixsApiBaseUrl.replace(/^https?:\/\//, ""),
     rpcKind: RPC_KIND,
     rpcUrl: env.rpcUrl,
+    /** USDC a wallet must hold on a chain to be Live-capable there (Live is still opt-in). */
     liveMinUsdc: LIVE_MODE_MIN_USDC,
+    /** Smallest Live deposit per vault that stays redeemable (ixv1: 104 USDC). */
+    liveDepositMinimums,
     liveMode: env.liveMode,
     liveOptIn,
     maxLiveTxUsdc: env.maxLiveTxUsdc,

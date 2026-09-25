@@ -36,13 +36,23 @@ export async function runPreflight(v: RegistryVault, wallet: string, amountUsd?:
 
   const client = publicClient(v.chainId);
   const minUnits = parseUnits(String(v.minDeposit.usd), v.asset.decimals);
-  const [blockRes, maxDepRes, mcp, whitelisted] = await Promise.all([
+  const [blockRes, maxDepRes, mcp, whitelistedMcp] = await Promise.all([
     client.getBlockNumber().catch(() => null),
     client.readContract({ address: v.address, abi: erc4626Abi, functionName: "maxDeposit", args: [wallet as `0x${string}`] }).catch(() => null),
     probeDeposit(v.routeId, wallet, minUnits),
     v.requiresWhitelist || v.whitelistEnabled ? checkWhitelist(v.routeId, wallet) : Promise.resolve<boolean | null>(true),
   ]);
   const block = blockRes != null ? Number(blockRes) : null;
+  // If the IXS MCP could not answer, read whitelist(wallet) on the vault itself.
+  let wlSource = "IXS MCP vault_check_whitelist";
+  let whitelisted = whitelistedMcp;
+  if ((v.requiresWhitelist || v.whitelistEnabled) && whitelisted == null) {
+    const onchain = await client.readContract({ address: v.address, abi: erc4626Abi, functionName: "whitelist", args: [wallet as `0x${string}`] }).catch(() => null);
+    if (onchain != null) {
+      whitelisted = Boolean(onchain);
+      wlSource = "whitelist(wallet) on-chain (IXS MCP vault_check_whitelist did not answer)";
+    }
+  }
   const unlimited = maxDepRes != null && maxDepRes >= UINT_MAX / 2n;
   const limitUsd = maxDepRes == null || unlimited ? null : Number(formatUnits(maxDepRes, v.asset.decimals));
   recordEvidence({ kind: "onchain", label: `${v.chainName} · maxDeposit(${wallet.slice(0, 8)}…) on ${v.symbol}`, chainId: v.chainId, blockNumber: block, request: { vault: v.address, wallet }, response: { maxDeposit: maxDepRes == null ? null : unlimited ? "2^256-1 (unlimited)" : `${limitUsd} ${v.asset.symbol}` }, ok: maxDepRes != null });
@@ -59,8 +69,8 @@ export async function runPreflight(v: RegistryVault, wallet: string, amountUsd?:
     ok: wlOk,
     severity: "block",
     value: needsWl ? (whitelisted === true ? "whitelisted" : whitelisted === false ? "not whitelisted" : "unknown") : "open vault",
-    detail: needsWl ? "KYC whitelist enforced by the vault (whitelistEnabled() true); IXS onboarding required" : "whitelistEnabled() is false on-chain",
-    source: needsWl ? "IXS MCP vault_check_whitelist" : "whitelistEnabled() on-chain",
+    detail: needsWl ? `KYC whitelist enforced by the vault (whitelistEnabled() true); IXS onboarding required${whitelisted == null ? "; neither the IXS MCP nor whitelist(wallet) answered, so the wallet is treated as not whitelisted" : ""}` : "whitelistEnabled() is false on-chain",
+    source: needsWl ? wlSource : "whitelistEnabled() on-chain",
   });
 
   const age = v.nav.ageHours;
