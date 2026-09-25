@@ -7,6 +7,7 @@ import { simulateDepositSteps, simulateRedeem } from "@/lib/chain/simulate";
 import { buildDepositSteps, getStrategies } from "@/lib/ixs/client";
 import { buildRedeemRequest } from "@/lib/ixs/mcp";
 import { collectEvidence } from "@/lib/evidence";
+import { getReplay } from "@/lib/replay";
 import { runPreflight } from "@/lib/ixs/preflight";
 import { findRegistryVault, getRegistry } from "@/lib/ixs/registry";
 
@@ -48,7 +49,8 @@ export async function POST(req: Request) {
     if (!strategy.executable || !strategy.contractAddress || !strategy.assetAddress || strategy.assetDecimals == null) throw new Error(`${strategy.vaultName} has no deployed vault to simulate against`);
     const rv = findRegistryVault(registry, strategy.routeId);
     if (!rv) throw new Error("vault not in the registry");
-    const label = modeLabel("simulated", strategy.chainId, rpcKind(strategy.chainId));
+    const replay = await getReplay();
+    const label = replay ? replay.label : modeLabel("simulated", strategy.chainId, rpcKind(strategy.chainId));
 
     if (input.action === "redeem") {
       const shareDecimals = strategy.shareDecimals ?? 18;
