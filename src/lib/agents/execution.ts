@@ -106,7 +106,7 @@ export async function prepareTransaction(
   const destAddress = strategies.find((s) => s.id === rec.legs[0]?.strategyId)?.contractAddress ?? "";
   const amountUsd = steps.filter((s) => s.kind !== "approve").reduce((sum, s) => sum + s.amountUsd, 0);
   const amountLabel = steps.filter((s) => s.kind !== "approve").map((s) => fmtAmount(s.amount, s.asset)).join(" + ");
-  const builtBy = steps.every((s) => s.builtBy === "ixs-mcp") ? "IXS MCP calldata" : "direct vault calldata (IXS MCP unreachable)";
+  const builtBy = steps.every((s) => s.builtBy === "ixs-mcp") ? "IXS MCP calldata" : snapshot.replay ? "calldata encoded against the vault ABI (Replay: the IXS MCP builds against the current state only)" : "direct vault calldata (IXS MCP unavailable, non-safety fallback)";
 
   return {
     id: randomUUID(),
