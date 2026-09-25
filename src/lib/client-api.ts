@@ -144,6 +144,8 @@ export interface EvidenceSnapshot {
     wallet: string;
     treasury: string;
     reasoningSource: string;
+    decisionSource?: string;
+    narrativeSource?: string;
     reasoningModel?: string;
     confidence?: number;
     title?: string;

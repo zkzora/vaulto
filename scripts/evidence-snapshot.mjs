@@ -132,6 +132,8 @@ async function main() {
       createdAt: rec.createdAt,
       durationMs: rec.durationMs,
       reasoningSource: rec.reasoningSource,
+      decisionSource: rec.decisionSource,
+      narrativeSource: rec.narrativeSource,
       reasoningModel: rec.reasoningModel,
       confidence: rec.confidence,
       title: rec.title,
