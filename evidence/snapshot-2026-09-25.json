@@ -1,0 +1,3051 @@
+{
+  "kind": "vaulto-evidence-snapshot",
+  "version": 1,
+  "capturedAt": "2026-09-25T02:50:40.110Z",
+  "finishedAt": "2026-09-25T02:51:28.966Z",
+  "baseUrl": "https://vaulto-five.vercel.app",
+  "deployment": {
+    "source": "git",
+    "commit": "4a26771",
+    "ref": "master",
+    "repo": "zkzora/vaulto"
+  },
+  "submission": {
+    "path": "simulated",
+    "label": "Simulated on BNB mainnet",
+    "liveExecuted": false,
+    "note": "Every deposit in this submission runs as eth_call + state override against the real IXS vaults (or on an Anvil mainnet fork). Live mode is a ready capability (opt-in per wallet, wallet-signed, exact-amount approvals, hard cap per transaction, Live minimum 104 USDC into ixv1) and was not executed in this submission."
+  },
+  "note": "At capture time no IXS vault accepted deposits: both open vaults returned maxDeposit 0 (NAV older than the contract's staleness threshold, the NAV-staleness effect IXS described on 24 Sep 2026), so SERV deferred them and nothing was built. Simulations and fork runs from when the NAV was fresh are listed below.",
+  "openserv": {
+    "ping": {
+      "ok": true,
+      "model": "gpt-5.4-mini-2026-03-17"
+    },
+    "model": "gpt-5.4-mini",
+    "mode": "inference"
+  },
+  "system": {
+    "openserv": true,
+    "openservKey": true,
+    "openservWorkspace": false,
+    "openservMode": "inference",
+    "openservModel": "gpt-5.4-mini",
+    "ixsApi": "api-v2.ixs.finance",
+    "rpcKind": "mainnet",
+    "rpcUrl": "https://bsc-dataseed.bnbchain.org",
+    "liveMinUsdc": 100,
+    "liveMode": "opt-in",
+    "liveOptIn": false,
+    "maxLiveTxUsdc": 150,
+    "redeemNavBufferPct": 3,
+    "navStaleHours": 72,
+    "minDepositUsdc": 100,
+    "database": "file",
+    "chainId": 56,
+    "network": "BNB Chain",
+    "deployment": {
+      "source": "git",
+      "commit": "4a26771",
+      "ref": "master",
+      "repo": "zkzora/vaulto"
+    }
+  },
+  "statements": [
+    {
+      "date": "2026-09-24",
+      "source": "Hackathon judges (IXS track)",
+      "statement": "Simulated execution is accepted for the submission (mainnet preferable). No mock tokens or mock vaults."
+    },
+    {
+      "date": "2026-09-24",
+      "source": "IXS (answer to participants)",
+      "statement": "Daily cutoff 17:00 SGT (09:00 UTC) on Singapore business days (Mon–Fri); requests can be sent anytime and are processed at the next cutoff; settlement ≈ 1 business day. Singapore public holidays: assumed, not confirmed by IXS."
+    },
+    {
+      "date": "2026-09-24",
+      "source": "IXS (answer to participants)",
+      "statement": "A deposit limit of 0 is the NAV-staleness effect between updates, not a closed vault → treat as temporarily paused, waiting NAV refresh (DEFER, not REJECT)."
+    },
+    {
+      "date": "2026-09-24",
+      "source": "IXS (answer to participants)",
+      "statement": "Minimum deposit 100 USDC (official confirmation)."
+    },
+    {
+      "date": "2026-09-24",
+      "source": "IXS (answer to participants)",
+      "statement": "Redemption has no claim step: the vault sells the underlying RWA, the operator finalizes and USDC is sent directly to the receiver."
+    },
+    {
+      "date": "2026-09-24",
+      "source": "IXS (answer to participants)",
+      "statement": "Direct contract builds are allowed for the verified Avalanche proxy 0xaD01573b459805E3954398796203d830B57A8bD9 as a fallback when the MCP fails for a non-safety reason; never when limit / NAV checks fail."
+    }
+  ],
+  "registry": {
+    "source": "api",
+    "vaults": [
+      {
+        "chainId": 56,
+        "chain": "BNB Chain",
+        "apiId": "6a26624ca7d16b245d665475",
+        "routeId": "56-0xc975a3eef2e49f8eddef585340c43f15300fcb82",
+        "address": "0xc975a3EeF2e49F8eDdEf585340C43f15300fCB82",
+        "explorer": "https://bscscan.com/address/0xc975a3EeF2e49F8eDdEf585340C43f15300fCB82",
+        "symbol": "ixv1",
+        "settlement": "sync",
+        "settlementSource": "ixs-mcp",
+        "requiresWhitelist": false,
+        "whitelistEnabled": false,
+        "paused": false,
+        "asset": {
+          "address": "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d",
+          "symbol": "USDC",
+          "decimals": 18,
+          "name": "USD Coin"
+        },
+        "shareDecimals": 18,
+        "redeemFeeBps": 50,
+        "redeem": {
+          "minAssetsUsd": 100,
+          "feeBps": 50,
+          "path": "requestRedeem → queued → operator sells RWA and finalizes → USDC paid to the receiver (no claim step)"
+        },
+        "totalAssets": 655.8727047729288,
+        "totalSupply": 601.1158589495009,
+        "pricePerShare": 1.091092,
+        "readBlock": 123871854,
+        "readAt": "2026-09-25T02:50:13.053Z",
+        "depositLimit": {
+          "usd": 0,
+          "unlimited": false,
+          "source": "maxDeposit(0x1111…) on-chain, block 123871854"
+        },
+        "minDeposit": {
+          "usd": 100,
+          "source": "subgraph minDepositAssets (config change on-chain)"
+        },
+        "nav": {
+          "pricePerShare": 1.091092,
+          "updatedAt": 1790125943,
+          "ageHours": 49.6,
+          "block": 123474967,
+          "lastChangeTx": "0xfe02b4ac84e37c29afe40036d8ca90942d1af1669a406efe1faa854f10b94fbc",
+          "lastChangeVerified": true,
+          "contractThresholdHours": 48,
+          "source": "priceUpdatedAt() on-chain · history from the IXS subgraph (NAV events)",
+          "history": [
+            {
+              "at": 1790125943,
+              "pricePerShare": 1.091092,
+              "block": 123474967,
+              "txHash": "0xfe02b4ac84e37c29afe40036d8ca90942d1af1669a406efe1faa854f10b94fbc"
+            },
+            {
+              "at": 1789950126,
+              "pricePerShare": 1.091152,
+              "block": 123084402,
+              "txHash": "0x8c066bd858caac3bc20ac19108aa17f911819ff7c49bc6182c76f6836edfdf1a"
+            },
+            {
+              "at": 1789693367,
+              "pricePerShare": 1.088596,
+              "block": 122514022,
+              "txHash": "0xbb9bf37d4efa94c851634f9bc135047feec4981821f49b33c9d005826d1ce07c"
+            },
+            {
+              "at": 1789463028,
+              "pricePerShare": 1.089397,
+              "block": 122002390,
+              "txHash": "0xabc25408a766cbaf02df442907174a1a1559a69891cdc80b1459ce758559dfa2"
+            },
+            {
+              "at": 1789350232,
+              "pricePerShare": 1.090228,
+              "block": 121751838,
+              "txHash": "0xcd4dfbd9e7f48ee3f7b711bef3ab1916b3f1c7117c656563d4893147bd2b8823"
+            },
+            {
+              "at": 1789226992,
+              "pricePerShare": 1.090228,
+              "block": 121478061,
+              "txHash": "0x6adf57a09d42fc7f5e3ef41b377afd429f55886d9bbfb1b63e61b8872f3c9ff3"
+            },
+            {
+              "at": 1789037064,
+              "pricePerShare": 1.09359,
+              "block": 121056272,
+              "txHash": "0x7655b91802c3f234b779e735c8c0443c429c6b73133ab0c3da0d95d5bcabeaee"
+            },
+            {
+              "at": 1788924952,
+              "pricePerShare": 1.095468,
+              "block": 120807268,
+              "txHash": "0x4de694234df241ca9134da30320f42f4e28ecb7d1ff0b9a473a5630824ce8184"
+            }
+          ],
+          "updatedAtIso": "2026-09-23T01:12:23.000Z",
+          "lastChangeExplorer": "https://bscscan.com/tx/0xfe02b4ac84e37c29afe40036d8ca90942d1af1669a406efe1faa854f10b94fbc"
+        },
+        "settlementObserved": {
+          "samples": 0,
+          "medianHours": null,
+          "pendingCount": 2
+        },
+        "cutoff": {
+          "known": false,
+          "note": "not applicable: sync ERC-4626, settles in the deposit transaction"
+        },
+        "subgraphUrl": "https://api.goldsky.com/api/public/project_cmgzm21qo008x5np27bk21873/subgraphs/ixs-managed-vault-bsc-mainnet/1.0.0/gn"
+      },
+      {
+        "chainId": 56,
+        "chain": "BNB Chain",
+        "apiId": "6a8ecb61732c2b84b55ce88f",
+        "routeId": "56-0xd84129f506d1030dd6b46fe4a600d1e1c3b0802e",
+        "address": "0xD84129f506d1030Dd6b46Fe4A600d1E1c3b0802E",
+        "explorer": "https://bscscan.com/address/0xD84129f506d1030Dd6b46Fe4A600d1E1c3b0802E",
+        "symbol": "ix7540v1",
+        "settlement": "async-erc7540",
+        "settlementSource": "ixs-mcp",
+        "requiresWhitelist": true,
+        "whitelistEnabled": true,
+        "paused": false,
+        "asset": {
+          "address": "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d",
+          "symbol": "USDC",
+          "decimals": 18,
+          "name": "USD Coin"
+        },
+        "shareDecimals": 18,
+        "redeemFeeBps": 50,
+        "redeem": {
+          "minAssetsUsd": 1e-18,
+          "feeBps": 50,
+          "path": "requestRedeem → queued → operator sells RWA and finalizes → USDC paid to the receiver (no claim step)"
+        },
+        "totalAssets": 1.088596,
+        "totalSupply": 1,
+        "pricePerShare": 1.088596,
+        "readBlock": 123871854,
+        "readAt": "2026-09-25T02:50:13.053Z",
+        "depositLimit": {
+          "usd": 0,
+          "unlimited": false,
+          "source": "maxDeposit(0x1111…) on-chain, block 123871854"
+        },
+        "minDeposit": {
+          "usd": 100,
+          "source": "vault reverts 'below min deposit' under 100 (verified by eth_call) · agent policy"
+        },
+        "nav": {
+          "pricePerShare": 1.088596,
+          "updatedAt": 1789712389,
+          "ageHours": 164.5,
+          "block": 122556283,
+          "lastChangeTx": "0x7ecfc411a4becafe495050f70ac6eeff956a60494a2b263f7f0d7d24b23680c1",
+          "lastChangeVerified": true,
+          "contractThresholdHours": 720,
+          "source": "priceUpdatedAt() on-chain · history from the IXS subgraph (NAV events)",
+          "history": [
+            {
+              "at": 1789712389,
+              "pricePerShare": 1.088596,
+              "block": 122556283,
+              "txHash": "0x7ecfc411a4becafe495050f70ac6eeff956a60494a2b263f7f0d7d24b23680c1"
+            },
+            {
+              "at": 1787741898,
+              "pricePerShare": 1,
+              "block": 118179720,
+              "txHash": "0xbd40a9cfa0de98ab8800f3220ccf2c01c2629a6167c0888c4c0093b4ac1adfe3"
+            },
+            {
+              "at": 1787741874,
+              "pricePerShare": 1,
+              "block": 118179667,
+              "txHash": "0x4945ee7ab21a2cc9eaff88384dfb488dd32bd403c2825e438f423877c0ac10fb"
+            },
+            {
+              "at": 1787741860,
+              "pricePerShare": 1,
+              "block": 118179637,
+              "txHash": "0xd846535c52d867414a72d924f75f93a0d97f34aa42f39e19a4a69c39a7f80770"
+            },
+            {
+              "at": 1787741829,
+              "pricePerShare": 1,
+              "block": 118179567,
+              "txHash": "0x70e12741696bcebaf85bd7a66fb565c833d9ccec2cf009602865b27cd96d908a"
+            }
+          ],
+          "updatedAtIso": "2026-09-18T06:19:49.000Z",
+          "lastChangeExplorer": "https://bscscan.com/tx/0x7ecfc411a4becafe495050f70ac6eeff956a60494a2b263f7f0d7d24b23680c1"
+        },
+        "settlementObserved": {
+          "samples": 2,
+          "medianHours": 0.0008333333333333334,
+          "pendingCount": 0
+        },
+        "cutoff": {
+          "known": false,
+          "note": "unconfirmed: IXS publishes no cutoff time on the API, MCP or subgraph; requests settle after the operator's next cycle"
+        },
+        "subgraphUrl": "https://api.goldsky.com/api/public/project_cmgzm21qo008x5np27bk21873/subgraphs/ixs-erc7540-vault-bsc-mainnet/1.0.0/gn"
+      },
+      {
+        "chainId": 43114,
+        "chain": "Avalanche C-Chain",
+        "apiId": "6a952729732c2b84b55ce89d",
+        "routeId": "43114-0xad01573b459805e3954398796203d830b57a8bd9",
+        "address": "0xaD01573b459805E3954398796203d830B57A8bD9",
+        "explorer": "https://snowscan.xyz/address/0xaD01573b459805E3954398796203d830B57A8bD9",
+        "symbol": "IXHYB",
+        "settlement": "async-erc7540",
+        "settlementSource": "subgraph",
+        "requiresWhitelist": false,
+        "whitelistEnabled": false,
+        "paused": false,
+        "asset": {
+          "address": "0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e",
+          "symbol": "USDC",
+          "decimals": 6,
+          "name": "USD Coin"
+        },
+        "shareDecimals": 18,
+        "redeemFeeBps": 50,
+        "redeem": {
+          "minAssetsUsd": 0.000001,
+          "feeBps": 50,
+          "path": "requestRedeem → queued → operator sells RWA and finalizes → USDC paid to the receiver (no claim step)"
+        },
+        "totalAssets": 402.614429,
+        "totalSupply": 369.293789548845,
+        "pricePerShare": 1.090228,
+        "readBlock": 96094876,
+        "readAt": "2026-09-25T02:50:13.021Z",
+        "depositLimit": {
+          "usd": 0,
+          "unlimited": false,
+          "source": "maxDeposit(0x1111…) on-chain, block 96094876"
+        },
+        "minDeposit": {
+          "usd": 100,
+          "source": "subgraph minDepositAssets (config change on-chain)"
+        },
+        "nav": {
+          "pricePerShare": 1.090228,
+          "updatedAt": 1789366671,
+          "ageHours": 260.5,
+          "block": 95241651,
+          "lastChangeTx": "0xd72ca4e3585ded8cbc0aeb24d66354dd9f5e850cb5abccd8d17c288510873621",
+          "lastChangeVerified": true,
+          "contractThresholdHours": 720,
+          "source": "priceUpdatedAt() on-chain · history from the IXS subgraph (NAV events)",
+          "history": [
+            {
+              "at": 1789366671,
+              "pricePerShare": 1.090228,
+              "block": 95241651,
+              "txHash": "0xd72ca4e3585ded8cbc0aeb24d66354dd9f5e850cb5abccd8d17c288510873621"
+            },
+            {
+              "at": 1789035721,
+              "pricePerShare": 1.095468,
+              "block": 94929863,
+              "txHash": "0xa231c662fc3b159623caacd9fbd2aaf34e078d8443ff7a5a6d96aae8e8f3650a"
+            },
+            {
+              "at": 1788929167,
+              "pricePerShare": 1.095468,
+              "block": 94828153,
+              "txHash": "0x38509c706ecfd846334698ebb9320b369aada101a799039364a653781a46aa84"
+            },
+            {
+              "at": 1788929034,
+              "pricePerShare": 1.095468,
+              "block": 94828022,
+              "txHash": "0xecfafbaf6b2c6ad2b61ba467346526bfb3e677edf1b2ea0495473a941dd526fb"
+            },
+            {
+              "at": 1788853804,
+              "pricePerShare": 1.095468,
+              "block": 94758460,
+              "txHash": "0x1dc0cb1d85a2c9775ca560e05c25f735f9a455d0f3ce99554ea354a01f67db10"
+            },
+            {
+              "at": 1788842199,
+              "pricePerShare": 1.095468,
+              "block": 94747330,
+              "txHash": "0x1b007a35053e0a712667482fdc5d52bfe04534318ab7d9def3a492627c0040d9"
+            },
+            {
+              "at": 1788761381,
+              "pricePerShare": 1.089747,
+              "block": 94670976,
+              "txHash": "0x7d30c311c0959a4a3c8f41bd69bb7e292d02272363e8170ad053bae7ab437a14"
+            },
+            {
+              "at": 1788761366,
+              "pricePerShare": 1.089747,
+              "block": 94670960,
+              "txHash": "0xb44a69ced8630169776ac51cdc1415ded62e055096392e269ae086a23db70005"
+            }
+          ],
+          "updatedAtIso": "2026-09-14T06:17:51.000Z",
+          "lastChangeExplorer": "https://snowscan.xyz/tx/0xd72ca4e3585ded8cbc0aeb24d66354dd9f5e850cb5abccd8d17c288510873621"
+        },
+        "settlementObserved": {
+          "samples": 7,
+          "medianHours": 14.184166666666666,
+          "pendingCount": 1
+        },
+        "cutoff": {
+          "known": false,
+          "note": "unconfirmed: IXS publishes no cutoff time on the API, MCP or subgraph; requests settle after the operator's next cycle"
+        },
+        "subgraphUrl": "https://api.goldsky.com/api/public/project_cmgzm21qo008x5np27bk21873/subgraphs/ixs-erc7540-vault-avalanche-mainnet/1.0.1/gn"
+      },
+      {
+        "chainId": 43114,
+        "chain": "Avalanche C-Chain",
+        "apiId": "6a9a59c6ef910c9d0495e7e3",
+        "routeId": "43114-0x864e9c192a724773c2bb8c1e84572996074f0b41",
+        "address": "0x864E9C192a724773C2bB8C1e84572996074F0B41",
+        "explorer": "https://snowscan.xyz/address/0x864E9C192a724773C2bB8C1e84572996074F0B41",
+        "symbol": "IXHYB",
+        "settlement": "async-erc7540",
+        "settlementSource": "ixs-mcp",
+        "requiresWhitelist": true,
+        "whitelistEnabled": true,
+        "paused": false,
+        "asset": {
+          "address": "0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e",
+          "symbol": "USDC",
+          "decimals": 6,
+          "name": "USD Coin"
+        },
+        "shareDecimals": 18,
+        "redeemFeeBps": 50,
+        "redeem": {
+          "minAssetsUsd": 0.000001,
+          "feeBps": 50,
+          "path": "requestRedeem → queued → operator sells RWA and finalizes → USDC paid to the receiver (no claim step)"
+        },
+        "totalAssets": 197.258337,
+        "totalSupply": 180.93310573568098,
+        "pricePerShare": 1.090228,
+        "readBlock": 96094876,
+        "readAt": "2026-09-25T02:50:13.021Z",
+        "depositLimit": {
+          "usd": 0,
+          "unlimited": false,
+          "source": "maxDeposit(0x1111…) on-chain, block 96094876"
+        },
+        "minDeposit": {
+          "usd": 100,
+          "source": "subgraph minDepositAssets (config change on-chain)"
+        },
+        "nav": {
+          "pricePerShare": 1.090228,
+          "updatedAt": 1789366629,
+          "ageHours": 260.6,
+          "block": 95241609,
+          "lastChangeTx": "0x2a54e27d93bbf860fea22509193c3b9037ced500cd37a50d18910f7c42a84891",
+          "lastChangeVerified": true,
+          "contractThresholdHours": 720,
+          "source": "priceUpdatedAt() on-chain · history from the IXS subgraph (NAV events)",
+          "history": [
+            {
+              "at": 1789366629,
+              "pricePerShare": 1.090228,
+              "block": 95241609,
+              "txHash": "0x2a54e27d93bbf860fea22509193c3b9037ced500cd37a50d18910f7c42a84891"
+            },
+            {
+              "at": 1789100058,
+              "pricePerShare": 1.09359,
+              "block": 94989997,
+              "txHash": "0x1945fe7aa55d0314e5278745106366a5b7c6e3146d0b2923a543df82ba1e8221"
+            }
+          ],
+          "updatedAtIso": "2026-09-14T06:17:09.000Z",
+          "lastChangeExplorer": "https://snowscan.xyz/tx/0x2a54e27d93bbf860fea22509193c3b9037ced500cd37a50d18910f7c42a84891"
+        },
+        "settlementObserved": {
+          "samples": 1,
+          "medianHours": 73.92222222222222,
+          "pendingCount": 0
+        },
+        "cutoff": {
+          "known": false,
+          "note": "unconfirmed: IXS publishes no cutoff time on the API, MCP or subgraph; requests settle after the operator's next cycle"
+        },
+        "subgraphUrl": "https://api.goldsky.com/api/public/project_cmgzm21qo008x5np27bk21873/subgraphs/ixs-erc7540-vault-avalanche-mainnet/1.0.1/gn"
+      }
+    ]
+  },
+  "cutoff": {
+    "nextCutoffUtc": "2026-09-25T09:00:00.000Z",
+    "nextCutoffSgt": "2026-09-25 17:00 SGT",
+    "hoursUntilCutoff": 6.1,
+    "todayCutoffStillOpen": true,
+    "estimatedSettlementUtc": "2026-09-28T09:00:00.000Z",
+    "estimatedSettlementSgt": "2026-09-28 17:00 SGT",
+    "skipped": [
+      {
+        "date": "2026-09-26",
+        "reason": "Saturday"
+      },
+      {
+        "date": "2026-09-27",
+        "reason": "Sunday"
+      }
+    ],
+    "holidayAssumption": "Singapore public holidays from the public calendar: assumed, not confirmed by IXS",
+    "source": "IXS answer to hackathon participants, 24 Sep 2026: daily cutoff 17:00 SGT (09:00 UTC), Singapore business days Mon–Fri; requests are processed at the next cutoff, settlement ≈ 1 business day later"
+  },
+  "watch": {
+    "entries": [
+      {
+        "routeId": "56-0xc975a3eef2e49f8eddef585340c43f15300fcb82",
+        "vault": "IX High Yield Bond (USDC)",
+        "symbol": "ixv1",
+        "chainName": "BNB Chain",
+        "chainId": 56,
+        "depositLimitUsd": 0,
+        "depositLimitUnlimited": false,
+        "navUpdatedAt": 1790125943,
+        "navAgeHours": 49.6,
+        "pricePerShare": 1.091092,
+        "waitingNavRefresh": true,
+        "observedAt": "2026-09-25T02:50:13.053Z",
+        "block": 123871854
+      },
+      {
+        "routeId": "56-0xd84129f506d1030dd6b46fe4a600d1e1c3b0802e",
+        "vault": "IX High Yield Bond (USDC)",
+        "symbol": "ix7540v1",
+        "chainName": "BNB Chain",
+        "chainId": 56,
+        "depositLimitUsd": 0,
+        "depositLimitUnlimited": false,
+        "navUpdatedAt": 1789712389,
+        "navAgeHours": 164.5,
+        "pricePerShare": 1.088596,
+        "waitingNavRefresh": false,
+        "observedAt": "2026-09-25T02:50:13.053Z",
+        "block": 123871854
+      },
+      {
+        "routeId": "43114-0xad01573b459805e3954398796203d830b57a8bd9",
+        "vault": "IX High Yield Bond (USDC)",
+        "symbol": "IXHYB",
+        "chainName": "Avalanche C-Chain",
+        "chainId": 43114,
+        "depositLimitUsd": 0,
+        "depositLimitUnlimited": false,
+        "navUpdatedAt": 1789366671,
+        "navAgeHours": 260.5,
+        "pricePerShare": 1.090228,
+        "waitingNavRefresh": true,
+        "observedAt": "2026-09-25T02:50:13.021Z",
+        "block": 96094876
+      },
+      {
+        "routeId": "43114-0x864e9c192a724773c2bb8c1e84572996074f0b41",
+        "vault": "IX High Yield Bond (USDC)",
+        "symbol": "IXHYB",
+        "chainName": "Avalanche C-Chain",
+        "chainId": 43114,
+        "depositLimitUsd": 0,
+        "depositLimitUnlimited": false,
+        "navUpdatedAt": 1789366629,
+        "navAgeHours": 260.6,
+        "pricePerShare": 1.090228,
+        "waitingNavRefresh": false,
+        "observedAt": "2026-09-25T02:50:13.021Z",
+        "block": 96094876
+      }
+    ],
+    "events": [],
+    "waiting": [
+      {
+        "routeId": "56-0xc975a3eef2e49f8eddef585340c43f15300fcb82",
+        "vault": "IX High Yield Bond (USDC)",
+        "symbol": "ixv1",
+        "chainName": "BNB Chain",
+        "chainId": 56,
+        "depositLimitUsd": 0,
+        "depositLimitUnlimited": false,
+        "navUpdatedAt": 1790125943,
+        "navAgeHours": 49.6,
+        "pricePerShare": 1.091092,
+        "waitingNavRefresh": true,
+        "observedAt": "2026-09-25T02:50:13.053Z",
+        "block": 123871854
+      },
+      {
+        "routeId": "43114-0xad01573b459805e3954398796203d830b57a8bd9",
+        "vault": "IX High Yield Bond (USDC)",
+        "symbol": "IXHYB",
+        "chainName": "Avalanche C-Chain",
+        "chainId": 43114,
+        "depositLimitUsd": 0,
+        "depositLimitUnlimited": false,
+        "navUpdatedAt": 1789366671,
+        "navAgeHours": 260.5,
+        "pricePerShare": 1.090228,
+        "waitingNavRefresh": true,
+        "observedAt": "2026-09-25T02:50:13.021Z",
+        "block": 96094876
+      }
+    ]
+  },
+  "analysis": {
+    "wallet": "0x7a3f5c1e9b2d4a6f8c0e1d3b5a7c9e2f4b6d9c21",
+    "treasury": "Simulated treasury (Acme DAO)",
+    "recommendationId": "b86e251d-0695-4bf0-bf6d-b2cefbed4501",
+    "createdAt": "2026-09-25T02:51:13.811Z",
+    "durationMs": 29674,
+    "reasoningSource": "openserv",
+    "reasoningModel": "gpt-5.4-mini-2026-03-17",
+    "confidence": 79,
+    "title": "No allocation right now",
+    "headline": "Every candidate vault is deferred or rejected; capital stays liquid",
+    "summary": "Your treasury has $1,640,900 idle (83%). Based on your 30% liquidity floor and balanced risk policy, Vaulto recommends nothing. Deferred: IX High Yield Bond (USDC), IX High Yield Bond (USDC) (waiting NAV refresh). Rejected: IX High Yield Bond (USDC), IX High Yield Bond (USDC), BTC Real Yield. Liquidity stays at 83% and blended yield moves from 0.5% to 0.5%.",
+    "decisions": [
+      {
+        "strategyId": "ixhyb-bnb",
+        "verdict": "defer",
+        "reason": "Temporarily paused — waiting NAV refresh: maxDeposit is 0 USDC and the NAV is 49.6 hours old (updated 2026-09-23T01:12:23Z), so the vault cannot accept a deposit right now on BNB Chain.",
+        "vault": "IX High Yield Bond (USDC) · BNB"
+      },
+      {
+        "strategyId": "ixhyb-avax",
+        "verdict": "defer",
+        "reason": "Temporarily paused — waiting NAV refresh: maxDeposit is 0 USDC and the NAV is 260.5 hours old (updated 2026-09-14T06:17:51Z), so the vault cannot accept a deposit right now on Avalanche C-Chain.",
+        "vault": "IX High Yield Bond (USDC) · Avalanche"
+      },
+      {
+        "strategyId": "ixhyb-bnb-licensed",
+        "verdict": "reject",
+        "reason": "Rejected because the vault requires whitelist access and this wallet is not whitelisted; maxDeposit is 0 USDC on BNB Chain and the NAV is 164.5 hours old (updated 2026-09-18T06:19:49Z).",
+        "vault": "IX High Yield Bond (USDC) · BNB · Licensed"
+      },
+      {
+        "strategyId": "ixhyb-avax-licensed",
+        "verdict": "reject",
+        "reason": "Rejected because the vault requires whitelist access and this wallet is not whitelisted; maxDeposit is 0 USDC on Avalanche C-Chain and the NAV is 260.6 hours old (updated 2026-09-14T06:17:09Z).",
+        "vault": "IX High Yield Bond (USDC) · Avalanche · Licensed"
+      },
+      {
+        "strategyId": "ixs-btc-real-yield",
+        "verdict": "reject",
+        "reason": "Rejected because the BTC Real Yield vault is announced but not deployed on the IXS Vault API, so there is no live vault to allocate to on BNB Chain.",
+        "vault": "BTC Real Yield"
+      }
+    ],
+    "legs": [],
+    "validatorOverrides": [],
+    "guardrails": {
+      "liquidityFloorPct": 30,
+      "maxAssetExposurePct": 70,
+      "minVaultRiskScore": 80,
+      "minDepositUsd": 100,
+      "maxLiveTxUsdc": 150,
+      "navStaleHours": 72,
+      "liveMode": "opt-in",
+      "liveOptIn": false,
+      "liveDepositMinimums": [
+        {
+          "strategyId": "ixhyb-bnb",
+          "vault": "IX High Yield Bond (USDC) · BNB",
+          "symbol": "ixv1",
+          "usd": 104,
+          "formula": "ceil(100 / 0.995 × 1.03) = 104 USDC",
+          "reason": "keeps the whole position redeemable above the 100 USDC net minimum (minRedeemAssets) after the 0.5% redeem fee (feeBps), with a 3% NAV buffer"
+        },
+        {
+          "strategyId": "ixhyb-bnb-licensed",
+          "vault": "IX High Yield Bond (USDC) · BNB · Licensed",
+          "symbol": "ix7540v1",
+          "usd": 100,
+          "formula": "no practical redeem minimum on-chain, so the 100 USDC IXS minimum deposit applies",
+          "reason": "the vault exposes no meaningful minRedeemAssets()"
+        },
+        {
+          "strategyId": "ixhyb-avax",
+          "vault": "IX High Yield Bond (USDC) · Avalanche",
+          "symbol": "IXHYB",
+          "usd": 100,
+          "formula": "no practical redeem minimum on-chain, so the 100 USDC IXS minimum deposit applies",
+          "reason": "the vault exposes no meaningful minRedeemAssets()"
+        },
+        {
+          "strategyId": "ixhyb-avax-licensed",
+          "vault": "IX High Yield Bond (USDC) · Avalanche · Licensed",
+          "symbol": "IXHYB",
+          "usd": 100,
+          "formula": "no practical redeem minimum on-chain, so the 100 USDC IXS minimum deposit applies",
+          "reason": "the vault exposes no meaningful minRedeemAssets()"
+        }
+      ]
+    },
+    "preflights": {
+      "ixhyb-avax-licensed": {
+        "verdict": "reject",
+        "chainId": 43114,
+        "blockNumber": 96094914,
+        "checkedAt": "2026-09-25T02:50:54.437Z",
+        "depositLimitUsd": 0,
+        "depositLimitUnlimited": false,
+        "navUpdatedAt": "2026-09-14T06:17:09.000Z",
+        "navAgeHours": 260.6,
+        "navLastChangeTx": "0x2a54e27d93bbf860fea22509193c3b9037ced500cd37a50d18910f7c42a84891",
+        "navLastChangeBlock": 95241609,
+        "minDepositUsd": 100,
+        "minLiveDepositUsd": 100,
+        "whitelisted": false,
+        "settlement": "async-erc7540",
+        "checks": [
+          {
+            "key": "status",
+            "label": "Vault status",
+            "ok": true,
+            "severity": "block",
+            "value": "active",
+            "detail": "IXS Vault API status \"active\", paused() false",
+            "source": "IXS Vault API + paused() on-chain"
+          },
+          {
+            "key": "eligibility",
+            "label": "Eligibility",
+            "ok": false,
+            "severity": "block",
+            "value": "not whitelisted",
+            "detail": "KYC whitelist enforced by the vault (whitelistEnabled() true); IXS onboarding required",
+            "source": "IXS MCP vault_check_whitelist"
+          },
+          {
+            "key": "nav-age",
+            "label": "NAV freshness",
+            "ok": false,
+            "severity": "defer",
+            "value": "10.9 days ago · 1.090228 USDC/share",
+            "detail": "older than the Vaulto staleness policy of 72 h (contract navStalenessThreshold() = 720 h, not exceeded). Last NAV change 2026-09-14T06:17:09.000Z at block 95241609 (tx 0x2a54e27d93…). Per IXS (24 Sep 2026) a stale NAV drives the deposit limit to 0 until the next refresh: temporarily paused, waiting NAV refresh.",
+            "source": "priceUpdatedAt() on-chain · history from the IXS subgraph (NAV events)"
+          },
+          {
+            "key": "deposit-limit",
+            "label": "Deposit limit",
+            "ok": false,
+            "severity": "block",
+            "value": "0 USDC",
+            "detail": "maxDeposit(wallet) is 0 because the wallet is not whitelisted",
+            "source": "maxDeposit() on-chain · block 96094914"
+          },
+          {
+            "key": "mcp",
+            "label": "IXS MCP builds the deposit request",
+            "ok": false,
+            "severity": "info",
+            "value": "refused",
+            "detail": "Deposit amount exceeds the current vault limit of 0 USDC. (consistent with the on-chain limit)",
+            "source": "IXS MCP vault_build_request_deposit"
+          },
+          {
+            "key": "min-deposit",
+            "label": "Minimum deposit",
+            "ok": true,
+            "severity": "block",
+            "value": "100 USDC",
+            "detail": "applies to every request · 100 USDC confirmed by IXS (24 Sep 2026)",
+            "source": "subgraph minDepositAssets (config change on-chain)"
+          },
+          {
+            "key": "redeemable-min",
+            "label": "Live deposit minimum (redeemable)",
+            "ok": true,
+            "severity": "info",
+            "value": "100 USDC",
+            "detail": "no practical redeem minimum on-chain, so the 100 USDC IXS minimum deposit applies: the vault exposes no meaningful minRedeemAssets(). Guardrail for Live deposits; this run is simulated (Live mode is opt-in).",
+            "source": "Vaulto guardrail · minRedeemAssets() + feeBps() on-chain"
+          },
+          {
+            "key": "cutoff",
+            "label": "Cutoff / settlement",
+            "ok": true,
+            "severity": "info",
+            "value": "next cutoff 2026-09-25 17:00 SGT (in 6.2 h)",
+            "detail": "Async ERC-7540: send before 2026-09-25 17:00 SGT to be processed at that cutoff; estimated settlement 2026-09-28 17:00 SGT (1 business day), skipping 2026-09-26 Saturday, 2026-09-27 Sunday. Observed on-chain: median 73.9 h from request to processing over 1 requests. Redemption requested → awaiting RWA sale & operator finalization → paid (USDC sent to the receiver, no claim step).",
+            "source": "IXS answer to hackathon participants, 24 Sep 2026: daily cutoff 17:00 SGT (09:00 UTC), Singapore business days Mon–Fri; requests are processed at the next cutoff, settlement ≈ 1 business day later; Singapore public holidays from the public calendar: assumed, not confirmed by IXS"
+          }
+        ]
+      },
+      "ixhyb-bnb": {
+        "verdict": "defer",
+        "chainId": 56,
+        "blockNumber": 123871945,
+        "checkedAt": "2026-09-25T02:50:54.457Z",
+        "depositLimitUsd": 0,
+        "depositLimitUnlimited": false,
+        "navUpdatedAt": "2026-09-23T01:12:23.000Z",
+        "navAgeHours": 49.6,
+        "navLastChangeTx": "0xfe02b4ac84e37c29afe40036d8ca90942d1af1669a406efe1faa854f10b94fbc",
+        "navLastChangeBlock": 123474967,
+        "minDepositUsd": 100,
+        "minLiveDepositUsd": 104,
+        "whitelisted": null,
+        "settlement": "async-erc7540",
+        "checks": [
+          {
+            "key": "status",
+            "label": "Vault status",
+            "ok": true,
+            "severity": "block",
+            "value": "active",
+            "detail": "IXS Vault API status \"active\", paused() false",
+            "source": "IXS Vault API + paused() on-chain"
+          },
+          {
+            "key": "eligibility",
+            "label": "Eligibility",
+            "ok": true,
+            "severity": "block",
+            "value": "open vault",
+            "detail": "whitelistEnabled() is false on-chain",
+            "source": "whitelistEnabled() on-chain"
+          },
+          {
+            "key": "nav-age",
+            "label": "NAV freshness",
+            "ok": true,
+            "severity": "defer",
+            "value": "2.1 days ago · 1.091092 USDC/share",
+            "detail": "within the Vaulto staleness policy of 72 h (contract navStalenessThreshold() = 48 h, exceeded). Last NAV change 2026-09-23T01:12:23.000Z at block 123474967 (tx 0xfe02b4ac84…). ",
+            "source": "priceUpdatedAt() on-chain · history from the IXS subgraph (NAV events)"
+          },
+          {
+            "key": "deposit-limit",
+            "label": "Deposit limit",
+            "ok": false,
+            "severity": "defer",
+            "value": "0 USDC",
+            "detail": "maxDeposit(wallet) is 0: per IXS (24 Sep 2026) this is the NAV-staleness effect between updates, not a closed vault → temporarily paused, waiting NAV refresh",
+            "source": "maxDeposit() on-chain · block 123871945"
+          },
+          {
+            "key": "mcp",
+            "label": "IXS MCP builds the deposit request",
+            "ok": false,
+            "severity": "info",
+            "value": "refused",
+            "detail": "Deposit amount exceeds the current vault limit of 0 USDC. (consistent with the on-chain limit)",
+            "source": "IXS MCP vault_build_request_deposit"
+          },
+          {
+            "key": "min-deposit",
+            "label": "Minimum deposit",
+            "ok": true,
+            "severity": "block",
+            "value": "100 USDC",
+            "detail": "applies to every request · 100 USDC confirmed by IXS (24 Sep 2026)",
+            "source": "subgraph minDepositAssets (config change on-chain)"
+          },
+          {
+            "key": "redeemable-min",
+            "label": "Live deposit minimum (redeemable)",
+            "ok": true,
+            "severity": "info",
+            "value": "104 USDC",
+            "detail": "ceil(100 / 0.995 × 1.03) = 104 USDC: keeps the whole position redeemable above the 100 USDC net minimum (minRedeemAssets) after the 0.5% redeem fee (feeBps), with a 3% NAV buffer. Guardrail for Live deposits; this run is simulated (Live mode is opt-in).",
+            "source": "Vaulto guardrail · minRedeemAssets() + feeBps() on-chain"
+          },
+          {
+            "key": "cutoff",
+            "label": "Cutoff / settlement",
+            "ok": true,
+            "severity": "info",
+            "value": "next cutoff 2026-09-25 17:00 SGT (in 6.2 h)",
+            "detail": "Async ERC-7540: send before 2026-09-25 17:00 SGT to be processed at that cutoff; estimated settlement 2026-09-28 17:00 SGT (1 business day), skipping 2026-09-26 Saturday, 2026-09-27 Sunday. No processed deposit requests on the subgraph yet to confirm the timing. Redemption requested → awaiting RWA sale & operator finalization → paid (USDC sent to the receiver, no claim step).",
+            "source": "IXS answer to hackathon participants, 24 Sep 2026: daily cutoff 17:00 SGT (09:00 UTC), Singapore business days Mon–Fri; requests are processed at the next cutoff, settlement ≈ 1 business day later; Singapore public holidays from the public calendar: assumed, not confirmed by IXS"
+          }
+        ]
+      },
+      "ixhyb-bnb-licensed": {
+        "verdict": "reject",
+        "chainId": 56,
+        "blockNumber": 123871945,
+        "checkedAt": "2026-09-25T02:50:54.732Z",
+        "depositLimitUsd": 0,
+        "depositLimitUnlimited": false,
+        "navUpdatedAt": "2026-09-18T06:19:49.000Z",
+        "navAgeHours": 164.5,
+        "navLastChangeTx": "0x7ecfc411a4becafe495050f70ac6eeff956a60494a2b263f7f0d7d24b23680c1",
+        "navLastChangeBlock": 122556283,
+        "minDepositUsd": 100,
+        "minLiveDepositUsd": 100,
+        "whitelisted": false,
+        "settlement": "async-erc7540",
+        "checks": [
+          {
+            "key": "status",
+            "label": "Vault status",
+            "ok": true,
+            "severity": "block",
+            "value": "active",
+            "detail": "IXS Vault API status \"active\", paused() false",
+            "source": "IXS Vault API + paused() on-chain"
+          },
+          {
+            "key": "eligibility",
+            "label": "Eligibility",
+            "ok": false,
+            "severity": "block",
+            "value": "not whitelisted",
+            "detail": "KYC whitelist enforced by the vault (whitelistEnabled() true); IXS onboarding required",
+            "source": "IXS MCP vault_check_whitelist"
+          },
+          {
+            "key": "nav-age",
+            "label": "NAV freshness",
+            "ok": false,
+            "severity": "defer",
+            "value": "6.9 days ago · 1.088596 USDC/share",
+            "detail": "older than the Vaulto staleness policy of 72 h (contract navStalenessThreshold() = 720 h, not exceeded). Last NAV change 2026-09-18T06:19:49.000Z at block 122556283 (tx 0x7ecfc411a4…). Per IXS (24 Sep 2026) a stale NAV drives the deposit limit to 0 until the next refresh: temporarily paused, waiting NAV refresh.",
+            "source": "priceUpdatedAt() on-chain · history from the IXS subgraph (NAV events)"
+          },
+          {
+            "key": "deposit-limit",
+            "label": "Deposit limit",
+            "ok": false,
+            "severity": "block",
+            "value": "0 USDC",
+            "detail": "maxDeposit(wallet) is 0 because the wallet is not whitelisted",
+            "source": "maxDeposit() on-chain · block 123871945"
+          },
+          {
+            "key": "mcp",
+            "label": "IXS MCP builds the deposit request",
+            "ok": false,
+            "severity": "info",
+            "value": "refused",
+            "detail": "Deposit amount exceeds the current vault limit of 0 USDC. (consistent with the on-chain limit)",
+            "source": "IXS MCP vault_build_request_deposit"
+          },
+          {
+            "key": "min-deposit",
+            "label": "Minimum deposit",
+            "ok": true,
+            "severity": "block",
+            "value": "100 USDC",
+            "detail": "applies to every request · 100 USDC confirmed by IXS (24 Sep 2026)",
+            "source": "vault reverts 'below min deposit' under 100 (verified by eth_call) · agent policy"
+          },
+          {
+            "key": "redeemable-min",
+            "label": "Live deposit minimum (redeemable)",
+            "ok": true,
+            "severity": "info",
+            "value": "100 USDC",
+            "detail": "no practical redeem minimum on-chain, so the 100 USDC IXS minimum deposit applies: the vault exposes no meaningful minRedeemAssets(). Guardrail for Live deposits; this run is simulated (Live mode is opt-in).",
+            "source": "Vaulto guardrail · minRedeemAssets() + feeBps() on-chain"
+          },
+          {
+            "key": "cutoff",
+            "label": "Cutoff / settlement",
+            "ok": true,
+            "severity": "info",
+            "value": "next cutoff 2026-09-25 17:00 SGT (in 6.2 h)",
+            "detail": "Async ERC-7540: send before 2026-09-25 17:00 SGT to be processed at that cutoff; estimated settlement 2026-09-28 17:00 SGT (1 business day), skipping 2026-09-26 Saturday, 2026-09-27 Sunday. Observed on-chain: median 0.0 h from request to processing over 2 requests. Redemption requested → awaiting RWA sale & operator finalization → paid (USDC sent to the receiver, no claim step).",
+            "source": "IXS answer to hackathon participants, 24 Sep 2026: daily cutoff 17:00 SGT (09:00 UTC), Singapore business days Mon–Fri; requests are processed at the next cutoff, settlement ≈ 1 business day later; Singapore public holidays from the public calendar: assumed, not confirmed by IXS"
+          }
+        ]
+      },
+      "ixhyb-avax": {
+        "verdict": "defer",
+        "chainId": 43114,
+        "blockNumber": 96094914,
+        "checkedAt": "2026-09-25T02:51:01.828Z",
+        "depositLimitUsd": 0,
+        "depositLimitUnlimited": false,
+        "navUpdatedAt": "2026-09-14T06:17:51.000Z",
+        "navAgeHours": 260.5,
+        "navLastChangeTx": "0xd72ca4e3585ded8cbc0aeb24d66354dd9f5e850cb5abccd8d17c288510873621",
+        "navLastChangeBlock": 95241651,
+        "minDepositUsd": 100,
+        "minLiveDepositUsd": 100,
+        "whitelisted": null,
+        "settlement": "async-erc7540",
+        "checks": [
+          {
+            "key": "status",
+            "label": "Vault status",
+            "ok": true,
+            "severity": "block",
+            "value": "active",
+            "detail": "IXS Vault API status \"active\", paused() false",
+            "source": "IXS Vault API + paused() on-chain"
+          },
+          {
+            "key": "eligibility",
+            "label": "Eligibility",
+            "ok": true,
+            "severity": "block",
+            "value": "open vault",
+            "detail": "whitelistEnabled() is false on-chain",
+            "source": "whitelistEnabled() on-chain"
+          },
+          {
+            "key": "nav-age",
+            "label": "NAV freshness",
+            "ok": false,
+            "severity": "defer",
+            "value": "10.9 days ago · 1.090228 USDC/share",
+            "detail": "older than the Vaulto staleness policy of 72 h (contract navStalenessThreshold() = 720 h, not exceeded). Last NAV change 2026-09-14T06:17:51.000Z at block 95241651 (tx 0xd72ca4e358…). Per IXS (24 Sep 2026) a stale NAV drives the deposit limit to 0 until the next refresh: temporarily paused, waiting NAV refresh.",
+            "source": "priceUpdatedAt() on-chain · history from the IXS subgraph (NAV events)"
+          },
+          {
+            "key": "deposit-limit",
+            "label": "Deposit limit",
+            "ok": false,
+            "severity": "defer",
+            "value": "0 USDC",
+            "detail": "maxDeposit(wallet) is 0: per IXS (24 Sep 2026) this is the NAV-staleness effect between updates, not a closed vault → temporarily paused, waiting NAV refresh",
+            "source": "maxDeposit() on-chain · block 96094914"
+          },
+          {
+            "key": "mcp",
+            "label": "IXS MCP builds the deposit request",
+            "ok": false,
+            "severity": "info",
+            "value": "refused",
+            "detail": "This operation was aborted (consistent with the on-chain limit)",
+            "source": "IXS MCP vault_build_request_deposit"
+          },
+          {
+            "key": "min-deposit",
+            "label": "Minimum deposit",
+            "ok": true,
+            "severity": "block",
+            "value": "100 USDC",
+            "detail": "applies to every request · 100 USDC confirmed by IXS (24 Sep 2026)",
+            "source": "subgraph minDepositAssets (config change on-chain)"
+          },
+          {
+            "key": "redeemable-min",
+            "label": "Live deposit minimum (redeemable)",
+            "ok": true,
+            "severity": "info",
+            "value": "100 USDC",
+            "detail": "no practical redeem minimum on-chain, so the 100 USDC IXS minimum deposit applies: the vault exposes no meaningful minRedeemAssets(). Guardrail for Live deposits; this run is simulated (Live mode is opt-in).",
+            "source": "Vaulto guardrail · minRedeemAssets() + feeBps() on-chain"
+          },
+          {
+            "key": "cutoff",
+            "label": "Cutoff / settlement",
+            "ok": true,
+            "severity": "info",
+            "value": "next cutoff 2026-09-25 17:00 SGT (in 6.1 h)",
+            "detail": "Async ERC-7540: send before 2026-09-25 17:00 SGT to be processed at that cutoff; estimated settlement 2026-09-28 17:00 SGT (1 business day), skipping 2026-09-26 Saturday, 2026-09-27 Sunday. Observed on-chain: median 14.2 h from request to processing over 7 requests, 1 pending. Redemption requested → awaiting RWA sale & operator finalization → paid (USDC sent to the receiver, no claim step).",
+            "source": "IXS answer to hackathon participants, 24 Sep 2026: daily cutoff 17:00 SGT (09:00 UTC), Singapore business days Mon–Fri; requests are processed at the next cutoff, settlement ≈ 1 business day later; Singapore public holidays from the public calendar: assumed, not confirmed by IXS"
+          }
+        ]
+      }
+    },
+    "rejected": [
+      {
+        "option": "IX High Yield Bond (USDC) · BNB · Licensed · 3.07% · idle 595,270 USDC",
+        "reason": "Rejected because the vault requires whitelist access and this wallet is not whitelisted; maxDeposit is 0 USDC on BNB Chain and the NAV is 164.5 hours old (updated 2026-09-18T06:19:49Z).",
+        "tone": "warn",
+        "verdict": "reject"
+      },
+      {
+        "option": "IX High Yield Bond (USDC) · Avalanche · Licensed · 3.07% · idle 595,270 USDC",
+        "reason": "Rejected because the vault requires whitelist access and this wallet is not whitelisted; maxDeposit is 0 USDC on Avalanche C-Chain and the NAV is 260.6 hours old (updated 2026-09-14T06:17:09Z).",
+        "tone": "warn",
+        "verdict": "reject"
+      },
+      {
+        "option": "BTC Real Yield · idle 12.4 BTC",
+        "reason": "Rejected because the BTC Real Yield vault is announced but not deployed on the IXS Vault API, so there is no live vault to allocate to on BNB Chain.",
+        "tone": "warn",
+        "verdict": "reject"
+      }
+    ],
+    "deferred": [
+      {
+        "option": "IX High Yield Bond (USDC) · BNB · 3.07% · idle 595,270 USDC",
+        "reason": "Temporarily paused — waiting NAV refresh: maxDeposit is 0 USDC and the NAV is 49.6 hours old (updated 2026-09-23T01:12:23Z), so the vault cannot accept a deposit right now on BNB Chain.",
+        "tone": "warn",
+        "verdict": "defer"
+      },
+      {
+        "option": "IX High Yield Bond (USDC) · Avalanche · 3.07% · idle 595,270 USDC",
+        "reason": "Temporarily paused — waiting NAV refresh: maxDeposit is 0 USDC and the NAV is 260.5 hours old (updated 2026-09-14T06:17:51Z), so the vault cannot accept a deposit right now on Avalanche C-Chain.",
+        "tone": "warn",
+        "verdict": "defer"
+      }
+    ],
+    "memo": {
+      "title": "Allocation memo · 2026-09-25",
+      "sections": [
+        {
+          "heading": "Treasury condition",
+          "body": "Total $1,988,150; idle $1,640,900 (83%) for 23 days: 12.4 BTC + 595,270 USDC. 1 existing IXS position ($347,250). Execution mode: simulated."
+        },
+        {
+          "heading": "Policy",
+          "body": "SERV decides; deterministic policy guardrails enforce hard limits: liquidity floor 30%, max single-asset exposure 70%, minimum vault risk score 80, minimum deposit 100 USDC per request (confirmed by IXS), Live cap 150 USDC per transaction, NAV stale after 72 h. Live redeemable minimum: ixv1 ceil(100 / 0.995 × 1.03) = 104 USDC, which keeps the whole position redeemable above the 100 USDC net minimum (minRedeemAssets) after the 0.5% redeem fee (feeBps), with a 3% NAV buffer. Live mode is opt-in (off: this run is simulated). Monthly burn $185,000. Liquidity floor: 83% liquid vs 30% floor; Asset exposure: BTC 53% vs 70% limit; Vault risk: No candidate passed pre-flight; Pre-flight (limit, NAV, minimum, eligibility): IX High Yield Bond (USDC) · BNB: defer (limit 0, NAV 2.1 d); IX High Yield Bond (USDC) · Avalanche: defer (limit 0, NAV 10.9 d); IX High Yield Bond (USDC) · BNB · Licensed: reject (limit 0, NAV 6.9 d); IX High Yield Bond (USDC) · Avalanche · Licensed: reject (limit 0, NAV 10.9 d); BTC Real Yield: reject."
+        },
+        {
+          "heading": "Proposed allocation",
+          "body": "No allocation now. No candidate passes all pre-flight checks with a positive deposit limit, so there is nothing to allocate. The two open USDC vaults are temporarily paused at maxDeposit 0 due to stale NAV, the licensed vaults fail whitelist eligibility, and the BTC strategy is not deployed."
+        },
+        {
+          "heading": "Deferred (waiting NAV refresh)",
+          "body": "IX High Yield Bond (USDC) · BNB · 3.07% · idle 595,270 USDC: Temporarily paused — waiting NAV refresh: maxDeposit is 0 USDC and the NAV is 49.6 hours old (updated 2026-09-23T01:12:23Z), so the vault cannot accept a deposit right now on BNB Chain. · IX High Yield Bond (USDC) · Avalanche · 3.07% · idle 595,270 USDC: Temporarily paused — waiting NAV refresh: maxDeposit is 0 USDC and the NAV is 260.5 hours old (updated 2026-09-14T06:17:51Z), so the vault cannot accept a deposit right now on Avalanche C-Chain."
+        },
+        {
+          "heading": "Rejected",
+          "body": "IX High Yield Bond (USDC) · BNB · Licensed · 3.07% · idle 595,270 USDC: Rejected because the vault requires whitelist access and this wallet is not whitelisted; maxDeposit is 0 USDC on BNB Chain and the NAV is 164.5 hours old (updated 2026-09-18T06:19:49Z). · IX High Yield Bond (USDC) · Avalanche · Licensed · 3.07% · idle 595,270 USDC: Rejected because the vault requires whitelist access and this wallet is not whitelisted; maxDeposit is 0 USDC on Avalanche C-Chain and the NAV is 260.6 hours old (updated 2026-09-14T06:17:09Z). · BTC Real Yield · idle 12.4 BTC: Rejected because the BTC Real Yield vault is announced but not deployed on the IXS Vault API, so there is no live vault to allocate to on BNB Chain."
+        },
+        {
+          "heading": "Risks",
+          "body": "RWA credit risk: the vault holds U.S. Treasuries and high-yield corporate bonds through a licensed structure; returns depend on their performance and are not guaranteed. Redemptions are queued for the operator (request → awaiting RWA sale & operator finalization → paid, no claim step) with a 0.5% redemption fee read from feeBps(); NAV is updated periodically off-chain, so entry and exit prices can drift between updates. Smart-contract and counterparty risk apply."
+        },
+        {
+          "heading": "Execution",
+          "body": "Simulated on mainnet: eth_call + state override against the real vault; nothing is sent. Live mode is an opt-in capability (wallet-signed, capped at 150 USDC per transaction) and is not used in this run."
+        }
+      ]
+    },
+    "trace": {
+      "source": "openserv",
+      "model": "gpt-5.4-mini-2026-03-17",
+      "at": "2026-09-25T02:51:13.811Z",
+      "decision": {
+        "input": {
+          "policy": {
+            "riskProfile": "Balanced",
+            "liquidityFloorPct": 30,
+            "maxAssetExposurePct": 70,
+            "minVaultRiskScore": 80,
+            "monthlyBurnUsd": 185000,
+            "treasuryGoal": "Preserve runway, earn on idle capital"
+          },
+          "treasury": {
+            "totalUsd": 1988150,
+            "idleUsd": 1640900,
+            "idlePct": 83,
+            "idleDays": 23,
+            "executionMode": "simulated",
+            "liveChainIds": [],
+            "liveOptIn": false,
+            "liveCapableChainIds": [],
+            "assets": [
+              {
+                "symbol": "BTC",
+                "valueUsd": 1045630,
+                "idleAmount": 12.4,
+                "idleUsd": 1045630
+              },
+              {
+                "symbol": "USDC",
+                "valueUsd": 942520,
+                "idleAmount": 595270,
+                "idleUsd": 595270,
+                "deployedIn": "ixhyb-bnb"
+              }
+            ],
+            "positions": [
+              {
+                "vault": "IX High Yield Bond (USDC) · BNB",
+                "asset": "USDC",
+                "valueUsd": 347250,
+                "apy": 3.07
+              }
+            ],
+            "maxExposure": {
+              "symbol": "BTC",
+              "pct": 53
+            }
+          },
+          "candidates": [
+            {
+              "strategyId": "ixhyb-bnb",
+              "vault": "IX High Yield Bond (USDC) · BNB",
+              "chain": "BNB Chain",
+              "asset": "USDC",
+              "idleAmount": 595270,
+              "idleUsd": 595270,
+              "yieldTtmPct": 3.07,
+              "riskScore": 92,
+              "settlement": "async-erc7540",
+              "deployed": true,
+              "preflight": {
+                "verdictHint": "defer",
+                "depositLimit": 0,
+                "navAgeHours": 49.6,
+                "navUpdatedAt": "2026-09-23T01:12:23.000Z",
+                "minDepositUsd": 100,
+                "whitelisted": null,
+                "mcpAccepts": false,
+                "mcpReason": "Deposit amount exceeds the current vault limit of 0 USDC.",
+                "checks": [
+                  {
+                    "key": "status",
+                    "label": "Vault status",
+                    "ok": true,
+                    "severity": "block",
+                    "value": "active",
+                    "detail": "IXS Vault API status \"active\", paused() false",
+                    "source": "IXS Vault API + paused() on-chain"
+                  },
+                  {
+                    "key": "eligibility",
+                    "label": "Eligibility",
+                    "ok": true,
+                    "severity": "block",
+                    "value": "open vault",
+                    "detail": "whitelistEnabled() is false on-chain",
+                    "source": "whitelistEnabled() on-chain"
+                  },
+                  {
+                    "key": "nav-age",
+                    "label": "NAV freshness",
+                    "ok": true,
+                    "severity": "defer",
+                    "value": "2.1 days ago · 1.091092 USDC/share",
+                    "detail": "within the Vaulto staleness policy of 72 h (contract navStalenessThreshold() = 48 h, exceeded). Last NAV change 2026-09-23T01:12:23.000Z at block 123474967 (tx 0xfe02b4ac84…). ",
+                    "source": "priceUpdatedAt() on-chain · history from the IXS subgraph (NAV events)"
+                  },
+                  {
+                    "key": "deposit-limit",
+                    "label": "Deposit limit",
+                    "ok": false,
+                    "severity": "defer",
+                    "value": "0 USDC",
+                    "detail": "maxDeposit(wallet) is 0: per IXS (24 Sep 2026) this is the NAV-staleness effect between updates, not a closed vault → temporarily paused, waiting NAV refresh",
+                    "source": "maxDeposit() on-chain · block 123871945"
+                  },
+                  {
+                    "key": "mcp",
+                    "label": "IXS MCP builds the deposit request",
+                    "ok": false,
+                    "severity": "info",
+                    "value": "refused",
+                    "detail": "Deposit amount exceeds the current vault limit of 0 USDC. (consistent with the on-chain limit)",
+                    "source": "IXS MCP vault_build_request_deposit"
+                  },
+                  {
+                    "key": "min-deposit",
+                    "label": "Minimum deposit",
+                    "ok": true,
+                    "severity": "block",
+                    "value": "100 USDC",
+                    "detail": "applies to every request · 100 USDC confirmed by IXS (24 Sep 2026)",
+                    "source": "subgraph minDepositAssets (config change on-chain)"
+                  },
+                  {
+                    "key": "redeemable-min",
+                    "label": "Live deposit minimum (redeemable)",
+                    "ok": true,
+                    "severity": "info",
+                    "value": "104 USDC",
+                    "detail": "ceil(100 / 0.995 × 1.03) = 104 USDC: keeps the whole position redeemable above the 100 USDC net minimum (minRedeemAssets) after the 0.5% redeem fee (feeBps), with a 3% NAV buffer. Guardrail for Live deposits; this run is simulated (Live mode is opt-in).",
+                    "source": "Vaulto guardrail · minRedeemAssets() + feeBps() on-chain"
+                  },
+                  {
+                    "key": "cutoff",
+                    "label": "Cutoff / settlement",
+                    "ok": true,
+                    "severity": "info",
+                    "value": "next cutoff 2026-09-25 17:00 SGT (in 6.2 h)",
+                    "detail": "Async ERC-7540: send before 2026-09-25 17:00 SGT to be processed at that cutoff; estimated settlement 2026-09-28 17:00 SGT (1 business day), skipping 2026-09-26 Saturday, 2026-09-27 Sunday. No processed deposit requests on the subgraph yet to confirm the timing. Redemption requested → awaiting RWA sale & operator finalization → paid (USDC sent to the receiver, no claim step).",
+                    "source": "IXS answer to hackathon participants, 24 Sep 2026: daily cutoff 17:00 SGT (09:00 UTC), Singapore business days Mon–Fri; requests are processed at the next cutoff, settlement ≈ 1 business day later; Singapore public holidays from the public calendar: assumed, not confirmed by IXS"
+                  }
+                ]
+              },
+              "liveOnThisChain": false,
+              "liveDepositMinimum": {
+                "usd": 104,
+                "formula": "ceil(100 / 0.995 × 1.03) = 104 USDC",
+                "reason": "keeps the whole position redeemable above the 100 USDC net minimum (minRedeemAssets) after the 0.5% redeem fee (feeBps), with a 3% NAV buffer"
+              },
+              "policyFacts": [
+                "Vault status: active · IXS Vault API + paused() on-chain",
+                "Eligibility: open vault · whitelistEnabled() on-chain",
+                "NAV freshness: 2.1 days ago · 1.091092 USDC/share · priceUpdatedAt() on-chain · history from the IXS subgraph (NAV events)",
+                "Deposit limit: 0 USDC (fails) · maxDeposit() on-chain · block 123871945",
+                "IXS MCP builds the deposit request: refused (fails) · IXS MCP vault_build_request_deposit",
+                "Minimum deposit: 100 USDC · subgraph minDepositAssets (config change on-chain)",
+                "Live deposit minimum (redeemable): 104 USDC · Vaulto guardrail · minRedeemAssets() + feeBps() on-chain",
+                "Cutoff / settlement: next cutoff 2026-09-25 17:00 SGT (in 6.2 h) · IXS answer to hackathon participants, 24 Sep 2026: daily cutoff 17:00 SGT (09:00 UTC), Singapore business days Mon–Fri; requests are processed at the next cutoff, settlement ≈ 1 business day later; Singapore public holidays from the public calendar: assumed, not confirmed by IXS",
+                "Policy: risk score 92 vs minimum 80; chain BNB Chain; settlement async-erc7540"
+              ],
+              "cap": null
+            },
+            {
+              "strategyId": "ixhyb-avax",
+              "vault": "IX High Yield Bond (USDC) · Avalanche",
+              "chain": "Avalanche C-Chain",
+              "asset": "USDC",
+              "idleAmount": 595270,
+              "idleUsd": 595270,
+              "yieldTtmPct": 3.07,
+              "riskScore": 92,
+              "settlement": "async-erc7540",
+              "deployed": true,
+              "preflight": {
+                "verdictHint": "defer",
+                "depositLimit": 0,
+                "navAgeHours": 260.5,
+                "navUpdatedAt": "2026-09-14T06:17:51.000Z",
+                "minDepositUsd": 100,
+                "whitelisted": null,
+                "mcpAccepts": false,
+                "mcpReason": "This operation was aborted",
+                "checks": [
+                  {
+                    "key": "status",
+                    "label": "Vault status",
+                    "ok": true,
+                    "severity": "block",
+                    "value": "active",
+                    "detail": "IXS Vault API status \"active\", paused() false",
+                    "source": "IXS Vault API + paused() on-chain"
+                  },
+                  {
+                    "key": "eligibility",
+                    "label": "Eligibility",
+                    "ok": true,
+                    "severity": "block",
+                    "value": "open vault",
+                    "detail": "whitelistEnabled() is false on-chain",
+                    "source": "whitelistEnabled() on-chain"
+                  },
+                  {
+                    "key": "nav-age",
+                    "label": "NAV freshness",
+                    "ok": false,
+                    "severity": "defer",
+                    "value": "10.9 days ago · 1.090228 USDC/share",
+                    "detail": "older than the Vaulto staleness policy of 72 h (contract navStalenessThreshold() = 720 h, not exceeded). Last NAV change 2026-09-14T06:17:51.000Z at block 95241651 (tx 0xd72ca4e358…). Per IXS (24 Sep 2026) a stale NAV drives the deposit limit to 0 until the next refresh: temporarily paused, waiting NAV refresh.",
+                    "source": "priceUpdatedAt() on-chain · history from the IXS subgraph (NAV events)"
+                  },
+                  {
+                    "key": "deposit-limit",
+                    "label": "Deposit limit",
+                    "ok": false,
+                    "severity": "defer",
+                    "value": "0 USDC",
+                    "detail": "maxDeposit(wallet) is 0: per IXS (24 Sep 2026) this is the NAV-staleness effect between updates, not a closed vault → temporarily paused, waiting NAV refresh",
+                    "source": "maxDeposit() on-chain · block 96094914"
+                  },
+                  {
+                    "key": "mcp",
+                    "label": "IXS MCP builds the deposit request",
+                    "ok": false,
+                    "severity": "info",
+                    "value": "refused",
+                    "detail": "This operation was aborted (consistent with the on-chain limit)",
+                    "source": "IXS MCP vault_build_request_deposit"
+                  },
+                  {
+                    "key": "min-deposit",
+                    "label": "Minimum deposit",
+                    "ok": true,
+                    "severity": "block",
+                    "value": "100 USDC",
+                    "detail": "applies to every request · 100 USDC confirmed by IXS (24 Sep 2026)",
+                    "source": "subgraph minDepositAssets (config change on-chain)"
+                  },
+                  {
+                    "key": "redeemable-min",
+                    "label": "Live deposit minimum (redeemable)",
+                    "ok": true,
+                    "severity": "info",
+                    "value": "100 USDC",
+                    "detail": "no practical redeem minimum on-chain, so the 100 USDC IXS minimum deposit applies: the vault exposes no meaningful minRedeemAssets(). Guardrail for Live deposits; this run is simulated (Live mode is opt-in).",
+                    "source": "Vaulto guardrail · minRedeemAssets() + feeBps() on-chain"
+                  },
+                  {
+                    "key": "cutoff",
+                    "label": "Cutoff / settlement",
+                    "ok": true,
+                    "severity": "info",
+                    "value": "next cutoff 2026-09-25 17:00 SGT (in 6.1 h)",
+                    "detail": "Async ERC-7540: send before 2026-09-25 17:00 SGT to be processed at that cutoff; estimated settlement 2026-09-28 17:00 SGT (1 business day), skipping 2026-09-26 Saturday, 2026-09-27 Sunday. Observed on-chain: median 14.2 h from request to processing over 7 requests, 1 pending. Redemption requested → awaiting RWA sale & operator finalization → paid (USDC sent to the receiver, no claim step).",
+                    "source": "IXS answer to hackathon participants, 24 Sep 2026: daily cutoff 17:00 SGT (09:00 UTC), Singapore business days Mon–Fri; requests are processed at the next cutoff, settlement ≈ 1 business day later; Singapore public holidays from the public calendar: assumed, not confirmed by IXS"
+                  }
+                ]
+              },
+              "liveOnThisChain": false,
+              "liveDepositMinimum": {
+                "usd": 100,
+                "formula": "no practical redeem minimum on-chain, so the 100 USDC IXS minimum deposit applies",
+                "reason": "the vault exposes no meaningful minRedeemAssets()"
+              },
+              "policyFacts": [
+                "Vault status: active · IXS Vault API + paused() on-chain",
+                "Eligibility: open vault · whitelistEnabled() on-chain",
+                "NAV freshness: 10.9 days ago · 1.090228 USDC/share (fails) · priceUpdatedAt() on-chain · history from the IXS subgraph (NAV events)",
+                "Deposit limit: 0 USDC (fails) · maxDeposit() on-chain · block 96094914",
+                "IXS MCP builds the deposit request: refused (fails) · IXS MCP vault_build_request_deposit",
+                "Minimum deposit: 100 USDC · subgraph minDepositAssets (config change on-chain)",
+                "Live deposit minimum (redeemable): 100 USDC · Vaulto guardrail · minRedeemAssets() + feeBps() on-chain",
+                "Cutoff / settlement: next cutoff 2026-09-25 17:00 SGT (in 6.1 h) · IXS answer to hackathon participants, 24 Sep 2026: daily cutoff 17:00 SGT (09:00 UTC), Singapore business days Mon–Fri; requests are processed at the next cutoff, settlement ≈ 1 business day later; Singapore public holidays from the public calendar: assumed, not confirmed by IXS",
+                "Policy: risk score 92 vs minimum 80; chain Avalanche C-Chain; settlement async-erc7540"
+              ],
+              "cap": null
+            },
+            {
+              "strategyId": "ixhyb-bnb-licensed",
+              "vault": "IX High Yield Bond (USDC) · BNB · Licensed",
+              "chain": "BNB Chain",
+              "asset": "USDC",
+              "idleAmount": 595270,
+              "idleUsd": 595270,
+              "yieldTtmPct": 3.07,
+              "riskScore": 88,
+              "settlement": "async-erc7540",
+              "deployed": true,
+              "preflight": {
+                "verdictHint": "reject",
+                "depositLimit": 0,
+                "navAgeHours": 164.5,
+                "navUpdatedAt": "2026-09-18T06:19:49.000Z",
+                "minDepositUsd": 100,
+                "whitelisted": false,
+                "mcpAccepts": false,
+                "mcpReason": "Deposit amount exceeds the current vault limit of 0 USDC.",
+                "checks": [
+                  {
+                    "key": "status",
+                    "label": "Vault status",
+                    "ok": true,
+                    "severity": "block",
+                    "value": "active",
+                    "detail": "IXS Vault API status \"active\", paused() false",
+                    "source": "IXS Vault API + paused() on-chain"
+                  },
+                  {
+                    "key": "eligibility",
+                    "label": "Eligibility",
+                    "ok": false,
+                    "severity": "block",
+                    "value": "not whitelisted",
+                    "detail": "KYC whitelist enforced by the vault (whitelistEnabled() true); IXS onboarding required",
+                    "source": "IXS MCP vault_check_whitelist"
+                  },
+                  {
+                    "key": "nav-age",
+                    "label": "NAV freshness",
+                    "ok": false,
+                    "severity": "defer",
+                    "value": "6.9 days ago · 1.088596 USDC/share",
+                    "detail": "older than the Vaulto staleness policy of 72 h (contract navStalenessThreshold() = 720 h, not exceeded). Last NAV change 2026-09-18T06:19:49.000Z at block 122556283 (tx 0x7ecfc411a4…). Per IXS (24 Sep 2026) a stale NAV drives the deposit limit to 0 until the next refresh: temporarily paused, waiting NAV refresh.",
+                    "source": "priceUpdatedAt() on-chain · history from the IXS subgraph (NAV events)"
+                  },
+                  {
+                    "key": "deposit-limit",
+                    "label": "Deposit limit",
+                    "ok": false,
+                    "severity": "block",
+                    "value": "0 USDC",
+                    "detail": "maxDeposit(wallet) is 0 because the wallet is not whitelisted",
+                    "source": "maxDeposit() on-chain · block 123871945"
+                  },
+                  {
+                    "key": "mcp",
+                    "label": "IXS MCP builds the deposit request",
+                    "ok": false,
+                    "severity": "info",
+                    "value": "refused",
+                    "detail": "Deposit amount exceeds the current vault limit of 0 USDC. (consistent with the on-chain limit)",
+                    "source": "IXS MCP vault_build_request_deposit"
+                  },
+                  {
+                    "key": "min-deposit",
+                    "label": "Minimum deposit",
+                    "ok": true,
+                    "severity": "block",
+                    "value": "100 USDC",
+                    "detail": "applies to every request · 100 USDC confirmed by IXS (24 Sep 2026)",
+                    "source": "vault reverts 'below min deposit' under 100 (verified by eth_call) · agent policy"
+                  },
+                  {
+                    "key": "redeemable-min",
+                    "label": "Live deposit minimum (redeemable)",
+                    "ok": true,
+                    "severity": "info",
+                    "value": "100 USDC",
+                    "detail": "no practical redeem minimum on-chain, so the 100 USDC IXS minimum deposit applies: the vault exposes no meaningful minRedeemAssets(). Guardrail for Live deposits; this run is simulated (Live mode is opt-in).",
+                    "source": "Vaulto guardrail · minRedeemAssets() + feeBps() on-chain"
+                  },
+                  {
+                    "key": "cutoff",
+                    "label": "Cutoff / settlement",
+                    "ok": true,
+                    "severity": "info",
+                    "value": "next cutoff 2026-09-25 17:00 SGT (in 6.2 h)",
+                    "detail": "Async ERC-7540: send before 2026-09-25 17:00 SGT to be processed at that cutoff; estimated settlement 2026-09-28 17:00 SGT (1 business day), skipping 2026-09-26 Saturday, 2026-09-27 Sunday. Observed on-chain: median 0.0 h from request to processing over 2 requests. Redemption requested → awaiting RWA sale & operator finalization → paid (USDC sent to the receiver, no claim step).",
+                    "source": "IXS answer to hackathon participants, 24 Sep 2026: daily cutoff 17:00 SGT (09:00 UTC), Singapore business days Mon–Fri; requests are processed at the next cutoff, settlement ≈ 1 business day later; Singapore public holidays from the public calendar: assumed, not confirmed by IXS"
+                  }
+                ]
+              },
+              "liveOnThisChain": false,
+              "liveDepositMinimum": {
+                "usd": 100,
+                "formula": "no practical redeem minimum on-chain, so the 100 USDC IXS minimum deposit applies",
+                "reason": "the vault exposes no meaningful minRedeemAssets()"
+              },
+              "policyFacts": [
+                "Vault status: active · IXS Vault API + paused() on-chain",
+                "Eligibility: not whitelisted (fails) · IXS MCP vault_check_whitelist",
+                "NAV freshness: 6.9 days ago · 1.088596 USDC/share (fails) · priceUpdatedAt() on-chain · history from the IXS subgraph (NAV events)",
+                "Deposit limit: 0 USDC (fails) · maxDeposit() on-chain · block 123871945",
+                "IXS MCP builds the deposit request: refused (fails) · IXS MCP vault_build_request_deposit",
+                "Minimum deposit: 100 USDC · vault reverts 'below min deposit' under 100 (verified by eth_call) · agent policy",
+                "Live deposit minimum (redeemable): 100 USDC · Vaulto guardrail · minRedeemAssets() + feeBps() on-chain",
+                "Cutoff / settlement: next cutoff 2026-09-25 17:00 SGT (in 6.2 h) · IXS answer to hackathon participants, 24 Sep 2026: daily cutoff 17:00 SGT (09:00 UTC), Singapore business days Mon–Fri; requests are processed at the next cutoff, settlement ≈ 1 business day later; Singapore public holidays from the public calendar: assumed, not confirmed by IXS",
+                "Policy: risk score 88 vs minimum 80; chain BNB Chain; settlement async-erc7540"
+              ],
+              "cap": null
+            },
+            {
+              "strategyId": "ixhyb-avax-licensed",
+              "vault": "IX High Yield Bond (USDC) · Avalanche · Licensed",
+              "chain": "Avalanche C-Chain",
+              "asset": "USDC",
+              "idleAmount": 595270,
+              "idleUsd": 595270,
+              "yieldTtmPct": 3.07,
+              "riskScore": 88,
+              "settlement": "async-erc7540",
+              "deployed": true,
+              "preflight": {
+                "verdictHint": "reject",
+                "depositLimit": 0,
+                "navAgeHours": 260.6,
+                "navUpdatedAt": "2026-09-14T06:17:09.000Z",
+                "minDepositUsd": 100,
+                "whitelisted": false,
+                "mcpAccepts": false,
+                "mcpReason": "Deposit amount exceeds the current vault limit of 0 USDC.",
+                "checks": [
+                  {
+                    "key": "status",
+                    "label": "Vault status",
+                    "ok": true,
+                    "severity": "block",
+                    "value": "active",
+                    "detail": "IXS Vault API status \"active\", paused() false",
+                    "source": "IXS Vault API + paused() on-chain"
+                  },
+                  {
+                    "key": "eligibility",
+                    "label": "Eligibility",
+                    "ok": false,
+                    "severity": "block",
+                    "value": "not whitelisted",
+                    "detail": "KYC whitelist enforced by the vault (whitelistEnabled() true); IXS onboarding required",
+                    "source": "IXS MCP vault_check_whitelist"
+                  },
+                  {
+                    "key": "nav-age",
+                    "label": "NAV freshness",
+                    "ok": false,
+                    "severity": "defer",
+                    "value": "10.9 days ago · 1.090228 USDC/share",
+                    "detail": "older than the Vaulto staleness policy of 72 h (contract navStalenessThreshold() = 720 h, not exceeded). Last NAV change 2026-09-14T06:17:09.000Z at block 95241609 (tx 0x2a54e27d93…). Per IXS (24 Sep 2026) a stale NAV drives the deposit limit to 0 until the next refresh: temporarily paused, waiting NAV refresh.",
+                    "source": "priceUpdatedAt() on-chain · history from the IXS subgraph (NAV events)"
+                  },
+                  {
+                    "key": "deposit-limit",
+                    "label": "Deposit limit",
+                    "ok": false,
+                    "severity": "block",
+                    "value": "0 USDC",
+                    "detail": "maxDeposit(wallet) is 0 because the wallet is not whitelisted",
+                    "source": "maxDeposit() on-chain · block 96094914"
+                  },
+                  {
+                    "key": "mcp",
+                    "label": "IXS MCP builds the deposit request",
+                    "ok": false,
+                    "severity": "info",
+                    "value": "refused",
+                    "detail": "Deposit amount exceeds the current vault limit of 0 USDC. (consistent with the on-chain limit)",
+                    "source": "IXS MCP vault_build_request_deposit"
+                  },
+                  {
+                    "key": "min-deposit",
+                    "label": "Minimum deposit",
+                    "ok": true,
+                    "severity": "block",
+                    "value": "100 USDC",
+                    "detail": "applies to every request · 100 USDC confirmed by IXS (24 Sep 2026)",
+                    "source": "subgraph minDepositAssets (config change on-chain)"
+                  },
+                  {
+                    "key": "redeemable-min",
+                    "label": "Live deposit minimum (redeemable)",
+                    "ok": true,
+                    "severity": "info",
+                    "value": "100 USDC",
+                    "detail": "no practical redeem minimum on-chain, so the 100 USDC IXS minimum deposit applies: the vault exposes no meaningful minRedeemAssets(). Guardrail for Live deposits; this run is simulated (Live mode is opt-in).",
+                    "source": "Vaulto guardrail · minRedeemAssets() + feeBps() on-chain"
+                  },
+                  {
+                    "key": "cutoff",
+                    "label": "Cutoff / settlement",
+                    "ok": true,
+                    "severity": "info",
+                    "value": "next cutoff 2026-09-25 17:00 SGT (in 6.2 h)",
+                    "detail": "Async ERC-7540: send before 2026-09-25 17:00 SGT to be processed at that cutoff; estimated settlement 2026-09-28 17:00 SGT (1 business day), skipping 2026-09-26 Saturday, 2026-09-27 Sunday. Observed on-chain: median 73.9 h from request to processing over 1 requests. Redemption requested → awaiting RWA sale & operator finalization → paid (USDC sent to the receiver, no claim step).",
+                    "source": "IXS answer to hackathon participants, 24 Sep 2026: daily cutoff 17:00 SGT (09:00 UTC), Singapore business days Mon–Fri; requests are processed at the next cutoff, settlement ≈ 1 business day later; Singapore public holidays from the public calendar: assumed, not confirmed by IXS"
+                  }
+                ]
+              },
+              "liveOnThisChain": false,
+              "liveDepositMinimum": {
+                "usd": 100,
+                "formula": "no practical redeem minimum on-chain, so the 100 USDC IXS minimum deposit applies",
+                "reason": "the vault exposes no meaningful minRedeemAssets()"
+              },
+              "policyFacts": [
+                "Vault status: active · IXS Vault API + paused() on-chain",
+                "Eligibility: not whitelisted (fails) · IXS MCP vault_check_whitelist",
+                "NAV freshness: 10.9 days ago · 1.090228 USDC/share (fails) · priceUpdatedAt() on-chain · history from the IXS subgraph (NAV events)",
+                "Deposit limit: 0 USDC (fails) · maxDeposit() on-chain · block 96094914",
+                "IXS MCP builds the deposit request: refused (fails) · IXS MCP vault_build_request_deposit",
+                "Minimum deposit: 100 USDC · subgraph minDepositAssets (config change on-chain)",
+                "Live deposit minimum (redeemable): 100 USDC · Vaulto guardrail · minRedeemAssets() + feeBps() on-chain",
+                "Cutoff / settlement: next cutoff 2026-09-25 17:00 SGT (in 6.2 h) · IXS answer to hackathon participants, 24 Sep 2026: daily cutoff 17:00 SGT (09:00 UTC), Singapore business days Mon–Fri; requests are processed at the next cutoff, settlement ≈ 1 business day later; Singapore public holidays from the public calendar: assumed, not confirmed by IXS",
+                "Policy: risk score 88 vs minimum 80; chain Avalanche C-Chain; settlement async-erc7540"
+              ],
+              "cap": null
+            },
+            {
+              "strategyId": "ixs-btc-real-yield",
+              "vault": "BTC Real Yield",
+              "chain": "BNB Chain",
+              "asset": "BTC",
+              "idleAmount": 12.4,
+              "idleUsd": 1045630,
+              "yieldTtmPct": null,
+              "riskScore": 90,
+              "settlement": "sync",
+              "deployed": false,
+              "preflight": {
+                "verdictHint": "reject",
+                "note": "no vault deployed on the IXS Vault API"
+              },
+              "liveOnThisChain": false,
+              "liveDepositMinimum": null,
+              "policyFacts": [
+                "Announced by IXS, no BTC vault deployed on the IXS Vault API",
+                "Policy: risk score 90 vs minimum 80; chain BNB Chain; settlement sync"
+              ],
+              "cap": null
+            }
+          ],
+          "constraints": null,
+          "guardrails": {
+            "framing": "SERV decides; deterministic policy guardrails enforce hard limits",
+            "liveMode": "opt-in",
+            "liveOptIn": false,
+            "liveMaxPerTxUsdc": 150,
+            "liveRedeemableMinimumRule": "ceil(minRedeemAssets / (1 - feeBps/10000) × 1.03), never below 100 USDC; applies to Live deposits",
+            "navStaleHours": 72,
+            "minDepositUsdc": 100
+          },
+          "policyChecks": [
+            {
+              "label": "Liquidity floor",
+              "ok": true,
+              "detail": "83% liquid vs 30% floor"
+            },
+            {
+              "label": "Asset exposure",
+              "ok": true,
+              "detail": "BTC 53% vs 70% limit"
+            },
+            {
+              "label": "Vault risk",
+              "ok": true,
+              "detail": "No candidate passed pre-flight"
+            },
+            {
+              "label": "Pre-flight (limit, NAV, minimum, eligibility)",
+              "ok": false,
+              "detail": "IX High Yield Bond (USDC) · BNB: defer (limit 0, NAV 2.1 d); IX High Yield Bond (USDC) · Avalanche: defer (limit 0, NAV 10.9 d); IX High Yield Bond (USDC) · BNB · Licensed: reject (limit 0, NAV 6.9 d); IX High Yield Bond (USDC) · Avalanche · Licensed: reject (limit 0, NAV 10.9 d); BTC Real Yield: reject"
+            }
+          ],
+          "nextCutoff": {
+            "utc": "2026-09-25T09:00:00.000Z",
+            "sgt": "2026-09-25 17:00 SGT",
+            "hoursUntil": 6.2,
+            "estimatedSettlementSgt": "2026-09-28 17:00 SGT",
+            "source": "IXS answer to hackathon participants, 24 Sep 2026: daily cutoff 17:00 SGT (09:00 UTC), Singapore business days Mon–Fri; requests are processed at the next cutoff, settlement ≈ 1 business day later"
+          },
+          "fallbackSizing": []
+        },
+        "output": {
+          "decisions": [
+            {
+              "strategyId": "ixhyb-bnb",
+              "verdict": "defer",
+              "amount": 0,
+              "reason": "Temporarily paused — waiting NAV refresh: maxDeposit is 0 USDC and the NAV is 49.6 hours old (updated 2026-09-23T01:12:23Z), so the vault cannot accept a deposit right now on BNB Chain."
+            },
+            {
+              "strategyId": "ixhyb-avax",
+              "verdict": "defer",
+              "amount": 0,
+              "reason": "Temporarily paused — waiting NAV refresh: maxDeposit is 0 USDC and the NAV is 260.5 hours old (updated 2026-09-14T06:17:51Z), so the vault cannot accept a deposit right now on Avalanche C-Chain."
+            },
+            {
+              "strategyId": "ixhyb-bnb-licensed",
+              "verdict": "reject",
+              "amount": 0,
+              "reason": "Rejected because the vault requires whitelist access and this wallet is not whitelisted; maxDeposit is 0 USDC on BNB Chain and the NAV is 164.5 hours old (updated 2026-09-18T06:19:49Z)."
+            },
+            {
+              "strategyId": "ixhyb-avax-licensed",
+              "verdict": "reject",
+              "amount": 0,
+              "reason": "Rejected because the vault requires whitelist access and this wallet is not whitelisted; maxDeposit is 0 USDC on Avalanche C-Chain and the NAV is 260.6 hours old (updated 2026-09-14T06:17:09Z)."
+            },
+            {
+              "strategyId": "ixs-btc-real-yield",
+              "verdict": "reject",
+              "amount": 0,
+              "reason": "Rejected because the BTC Real Yield vault is announced but not deployed on the IXS Vault API, so there is no live vault to allocate to on BNB Chain."
+            }
+          ],
+          "rationale": "No candidate passes all pre-flight checks with a positive deposit limit, so there is nothing to allocate. The two open USDC vaults are temporarily paused at maxDeposit 0 due to stale NAV, the licensed vaults fail whitelist eligibility, and the BTC strategy is not deployed."
+        }
+      }
+    }
+  },
+  "simulations": [
+    {
+      "label": "Simulate deposit · 104 USDC → ixhyb-bnb · empty wallet",
+      "ok": false,
+      "summary": "DEFER: Temporarily paused — waiting NAV refresh: per IXS (24 Sep 2026) Vaulto does not build calldata while the deposit limit is 0 or the NAV is stale. Nothing built. Deposit limit: 0 USDC",
+      "request": {
+        "endpoint": "POST /api/simulate",
+        "address": "0x8fda1dd7b0ce53c08d725e6279ba2d8ea3aa7301",
+        "strategyId": "ixhyb-bnb",
+        "amount": 104
+      },
+      "response": {
+        "label": "Simulated on BNB mainnet",
+        "strategyId": "ixhyb-bnb",
+        "amount": 104,
+        "asset": "USDC",
+        "chainId": 56,
+        "preflight": {
+          "ok": false,
+          "verdict": "defer",
+          "checkedAt": "2026-09-25T02:51:25.587Z",
+          "wallet": "0x8fda1dd7b0ce53c08d725e6279ba2d8ea3aa7301",
+          "chainId": 56,
+          "blockNumber": 123872013,
+          "checks": [
+            {
+              "key": "status",
+              "label": "Vault status",
+              "ok": true,
+              "severity": "block",
+              "value": "active",
+              "detail": "IXS Vault API status \"active\", paused() false",
+              "source": "IXS Vault API + paused() on-chain"
+            },
+            {
+              "key": "eligibility",
+              "label": "Eligibility",
+              "ok": true,
+              "severity": "block",
+              "value": "open vault",
+              "detail": "whitelistEnabled() is false on-chain",
+              "source": "whitelistEnabled() on-chain"
+            },
+            {
+              "key": "nav-age",
+              "label": "NAV freshness",
+              "ok": true,
+              "severity": "defer",
+              "value": "2.1 days ago · 1.091092 USDC/share",
+              "detail": "within the Vaulto staleness policy of 72 h (contract navStalenessThreshold() = 48 h, exceeded). Last NAV change 2026-09-23T01:12:23.000Z at block 123474967 (tx 0xfe02b4ac84…). ",
+              "source": "priceUpdatedAt() on-chain · history from the IXS subgraph (NAV events)"
+            },
+            {
+              "key": "deposit-limit",
+              "label": "Deposit limit",
+              "ok": false,
+              "severity": "defer",
+              "value": "0 USDC",
+              "detail": "maxDeposit(wallet) is 0: per IXS (24 Sep 2026) this is the NAV-staleness effect between updates, not a closed vault → temporarily paused, waiting NAV refresh",
+              "source": "maxDeposit() on-chain · block 123872013"
+            },
+            {
+              "key": "mcp",
+              "label": "IXS MCP builds the deposit request",
+              "ok": false,
+              "severity": "info",
+              "value": "refused",
+              "detail": "Deposit amount exceeds the current vault limit of 0 USDC. (consistent with the on-chain limit)",
+              "source": "IXS MCP vault_build_request_deposit"
+            },
+            {
+              "key": "min-deposit",
+              "label": "Minimum deposit",
+              "ok": true,
+              "severity": "block",
+              "value": "100 USDC",
+              "detail": "intended 104 USDC is above the minimum · 100 USDC confirmed by IXS (24 Sep 2026)",
+              "source": "subgraph minDepositAssets (config change on-chain)"
+            },
+            {
+              "key": "redeemable-min",
+              "label": "Live deposit minimum (redeemable)",
+              "ok": true,
+              "severity": "info",
+              "value": "104 USDC",
+              "detail": "ceil(100 / 0.995 × 1.03) = 104 USDC: keeps the whole position redeemable above the 100 USDC net minimum (minRedeemAssets) after the 0.5% redeem fee (feeBps), with a 3% NAV buffer. Guardrail for Live deposits; this run is simulated (Live mode is opt-in).",
+              "source": "Vaulto guardrail · minRedeemAssets() + feeBps() on-chain"
+            },
+            {
+              "key": "cutoff",
+              "label": "Cutoff / settlement",
+              "ok": true,
+              "severity": "info",
+              "value": "immediate (sync ERC-4626)",
+              "detail": "Deposit mints shares in the same transaction. Redemption requested → awaiting RWA sale & operator finalization → paid (USDC sent to the receiver, no claim step).",
+              "source": "IXS MCP vault_get (settlement sync)"
+            }
+          ],
+          "depositLimitUsd": 0,
+          "depositLimitUnlimited": false,
+          "navUpdatedAt": "2026-09-23T01:12:23.000Z",
+          "navAgeHours": 49.6,
+          "navLastChangeTx": "0xfe02b4ac84e37c29afe40036d8ca90942d1af1669a406efe1faa854f10b94fbc",
+          "navLastChangeBlock": 123474967,
+          "minDepositUsd": 100,
+          "settlement": "sync",
+          "observedSettlementHours": null,
+          "cutoff": null,
+          "redeemPath": "Redemption requested → awaiting RWA sale & operator finalization → paid (USDC sent to the receiver, no claim step)",
+          "mcpAccepts": false,
+          "mcpReason": "Deposit amount exceeds the current vault limit of 0 USDC.",
+          "whitelisted": null,
+          "live": false,
+          "minLiveDepositUsd": 104
+        },
+        "verdict": "defer",
+        "builtBy": null,
+        "steps": [],
+        "note": "Temporarily paused — waiting NAV refresh: per IXS (24 Sep 2026) Vaulto does not build calldata while the deposit limit is 0 or the NAV is stale."
+      }
+    },
+    {
+      "label": "Simulate deposit · 100 USDC → ixhyb-avax · empty wallet",
+      "ok": false,
+      "summary": "DEFER: Temporarily paused — waiting NAV refresh: per IXS (24 Sep 2026) Vaulto does not build calldata while the deposit limit is 0 or the NAV is stale. Nothing built. NAV freshness: 10.9 days ago · 1.090228 USDC/share; Deposit limit: 0 USDC",
+      "request": {
+        "endpoint": "POST /api/simulate",
+        "address": "0x8fda1dd7b0ce53c08d725e6279ba2d8ea3aa7301",
+        "strategyId": "ixhyb-avax",
+        "amount": 100
+      },
+      "response": {
+        "label": "Simulated on Avalanche mainnet",
+        "strategyId": "ixhyb-avax",
+        "amount": 100,
+        "asset": "USDC",
+        "chainId": 43114,
+        "preflight": {
+          "ok": false,
+          "verdict": "defer",
+          "checkedAt": "2026-09-25T02:51:26.368Z",
+          "wallet": "0x8fda1dd7b0ce53c08d725e6279ba2d8ea3aa7301",
+          "chainId": 43114,
+          "blockNumber": 96094944,
+          "checks": [
+            {
+              "key": "status",
+              "label": "Vault status",
+              "ok": true,
+              "severity": "block",
+              "value": "active",
+              "detail": "IXS Vault API status \"active\", paused() false",
+              "source": "IXS Vault API + paused() on-chain"
+            },
+            {
+              "key": "eligibility",
+              "label": "Eligibility",
+              "ok": true,
+              "severity": "block",
+              "value": "open vault",
+              "detail": "whitelistEnabled() is false on-chain",
+              "source": "whitelistEnabled() on-chain"
+            },
+            {
+              "key": "nav-age",
+              "label": "NAV freshness",
+              "ok": false,
+              "severity": "defer",
+              "value": "10.9 days ago · 1.090228 USDC/share",
+              "detail": "older than the Vaulto staleness policy of 72 h (contract navStalenessThreshold() = 720 h, not exceeded). Last NAV change 2026-09-14T06:17:51.000Z at block 95241651 (tx 0xd72ca4e358…). Per IXS (24 Sep 2026) a stale NAV drives the deposit limit to 0 until the next refresh: temporarily paused, waiting NAV refresh.",
+              "source": "priceUpdatedAt() on-chain · history from the IXS subgraph (NAV events)"
+            },
+            {
+              "key": "deposit-limit",
+              "label": "Deposit limit",
+              "ok": false,
+              "severity": "defer",
+              "value": "0 USDC",
+              "detail": "maxDeposit(wallet) is 0: per IXS (24 Sep 2026) this is the NAV-staleness effect between updates, not a closed vault → temporarily paused, waiting NAV refresh",
+              "source": "maxDeposit() on-chain · block 96094944"
+            },
+            {
+              "key": "mcp",
+              "label": "IXS MCP builds the deposit request",
+              "ok": false,
+              "severity": "info",
+              "value": "refused",
+              "detail": "Deposit amount exceeds the current vault limit of 0 USDC. (consistent with the on-chain limit)",
+              "source": "IXS MCP vault_build_request_deposit"
+            },
+            {
+              "key": "min-deposit",
+              "label": "Minimum deposit",
+              "ok": true,
+              "severity": "block",
+              "value": "100 USDC",
+              "detail": "intended 100 USDC is above the minimum · 100 USDC confirmed by IXS (24 Sep 2026)",
+              "source": "subgraph minDepositAssets (config change on-chain)"
+            },
+            {
+              "key": "redeemable-min",
+              "label": "Live deposit minimum (redeemable)",
+              "ok": true,
+              "severity": "info",
+              "value": "100 USDC",
+              "detail": "no practical redeem minimum on-chain, so the 100 USDC IXS minimum deposit applies: the vault exposes no meaningful minRedeemAssets(). Guardrail for Live deposits; this run is simulated (Live mode is opt-in).",
+              "source": "Vaulto guardrail · minRedeemAssets() + feeBps() on-chain"
+            },
+            {
+              "key": "cutoff",
+              "label": "Cutoff / settlement",
+              "ok": true,
+              "severity": "info",
+              "value": "next cutoff 2026-09-25 17:00 SGT (in 6.1 h)",
+              "detail": "Async ERC-7540: send before 2026-09-25 17:00 SGT to be processed at that cutoff; estimated settlement 2026-09-28 17:00 SGT (1 business day), skipping 2026-09-26 Saturday, 2026-09-27 Sunday. Observed on-chain: median 14.2 h from request to processing over 7 requests, 1 pending. Redemption requested → awaiting RWA sale & operator finalization → paid (USDC sent to the receiver, no claim step).",
+              "source": "IXS answer to hackathon participants, 24 Sep 2026: daily cutoff 17:00 SGT (09:00 UTC), Singapore business days Mon–Fri; requests are processed at the next cutoff, settlement ≈ 1 business day later; Singapore public holidays from the public calendar: assumed, not confirmed by IXS"
+            }
+          ],
+          "depositLimitUsd": 0,
+          "depositLimitUnlimited": false,
+          "navUpdatedAt": "2026-09-14T06:17:51.000Z",
+          "navAgeHours": 260.6,
+          "navLastChangeTx": "0xd72ca4e3585ded8cbc0aeb24d66354dd9f5e850cb5abccd8d17c288510873621",
+          "navLastChangeBlock": 95241651,
+          "minDepositUsd": 100,
+          "settlement": "async-erc7540",
+          "observedSettlementHours": 14.184166666666666,
+          "cutoff": {
+            "nextCutoffUtc": "2026-09-25T09:00:00.000Z",
+            "nextCutoffSgt": "2026-09-25 17:00 SGT",
+            "hoursUntilCutoff": 6.1,
+            "todayCutoffStillOpen": true,
+            "estimatedSettlementUtc": "2026-09-28T09:00:00.000Z",
+            "estimatedSettlementSgt": "2026-09-28 17:00 SGT",
+            "skipped": [
+              {
+                "date": "2026-09-26",
+                "reason": "Saturday"
+              },
+              {
+                "date": "2026-09-27",
+                "reason": "Sunday"
+              }
+            ],
+            "holidayAssumption": "Singapore public holidays from the public calendar: assumed, not confirmed by IXS",
+            "source": "IXS answer to hackathon participants, 24 Sep 2026: daily cutoff 17:00 SGT (09:00 UTC), Singapore business days Mon–Fri; requests are processed at the next cutoff, settlement ≈ 1 business day later"
+          },
+          "redeemPath": "Redemption requested → awaiting RWA sale & operator finalization → paid (USDC sent to the receiver, no claim step)",
+          "mcpAccepts": false,
+          "mcpReason": "Deposit amount exceeds the current vault limit of 0 USDC.",
+          "whitelisted": null,
+          "live": false,
+          "minLiveDepositUsd": 100
+        },
+        "verdict": "defer",
+        "builtBy": null,
+        "steps": [],
+        "note": "Temporarily paused — waiting NAV refresh: per IXS (24 Sep 2026) Vaulto does not build calldata while the deposit limit is 0 or the NAV is stale."
+      }
+    },
+    {
+      "label": "Simulate redeem · 91.6513 ixv1 (the shares of a 100 USDC deposit) · empty wallet with a share-balance override",
+      "ok": false,
+      "summary": "Simulated on BNB mainnet: requestRedeem of 91.6513 shares reverts: below min redeem (previewRedeem 99.5 USDC net vs minimum 100 USDC).",
+      "request": {
+        "endpoint": "POST /api/simulate",
+        "address": "0x8fda1dd7b0ce53c08d725e6279ba2d8ea3aa7301",
+        "strategyId": "ixhyb-bnb",
+        "action": "redeem",
+        "shares": 91.6513
+      },
+      "response": {
+        "label": "Simulated on BNB mainnet",
+        "strategyId": "ixhyb-bnb",
+        "action": "redeem",
+        "chainId": 56,
+        "asset": "USDC",
+        "amount": 100,
+        "builtBy": "ixs-mcp",
+        "settlement": "queued",
+        "mcpDescription": "Submit requestRedeem. Shares are queued for redemption, not settled — this vault has no separate claim step (the queue finalizes off this call).",
+        "minRedeemUsd": 100,
+        "feeBps": 50,
+        "redeem": {
+          "label": "Simulated on BNB mainnet",
+          "block": 123872019,
+          "shares": 91.6513,
+          "netAssets": 99.500000218502,
+          "grossAssets": 100.0000002196,
+          "feeAssets": 0.5,
+          "path": "requestRedeem → queued → operator sells RWA and finalizes → USDC paid to the receiver (no claim step)",
+          "ok": false,
+          "overrides": [
+            "ixv1 balance → 91.6513 (ERC-7201 openzeppelin.storage.ERC20)",
+            "totalSupply += shares"
+          ],
+          "revertReason": "below min redeem"
+        },
+        "steps": [],
+        "verdict": "reject",
+        "preflight": null
+      }
+    },
+    {
+      "label": "Simulate redeem · 95.3174 ixv1 (the shares of a 104 USDC deposit) · empty wallet with a share-balance override",
+      "ok": true,
+      "summary": "Simulated on BNB mainnet: requestRedeem of 95.3174 shares queues request #10 (block 123872020); previewRedeem 103.4801 USDC net (gross 104.0001, fee 0.52), above the 100 USDC minimum. Path: requestRedeem → queued → operator sells RWA and finalizes → USDC paid to the receiver (no claim step).",
+      "request": {
+        "endpoint": "POST /api/simulate",
+        "address": "0x8fda1dd7b0ce53c08d725e6279ba2d8ea3aa7301",
+        "strategyId": "ixhyb-bnb",
+        "action": "redeem",
+        "shares": 95.3174
+      },
+      "response": {
+        "label": "Simulated on BNB mainnet",
+        "strategyId": "ixhyb-bnb",
+        "action": "redeem",
+        "chainId": 56,
+        "asset": "USDC",
+        "amount": 100,
+        "builtBy": "ixs-mcp",
+        "settlement": "queued",
+        "mcpDescription": "Submit requestRedeem. Shares are queued for redemption, not settled — this vault has no separate claim step (the queue finalizes off this call).",
+        "minRedeemUsd": 100,
+        "feeBps": 50,
+        "redeem": {
+          "label": "Simulated on BNB mainnet",
+          "block": 123872020,
+          "shares": 95.3174,
+          "netAssets": 103.480052337796,
+          "grossAssets": 104.0000526008,
+          "feeAssets": 0.52,
+          "path": "requestRedeem → queued → operator sells RWA and finalizes → USDC paid to the receiver (no claim step)",
+          "ok": true,
+          "overrides": [
+            "ixv1 balance → 95.3174 (ERC-7201 openzeppelin.storage.ERC20)",
+            "totalSupply += shares"
+          ],
+          "gasEstimate": 242268,
+          "requestId": "10"
+        },
+        "steps": [],
+        "verdict": "allocate",
+        "preflight": null
+      }
+    }
+  ],
+  "forkRuns": [
+    {
+      "file": "evidence/fork-avalanche-block96093431.json",
+      "label": "Mainnet fork (block 96093431)",
+      "chainId": 43114,
+      "chain": "Avalanche C-Chain",
+      "forkBlock": 96093431,
+      "ranAt": "2026-09-25T02:22:31.710Z",
+      "amount": "100 USDC",
+      "amountUsdc": 100,
+      "redeem": false,
+      "demoWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "note": "Anvil fork of mainnet: IXS vault contracts and IXS MCP calldata are real; the demo wallet is Anvil test account #0 funded on the fork; nothing touches mainnet.",
+      "vaults": [
+        {
+          "label": "Mainnet fork (block 96093431)",
+          "chainId": 43114,
+          "chain": "Avalanche C-Chain",
+          "forkBlock": 96093431,
+          "vault": {
+            "name": "IX High Yield Bond (USDC)",
+            "symbol": "IXHYB",
+            "address": "0x864E9C192a724773C2bB8C1e84572996074F0B41",
+            "routeId": "43114-0x864e9c192a724773c2bb8c1e84572996074f0b41",
+            "requiresWhitelist": true
+          },
+          "demoWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "asset": {
+            "address": "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E",
+            "symbol": "USDC",
+            "decimals": 6
+          },
+          "shares": {
+            "symbol": "IXHYB",
+            "decimals": 18
+          },
+          "redeemFeeBps": 50,
+          "preflight": {
+            "depositLimit": "0 USDC",
+            "whitelistEnabled": true,
+            "whitelisted": false,
+            "paused": false
+          },
+          "verdict": "REJECT",
+          "status": "Demo wallet is not whitelisted (KYC vault); nothing built."
+        },
+        {
+          "label": "Mainnet fork (block 96093431)",
+          "chainId": 43114,
+          "chain": "Avalanche C-Chain",
+          "forkBlock": 96093431,
+          "vault": {
+            "name": "IX High Yield Bond (USDC)",
+            "symbol": "IXHYB",
+            "address": "0xaD01573b459805E3954398796203d830B57A8bD9",
+            "routeId": "43114-0xad01573b459805e3954398796203d830b57a8bd9",
+            "requiresWhitelist": false
+          },
+          "demoWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "asset": {
+            "address": "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E",
+            "symbol": "USDC",
+            "decimals": 6
+          },
+          "shares": {
+            "symbol": "IXHYB",
+            "decimals": 18
+          },
+          "redeemFeeBps": 50,
+          "preflight": {
+            "depositLimit": "0 USDC",
+            "whitelistEnabled": false,
+            "whitelisted": true,
+            "paused": false
+          },
+          "verdict": "DEFER",
+          "status": "Deposit limit 0 USDC below 100 USDC: temporarily paused — waiting NAV refresh (per IXS, 24 Sep 2026). Nothing built."
+        }
+      ],
+      "source": "scripts/fork-demo.mjs output"
+    },
+    {
+      "file": "evidence/fork-bnb-block123779792-100usdc.json",
+      "label": "Mainnet fork (block 123779792)",
+      "chainId": 56,
+      "chain": "BNB Chain",
+      "forkBlock": 123779792,
+      "amount": "100 USDC",
+      "demoWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "vaults": [
+        {
+          "label": "Mainnet fork (block 123779792)",
+          "chainId": 56,
+          "chain": "BNB Chain",
+          "forkBlock": 123779792,
+          "vault": {
+            "name": "IX High Yield Bond (USDC)",
+            "symbol": "ix7540v1",
+            "address": "0xD84129f506d1030Dd6b46Fe4A600d1E1c3b0802E",
+            "routeId": "56-0xd84129f506d1030dd6b46fe4a600d1e1c3b0802e",
+            "requiresWhitelist": true
+          },
+          "demoWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "asset": {
+            "address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+            "symbol": "USDC",
+            "decimals": 18
+          },
+          "shares": {
+            "symbol": "ix7540v1",
+            "decimals": 18
+          },
+          "redeemFeeBps": 50,
+          "preflight": {
+            "depositLimit": "0 USDC",
+            "whitelistEnabled": true,
+            "whitelisted": false,
+            "paused": false
+          },
+          "verdict": "REJECT",
+          "status": "Demo wallet is not whitelisted (KYC vault); nothing built."
+        },
+        {
+          "label": "Mainnet fork (block 123779792)",
+          "chainId": 56,
+          "chain": "BNB Chain",
+          "forkBlock": 123779792,
+          "vault": {
+            "name": "IX High Yield Bond (USDC)",
+            "symbol": "ixv1",
+            "address": "0xc975a3EeF2e49F8eDdEf585340C43f15300fCB82",
+            "routeId": "56-0xc975a3eef2e49f8eddef585340c43f15300fcb82",
+            "requiresWhitelist": false
+          },
+          "demoWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "asset": {
+            "address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+            "symbol": "USDC",
+            "decimals": 18
+          },
+          "shares": {
+            "symbol": "ixv1",
+            "decimals": 18
+          },
+          "redeemFeeBps": 50,
+          "preflight": {
+            "depositLimit": "unlimited",
+            "whitelistEnabled": false,
+            "whitelisted": true,
+            "paused": false
+          },
+          "calldataBuiltBy": "IXS MCP vault_build_request_deposit",
+          "settlement": "sync",
+          "txs": [
+            {
+              "step": "erc20_approve_exact",
+              "hash": "0x856f62c48f4645e1df1ea6acc08528129943bf7c5fd03d8ea667e1fe2719513e",
+              "status": "success",
+              "gasUsed": 53452
+            },
+            {
+              "step": "vault_deposit",
+              "hash": "0xce79d69bbd4eb417fa2f11b2d563d2ed8468600380b88572eed0d9cc3f706a1c",
+              "status": "success",
+              "gasUsed": 119563
+            }
+          ],
+          "pricePerShare": 1.091092,
+          "verdict": "ALLOCATE",
+          "sharesReceived": 91.65129979873375,
+          "sharesValue": 100,
+          "depositEvent": {
+            "assets": 100,
+            "shares": 91.65129979873375
+          },
+          "status": "Shares minted on the fork (sync ERC-4626): 100 USDC → 91.65129979873375 ixv1 (≈ 100 USDC) in the deposit transaction. Anvil fork only; no mainnet funds moved.",
+          "liveDepositMinimum": {
+            "usd": 104,
+            "formula": "ceil(100 / 0.995 × 1.03) = 104 USDC",
+            "depositMeetsIt": false
+          },
+          "redeemCheck": {
+            "derived": true,
+            "netIfRedeemedAll": 99.5,
+            "minRedeemAssets": 100,
+            "outcome": "Redeeming all 91.65129979873375 ixv1 returns ≈ 99.50 USDC net after the 0.5% fee, below the 100 USDC minRedeemAssets: requestRedeem reverts \"below min redeem\" (confirmed by the eth_call redeem simulation in the evidence snapshot). This is why Live deposits into ixv1 need at least 104 USDC."
+          }
+        }
+      ],
+      "amountUsdc": 100,
+      "recordedAt": "2026-09-24T22:20:44+07:00",
+      "source": "scripts/fork-demo.mjs output, committed in 0b3190c as docs/fork-demo-sample.json",
+      "relabelled": "Status wording updated on 2026-09-25 (no 'deposited' claims, label 'Mainnet fork (block N)'); fork block, amounts, shares and fork tx hashes are unchanged from the original script output.",
+      "note": "Anvil fork of mainnet: IXS vault contracts and IXS MCP calldata are real; the demo wallet is Anvil test account #0 funded on the fork; nothing touches mainnet."
+    },
+    {
+      "file": "evidence/fork-bnb-block123785153-101usdc-redeem.json",
+      "label": "Mainnet fork (block 123785153)",
+      "chainId": 56,
+      "chain": "BNB Chain",
+      "forkBlock": 123785153,
+      "amount": "101 USDC",
+      "demoWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "vaults": [
+        {
+          "label": "Mainnet fork (block 123785153)",
+          "chainId": 56,
+          "chain": "BNB Chain",
+          "forkBlock": 123785153,
+          "vault": {
+            "name": "IX High Yield Bond (USDC)",
+            "symbol": "ix7540v1",
+            "address": "0xD84129f506d1030Dd6b46Fe4A600d1E1c3b0802E",
+            "routeId": "56-0xd84129f506d1030dd6b46fe4a600d1e1c3b0802e",
+            "requiresWhitelist": true
+          },
+          "demoWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "asset": {
+            "address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+            "symbol": "USDC",
+            "decimals": 18
+          },
+          "shares": {
+            "symbol": "ix7540v1",
+            "decimals": 18
+          },
+          "redeemFeeBps": 50,
+          "preflight": {
+            "depositLimit": "0 USDC",
+            "whitelistEnabled": true,
+            "whitelisted": false,
+            "paused": false
+          },
+          "verdict": "REJECT",
+          "status": "Demo wallet is not whitelisted (KYC vault); nothing built."
+        },
+        {
+          "label": "Mainnet fork (block 123785153)",
+          "chainId": 56,
+          "chain": "BNB Chain",
+          "forkBlock": 123785153,
+          "vault": {
+            "name": "IX High Yield Bond (USDC)",
+            "symbol": "ixv1",
+            "address": "0xc975a3EeF2e49F8eDdEf585340C43f15300fCB82",
+            "routeId": "56-0xc975a3eef2e49f8eddef585340c43f15300fcb82",
+            "requiresWhitelist": false
+          },
+          "demoWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "asset": {
+            "address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+            "symbol": "USDC",
+            "decimals": 18
+          },
+          "shares": {
+            "symbol": "ixv1",
+            "decimals": 18
+          },
+          "redeemFeeBps": 50,
+          "preflight": {
+            "depositLimit": "unlimited",
+            "whitelistEnabled": false,
+            "whitelisted": true,
+            "paused": false
+          },
+          "calldataBuiltBy": "IXS MCP vault_build_request_deposit",
+          "settlement": "sync",
+          "txs": [
+            {
+              "step": "erc20_approve_exact",
+              "hash": "0xf16048fa3d604e157307ba4ea8a2b24f05b117868cdd69b21517df0ef3f2c13f",
+              "status": "success",
+              "gasUsed": 53452
+            },
+            {
+              "step": "vault_deposit",
+              "hash": "0x580e15049670a530fce83e5d53a0e904ecf98ab68105915dfa15015ead58ae90",
+              "status": "success",
+              "gasUsed": 119563
+            }
+          ],
+          "pricePerShare": 1.091092,
+          "verdict": "ALLOCATE",
+          "sharesReceived": 92.56781279672109,
+          "sharesValue": 101,
+          "depositEvent": {
+            "assets": 101,
+            "shares": 92.56781279672109
+          },
+          "status": "Shares minted on the fork (sync ERC-4626): 101 USDC → 92.56781279672109 ixv1 (≈ 101 USDC) in the deposit transaction. Anvil fork only; no mainnet funds moved.",
+          "redeem": {
+            "shares": 92.56781279672109,
+            "minRedeemAssets": 100,
+            "previewNetAssets": 100.495,
+            "path": "requestRedeem → queued → operator sells RWA and finalizes → USDC paid to the receiver (no claim step)",
+            "tx": {
+              "hash": "0xe7fca32148c027604b58ed2cb02ed097fe391e9d4f7451b037847f423e31dc14",
+              "status": "success",
+              "gasUsed": 228595
+            },
+            "settlement": "queued",
+            "sharesAfter": 0,
+            "status": "Redemption requested → awaiting RWA sale & operator finalization → paid (fork: IXS operator not present, stays queued)"
+          },
+          "liveDepositMinimum": {
+            "usd": 104,
+            "formula": "ceil(100 / 0.995 × 1.03) = 104 USDC",
+            "depositMeetsIt": false
+          },
+          "redeemCheck": {
+            "derived": true,
+            "outcome": "requestRedeem of all shares succeeded on the fork (previewRedeem 100.495 USDC net ≥ 100), with under 0.5% headroom: a small NAV drop would push it below the minimum. The 104 USDC Live minimum adds a 3% NAV buffer."
+          }
+        }
+      ],
+      "amountUsdc": 101,
+      "recordedAt": "2026-09-24T23:01:50+07:00",
+      "source": "scripts/fork-demo.mjs output (REDEEM=1 AMOUNT=101), committed in 6159737 as docs/fork-demo-sample.json",
+      "relabelled": "Status wording updated on 2026-09-25 (no 'deposited' claims, label 'Mainnet fork (block N)'); fork block, amounts, shares and fork tx hashes are unchanged from the original script output.",
+      "note": "Anvil fork of mainnet: IXS vault contracts and IXS MCP calldata are real; the demo wallet is Anvil test account #0 funded on the fork; nothing touches mainnet."
+    },
+    {
+      "file": "evidence/fork-bnb-block123868127.json",
+      "label": "Mainnet fork (block 123868127)",
+      "chainId": 56,
+      "chain": "BNB Chain",
+      "forkBlock": 123868127,
+      "ranAt": "2026-09-25T02:22:18.599Z",
+      "amount": "100 USDC",
+      "amountUsdc": 100,
+      "redeem": true,
+      "demoWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "note": "Anvil fork of mainnet: IXS vault contracts and IXS MCP calldata are real; the demo wallet is Anvil test account #0 funded on the fork; nothing touches mainnet.",
+      "vaults": [
+        {
+          "label": "Mainnet fork (block 123868127)",
+          "chainId": 56,
+          "chain": "BNB Chain",
+          "forkBlock": 123868127,
+          "vault": {
+            "name": "IX High Yield Bond (USDC)",
+            "symbol": "ix7540v1",
+            "address": "0xD84129f506d1030Dd6b46Fe4A600d1E1c3b0802E",
+            "routeId": "56-0xd84129f506d1030dd6b46fe4a600d1e1c3b0802e",
+            "requiresWhitelist": true
+          },
+          "demoWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "asset": {
+            "address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+            "symbol": "USDC",
+            "decimals": 18
+          },
+          "shares": {
+            "symbol": "ix7540v1",
+            "decimals": 18
+          },
+          "redeemFeeBps": 50,
+          "preflight": {
+            "depositLimit": "0 USDC",
+            "whitelistEnabled": true,
+            "whitelisted": false,
+            "paused": false
+          },
+          "verdict": "REJECT",
+          "status": "Demo wallet is not whitelisted (KYC vault); nothing built."
+        },
+        {
+          "label": "Mainnet fork (block 123868127)",
+          "chainId": 56,
+          "chain": "BNB Chain",
+          "forkBlock": 123868127,
+          "vault": {
+            "name": "IX High Yield Bond (USDC)",
+            "symbol": "ixv1",
+            "address": "0xc975a3EeF2e49F8eDdEf585340C43f15300fCB82",
+            "routeId": "56-0xc975a3eef2e49f8eddef585340c43f15300fcb82",
+            "requiresWhitelist": false
+          },
+          "demoWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "asset": {
+            "address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+            "symbol": "USDC",
+            "decimals": 18
+          },
+          "shares": {
+            "symbol": "ixv1",
+            "decimals": 18
+          },
+          "redeemFeeBps": 50,
+          "preflight": {
+            "depositLimit": "0 USDC",
+            "whitelistEnabled": false,
+            "whitelisted": true,
+            "paused": false
+          },
+          "verdict": "DEFER",
+          "status": "Deposit limit 0 USDC below 100 USDC: temporarily paused — waiting NAV refresh (per IXS, 24 Sep 2026). Nothing built."
+        }
+      ],
+      "source": "scripts/fork-demo.mjs output"
+    }
+  ],
+  "log": [
+    {
+      "id": "472cc676-3b3f-4e17-809f-9242447965fe",
+      "at": "2026-09-25T02:50:21.072Z",
+      "kind": "mcp",
+      "label": "IXS MCP · vault_get",
+      "request": {
+        "url": "https://api-v2.ixs.finance/mcp",
+        "tool": "vault_get",
+        "arguments": {
+          "vaultId": "43114-0xad01573b459805e3954398796203d830b57a8bd9"
+        }
+      },
+      "response": {
+        "error": "This operation was aborted"
+      },
+      "ok": false,
+      "durationMs": 8002
+    },
+    {
+      "id": "2b839980-006a-4a5c-ae48-69930dfd49c8",
+      "at": "2026-09-25T02:50:14.133Z",
+      "kind": "mcp",
+      "label": "IXS MCP · vault_get",
+      "request": {
+        "url": "https://api-v2.ixs.finance/mcp",
+        "tool": "vault_get",
+        "arguments": {
+          "vaultId": "56-0xc975a3eef2e49f8eddef585340c43f15300fcb82"
+        }
+      },
+      "response": "{\n  \"ok\": true,\n  \"settlement\": \"sync\",\n  \"vault\": {\n    \"id\": \"6a26624ca7d16b245d665475\",\n    \"legacyId\": null,\n    \"routeId\": \"56-0xc975a3eef2e49f8eddef585340c43f15300fcb82\",\n    \"name\": \"IX High Yield Bond (USDC)\",\n    \"symbol\": \"ixv1\",\n    \"chainId\": 56,\n    \"network\": \"bsc\",\n    \"chainName\": \"bsc\",\n    \"contractAddress\": \"0xc975a3EeF2e49F8eDdEf585340C43f15300fCB82\",\n    \"explorerUrl\": \"https://bscscan.com/address/0xc975a3EeF2e49F8eDdEf585340C43f15300fCB82\",\n    \"subgraphUrl\": \"https://api.goldsky.com/api/public/project_cmgzm21qo008x5np27bk21873/subgraphs/ixs-managed-vault-bsc-mainnet/1.0.0/gn\",\n    \"logoUrl\": \"https://cdn.example.com/chains/ozean.png\",\n    \"rpcUrl\": \"https://bsc-dataseed.bnbchain.org\",\n    \"underlyingAsset\": {\n      \"symbol\": \"USDC\",\n      \"decimals\": 18,\n      \"address\": \"0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d\"\n    },\n    \"productId\": \"ixhyb\",\n    \"protocolVersion\": null,\n    \"requiresWhitelist\": false,\n    \"ixsRewards\": null,\n    \"status\": \"active\",\n    \"metrics\": null,\n    \"transparency\": {\n      \"description\": \"This vault puts your stablecoins to work in real-world assets, such as U.S. treasuries and high-yield corporate bonds. When you deposit, you receive vault tokens and your yield accrues as the underlying assets earn. When you want your funds back, redeem your vault tokens and receive your deposit plus any yield earned, minus any applicable fees. Your returns come from the performance of the underlying real-world assets, not from token emissions or incentives.\",\n      \"faq\": [\n        {\n          \"q\": \"What does this vault invest in?\",\n          \"a\": \"Your deposited stablecoins are put to work in a specific real-world asset strategy tied to a vault, such as short-term U.S. Treasuries or high-yield corporate bonds. Each vault often has its dedicated strategy, so the tokens you hold track that strategy directly. Yield comes from the returns those assets generate.\"\n        },\n        {\n          \"q\": \"How is NAV calculated?\",\n          \"a\": \"Vault share value is based on a live price-per-share, updated periodically by our NAV manager to reflect the fund's off-chain performance, including any yield the underlying strategy has earned. When you deposit or redeem, shares are converted to stablecoin at whatever price is in effect at that moment.\"\n        },\n        {\n          \"q\": \"How do redemptions work?\",\n          \"a\": \"You can request a redemption at any time. Once you submit, your request is processed after the current redemption cycle completes, and your vault tokens are exchanged for your deposit plus any yield earned, sent straight to your wallet. The redemption timeframe varies depending on the underlying asset. Some vaults redeem as quickly as T+1, while others carry a lock-in period (for example, six months) before your tokens can be redeemed.\\n\\nA small transaction fee applies on redemption. Because the yield depends on how the underlying assets perform, the final amount can be higher or lower than your initial deposit.\"\n        },\n        {\n          \"q\": \"What are the fees?\",\n          \"a\": \"- Subscription Fee (deposit): 0%\\n- Redemption Fee: A small fee applies on redemption, deducted from your redemption amount. The fee may vary depending on the vault's underlying strategy. The exact fee for each vault is shown before you confirm your redemption.\\n- Gas fees (on-chain transactions): A transaction fee will be chargeable to a digital wallet (e.g. Metamask) when interacting with the smart contract.\"\n        },\n        {\n          \"q\": \"What are the risks?\",\n          \"a\": \"Like any investment, this vault can carry risk, such as:\\n- Performance risk: Yield depends on how the underlying real-world assets perform. Returns aren't guaranteed, and you could get back less than you deposited.\\n- Smart contract risk: The vault runs on smart contracts, which may contain bugs or vulnerabilities despite testing and audits.\\n- Irreversibility: Transactions on the blockchain are final. There's no wa… (5207 chars)",
+      "ok": true,
+      "durationMs": 1062
+    },
+    {
+      "id": "e77d2c51-e1e2-475e-b5d3-74e80c1ef5b4",
+      "at": "2026-09-25T02:50:14.121Z",
+      "kind": "mcp",
+      "label": "IXS MCP · vault_get",
+      "request": {
+        "url": "https://api-v2.ixs.finance/mcp",
+        "tool": "vault_get",
+        "arguments": {
+          "vaultId": "56-0xd84129f506d1030dd6b46fe4a600d1e1c3b0802e"
+        }
+      },
+      "response": "{\n  \"ok\": true,\n  \"settlement\": \"async-erc7540\",\n  \"vault\": {\n    \"id\": \"6a952729732c2b84b55ce89d\",\n    \"legacyId\": null,\n    \"routeId\": \"43114-0xad01573b459805e3954398796203d830b57a8bd9\",\n    \"name\": \"IX High Yield Bond (USDC)\",\n    \"symbol\": \"IXHYB\",\n    \"chainId\": 43114,\n    \"network\": \"avalanche-mainnet\",\n    \"chainName\": \"Avalanche C-Chain\",\n    \"contractAddress\": \"0xaD01573b459805E3954398796203d830B57A8bD9\",\n    \"explorerUrl\": \"https://snowscan.xyz\",\n    \"subgraphUrl\": \"https://api.goldsky.com/api/public/project_cmgzm21qo008x5np27bk21873/subgraphs/ixs-erc7540-vault-avalanche-mainnet/1.0.1/gn\",\n    \"logoUrl\": \"\",\n    \"rpcUrl\": \"https://api.avax.network/ext/bc/C/rpc\",\n    \"underlyingAsset\": {\n      \"symbol\": \"USDC\",\n      \"decimals\": 6,\n      \"address\": \"0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E\"\n    },\n    \"productId\": \"ixhyb\",\n    \"protocolVersion\": null,\n    \"requiresWhitelist\": false,\n    \"ixsRewards\": {\n      \"active\": false,\n      \"multiplier\": 2,\n      \"endsAt\": null\n    },\n    \"status\": \"active\",\n    \"metrics\": null,\n    \"transparency\": null,\n    \"ttm\": 3.07,\n    \"ratePoolAddress\": \"0x1D7E71d0CB499C31349DF3E9205A4b16bcCF2536\",\n    \"ratePoolChainId\": 43114,\n    \"actions\": [\n      \"deposit\",\n      \"mint\",\n      \"withdraw\",\n      \"redeem\"\n    ]\n  },\n  \"pricing\": {\n    \"totalAssets\": \"402.614429\",\n    \"totalSupply\": \"369.293789548844955716\",\n    \"pricePerShare\": \"1.090228 USDC\"\n  }\n}",
+      "ok": true,
+      "durationMs": 1051
+    },
+    {
+      "id": "d63aefb7-00cd-4dc7-88b9-6189a9af6d96",
+      "at": "2026-09-25T02:50:13.582Z",
+      "kind": "mcp",
+      "label": "IXS MCP · vault_get",
+      "request": {
+        "url": "https://api-v2.ixs.finance/mcp",
+        "tool": "vault_get",
+        "arguments": {
+          "vaultId": "43114-0x864e9c192a724773c2bb8c1e84572996074f0b41"
+        }
+      },
+      "response": "{\n  \"ok\": true,\n  \"settlement\": \"async-erc7540\",\n  \"vault\": {\n    \"id\": \"6a9a59c6ef910c9d0495e7e3\",\n    \"legacyId\": null,\n    \"routeId\": \"43114-0x864e9c192a724773c2bb8c1e84572996074f0b41\",\n    \"name\": \"IX High Yield Bond (USDC)\",\n    \"symbol\": \"IXHYB\",\n    \"chainId\": 43114,\n    \"network\": \"avalanche-mainnet\",\n    \"chainName\": \"Avalanche C-Chain\",\n    \"contractAddress\": \"0x864E9C192a724773C2bB8C1e84572996074F0B41\",\n    \"explorerUrl\": \"https://snowscan.xyz\",\n    \"subgraphUrl\": \"https://api.goldsky.com/api/public/project_cmgzm21qo008x5np27bk21873/subgraphs/ixs-erc7540-vault-avalanche-mainnet/1.0.1/gn\",\n    \"logoUrl\": \"\",\n    \"rpcUrl\": \"https://api.avax.network/ext/bc/C/rpc\",\n    \"underlyingAsset\": {\n      \"symbol\": \"USDC\",\n      \"decimals\": 6,\n      \"address\": \"0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E\"\n    },\n    \"productId\": \"ixhyb\",\n    \"protocolVersion\": null,\n    \"requiresWhitelist\": true,\n    \"ixsRewards\": {\n      \"active\": false,\n      \"multiplier\": 2,\n      \"endsAt\": null\n    },\n    \"status\": \"active\",\n    \"metrics\": null,\n    \"transparency\": null,\n    \"ttm\": 3.07,\n    \"ratePoolAddress\": \"0x1D7E71d0CB499C31349DF3E9205A4b16bcCF2536\",\n    \"ratePoolChainId\": 43114,\n    \"actions\": [\n      \"deposit\",\n      \"mint\",\n      \"withdraw\",\n      \"redeem\"\n    ]\n  },\n  \"pricing\": {\n    \"totalAssets\": \"197.258337\",\n    \"totalSupply\": \"180.933105735680976823\",\n    \"pricePerShare\": \"1.090228 USDC\"\n  }\n}",
+      "ok": true,
+      "durationMs": 513
+    },
+    {
+      "id": "af8f3cd8-54fd-49d3-9acf-ab08e12303c4",
+      "at": "2026-09-25T02:50:13.069Z",
+      "kind": "onchain",
+      "label": "BNB Chain · vault reads (asset, decimals, totalAssets, supply, paused, whitelist, feeBps, maxDeposit, convertToAssets)",
+      "chainId": 56,
+      "blockNumber": 123871854,
+      "request": {
+        "rpc": "https://bsc-dataseed.bnbchain.org",
+        "vaults": [
+          "0xD84129f506d1030Dd6b46Fe4A600d1E1c3b0802E",
+          "0xc975a3EeF2e49F8eDdEf585340C43f15300fCB82"
+        ],
+        "multicall": "0xcA11bde05977b3631167028862bE2a173976CA11"
+      },
+      "response": [
+        {
+          "vault": "0xD84129f506d1030Dd6b46Fe4A600d1E1c3b0802E",
+          "symbol": "ix7540v1",
+          "asset": {
+            "address": "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d",
+            "symbol": "USDC",
+            "decimals": 18,
+            "name": "USD Coin"
+          },
+          "sharePrice": 1.088596,
+          "totalAssets": 1.088596,
+          "totalSupply": 1,
+          "paused": false,
+          "whitelistEnabled": true,
+          "redeemFeeBps": 50,
+          "depositLimit": {
+            "usd": 0,
+            "unlimited": false,
+            "source": "maxDeposit(0x1111…) on-chain, block 123871854"
+          },
+          "navUpdatedAt": 1789712389,
+          "navAgeHours": 164.5,
+          "navSource": "priceUpdatedAt() on-chain · history from the IXS subgraph (NAV events)",
+          "navStalenessThresholdHours": 720,
+          "minRedeemAssets": 1e-18
+        },
+        {
+          "vault": "0xc975a3EeF2e49F8eDdEf585340C43f15300fCB82",
+          "symbol": "ixv1",
+          "asset": {
+            "address": "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d",
+            "symbol": "USDC",
+            "decimals": 18,
+            "name": "USD Coin"
+          },
+          "sharePrice": 1.091092,
+          "totalAssets": 655.8727047729288,
+          "totalSupply": 601.1158589495009,
+          "paused": false,
+          "whitelistEnabled": false,
+          "redeemFeeBps": 50,
+          "depositLimit": {
+            "usd": 0,
+            "unlimited": false,
+            "source": "maxDeposit(0x1111…) on-chain, block 123871854"
+          },
+          "navUpdatedAt": 1790125943,
+          "navAgeHours": 49.6,
+          "navSource": "priceUpdatedAt() on-chain · history from the IXS subgraph (NAV events)",
+          "navStalenessThresholdHours": 48,
+          "minRedeemAssets": 100
+        }
+      ],
+      "ok": true,
+      "durationMs": 440
+    },
+    {
+      "id": "ab6708f6-8b4e-4023-af35-6241bb49d9f7",
+      "at": "2026-09-25T02:50:13.069Z",
+      "kind": "onchain",
+      "label": "BNB Chain · last NAV change receipt ixv1",
+      "chainId": 56,
+      "blockNumber": 123474967,
+      "request": {
+        "txHash": "0xfe02b4ac84e37c29afe40036d8ca90942d1af1669a406efe1faa854f10b94fbc"
+      },
+      "response": {
+        "status": "success",
+        "block": 123474967,
+        "vaultLogs": 1,
+        "navUpdatedAt": 1790125943
+      },
+      "ok": true
+    },
+    {
+      "id": "5f703927-94ab-42d0-a250-eae9ad7637fd",
+      "at": "2026-09-25T02:50:13.069Z",
+      "kind": "onchain",
+      "label": "BNB Chain · last NAV change receipt ix7540v1",
+      "chainId": 56,
+      "blockNumber": 122556283,
+      "request": {
+        "txHash": "0x7ecfc411a4becafe495050f70ac6eeff956a60494a2b263f7f0d7d24b23680c1"
+      },
+      "response": {
+        "status": "success",
+        "block": 122556283,
+        "vaultLogs": 1,
+        "navUpdatedAt": 1789712389
+      },
+      "ok": true
+    },
+    {
+      "id": "b376f205-66ba-4e81-94f5-aa53d1927886",
+      "at": "2026-09-25T02:50:13.052Z",
+      "kind": "subgraph",
+      "label": "IXS subgraph · vault 0xD84129f5… (erc7540)",
+      "chainId": 56,
+      "blockNumber": 122556283,
+      "request": {
+        "subgraphUrl": "https://api.goldsky.com/api/public/project_cmgzm21qo008x5np27bk21873/subgraphs/ixs-erc7540-vault-bsc-mainnet/1.0.0/gn",
+        "vault": "0xd84129f506d1030dd6b46fe4a600d1e1c3b0802e"
+      },
+      "response": {
+        "pricePerShare": "1088596000000000000",
+        "navUpdatedAt": 1789712389,
+        "navUpdatedBlock": 122556283,
+        "redeemFeeBps": 50,
+        "navStalenessThreshold": null,
+        "settlement": {
+          "samples": 2,
+          "medianHours": 0.0008333333333333334,
+          "pendingCount": 0,
+          "lastRequestedAt": 1787741871
+        },
+        "navHistory": [
+          {
+            "at": 1789712389,
+            "pricePerShare": "1088596000000000000",
+            "block": 122556283
+          },
+          {
+            "at": 1787741898,
+            "pricePerShare": "1000000000000000000",
+            "block": 118179720
+          },
+          {
+            "at": 1787741874,
+            "pricePerShare": "1000000000000000000",
+            "block": 118179667
+          },
+          {
+            "at": 1787741860,
+            "pricePerShare": "1000000000000000000",
+            "block": 118179637
+          },
+          {
+            "at": 1787741829,
+            "pricePerShare": "1000000000000000000",
+            "block": 118179567
+          }
+        ]
+      },
+      "ok": true,
+      "durationMs": 275
+    },
+    {
+      "id": "1bd73adf-46ea-4d9a-8c59-5dc0b953849a",
+      "at": "2026-09-25T02:50:13.051Z",
+      "kind": "onchain",
+      "label": "Avalanche C-Chain · vault reads (asset, decimals, totalAssets, supply, paused, whitelist, feeBps, maxDeposit, convertToAssets)",
+      "chainId": 43114,
+      "blockNumber": 96094876,
+      "request": {
+        "rpc": "https://api.avax.network/ext/bc/C/rpc",
+        "vaults": [
+          "0x864E9C192a724773C2bB8C1e84572996074F0B41",
+          "0xaD01573b459805E3954398796203d830B57A8bD9"
+        ],
+        "multicall": "0xcA11bde05977b3631167028862bE2a173976CA11"
+      },
+      "response": [
+        {
+          "vault": "0x864E9C192a724773C2bB8C1e84572996074F0B41",
+          "symbol": "IXHYB",
+          "asset": {
+            "address": "0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e",
+            "symbol": "USDC",
+            "decimals": 6,
+            "name": "USD Coin"
+          },
+          "sharePrice": 1.090228,
+          "totalAssets": 197.258337,
+          "totalSupply": 180.93310573568098,
+          "paused": false,
+          "whitelistEnabled": true,
+          "redeemFeeBps": 50,
+          "depositLimit": {
+            "usd": 0,
+            "unlimited": false,
+            "source": "maxDeposit(0x1111…) on-chain, block 96094876"
+          },
+          "navUpdatedAt": 1789366629,
+          "navAgeHours": 260.6,
+          "navSource": "priceUpdatedAt() on-chain · history from the IXS subgraph (NAV events)",
+          "navStalenessThresholdHours": 720,
+          "minRedeemAssets": 0.000001
+        },
+        {
+          "vault": "0xaD01573b459805E3954398796203d830B57A8bD9",
+          "symbol": "IXHYB",
+          "asset": {
+            "address": "0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e",
+            "symbol": "USDC",
+            "decimals": 6,
+            "name": "USD Coin"
+          },
+          "sharePrice": 1.090228,
+          "totalAssets": 402.614429,
+          "totalSupply": 369.293789548845,
+          "paused": false,
+          "whitelistEnabled": false,
+          "redeemFeeBps": 50,
+          "depositLimit": {
+            "usd": 0,
+            "unlimited": false,
+            "source": "maxDeposit(0x1111…) on-chain, block 96094876"
+          },
+          "navUpdatedAt": 1789366671,
+          "navAgeHours": 260.5,
+          "navSource": "priceUpdatedAt() on-chain · history from the IXS subgraph (NAV events)",
+          "navStalenessThresholdHours": 720,
+          "minRedeemAssets": 0.000001
+        }
+      ],
+      "ok": true,
+      "durationMs": 454
+    },
+    {
+      "id": "5f2a13c2-1454-4f90-9a09-d2c9307b06c4",
+      "at": "2026-09-25T02:50:13.050Z",
+      "kind": "onchain",
+      "label": "Avalanche C-Chain · last NAV change receipt IXHYB",
+      "chainId": 43114,
+      "blockNumber": 95241651,
+      "request": {
+        "txHash": "0xd72ca4e3585ded8cbc0aeb24d66354dd9f5e850cb5abccd8d17c288510873621"
+      },
+      "response": {
+        "status": "success",
+        "block": 95241651,
+        "vaultLogs": 4,
+        "navUpdatedAt": 1789366671
+      },
+      "ok": true
+    },
+    {
+      "id": "22e286bc-ba45-4f94-85c4-a799a7266ab1",
+      "at": "2026-09-25T02:50:13.046Z",
+      "kind": "onchain",
+      "label": "Avalanche C-Chain · last NAV change receipt IXHYB",
+      "chainId": 43114,
+      "blockNumber": 95241609,
+      "request": {
+        "txHash": "0x2a54e27d93bbf860fea22509193c3b9037ced500cd37a50d18910f7c42a84891"
+      },
+      "response": {
+        "status": "success",
+        "block": 95241609,
+        "vaultLogs": 4,
+        "navUpdatedAt": 1789366629
+      },
+      "ok": true
+    },
+    {
+      "id": "97235289-e0c2-4008-a425-6f3d9fc65556",
+      "at": "2026-09-25T02:50:13.020Z",
+      "kind": "subgraph",
+      "label": "IXS subgraph · vault 0xaD01573b… (erc7540)",
+      "chainId": 43114,
+      "blockNumber": 95241651,
+      "request": {
+        "subgraphUrl": "https://api.goldsky.com/api/public/project_cmgzm21qo008x5np27bk21873/subgraphs/ixs-erc7540-vault-avalanche-mainnet/1.0.1/gn",
+        "vault": "0xad01573b459805e3954398796203d830b57a8bd9"
+      },
+      "response": {
+        "pricePerShare": "1090228",
+        "navUpdatedAt": 1789366671,
+        "navUpdatedBlock": 95241651,
+        "minDepositAssets": "100000000",
+        "redeemFeeBps": 50,
+        "navStalenessThreshold": null,
+        "settlement": {
+          "samples": 7,
+          "medianHours": 14.184166666666666,
+          "pendingCount": 1,
+          "lastRequestedAt": 1790255831
+        },
+        "navHistory": [
+          {
+            "at": 1789366671,
+            "pricePerShare": "1090228",
+            "block": 95241651
+          },
+          {
+            "at": 1789035721,
+            "pricePerShare": "1095468",
+            "block": 94929863
+          },
+          {
+            "at": 1788929167,
+            "pricePerShare": "1095468",
+            "block": 94828153
+          },
+          {
+            "at": 1788929034,
+            "pricePerShare": "1095468",
+            "block": 94828022
+          },
+          {
+            "at": 1788853804,
+            "pricePerShare": "1095468",
+            "block": 94758460
+          }
+        ]
+      },
+      "ok": true,
+      "durationMs": 216
+    },
+    {
+      "id": "b31fe4b9-b15f-4a31-84db-3df760d78451",
+      "at": "2026-09-25T02:50:13.017Z",
+      "kind": "subgraph",
+      "label": "IXS subgraph · vault 0x864E9C19… (erc7540)",
+      "chainId": 43114,
+      "blockNumber": 95241609,
+      "request": {
+        "subgraphUrl": "https://api.goldsky.com/api/public/project_cmgzm21qo008x5np27bk21873/subgraphs/ixs-erc7540-vault-avalanche-mainnet/1.0.1/gn",
+        "vault": "0x864e9c192a724773c2bb8c1e84572996074f0b41"
+      },
+      "response": {
+        "pricePerShare": "1090228",
+        "navUpdatedAt": 1789366629,
+        "navUpdatedBlock": 95241609,
+        "minDepositAssets": "100000000",
+        "redeemFeeBps": 50,
+        "navStalenessThreshold": null,
+        "settlement": {
+          "samples": 1,
+          "medianHours": 73.92222222222222,
+          "pendingCount": 0,
+          "lastRequestedAt": 1789100509
+        },
+        "navHistory": [
+          {
+            "at": 1789366629,
+            "pricePerShare": "1090228",
+            "block": 95241609
+          },
+          {
+            "at": 1789100058,
+            "pricePerShare": "1093590",
+            "block": 94989997
+          }
+        ]
+      },
+      "ok": true,
+      "durationMs": 214
+    },
+    {
+      "id": "15c2e1f1-dbca-4e56-8d86-78f859663185",
+      "at": "2026-09-25T02:50:12.968Z",
+      "kind": "subgraph",
+      "label": "IXS subgraph · vault 0xc975a3Ee… (managed)",
+      "chainId": 56,
+      "blockNumber": 123474967,
+      "request": {
+        "subgraphUrl": "https://api.goldsky.com/api/public/project_cmgzm21qo008x5np27bk21873/subgraphs/ixs-managed-vault-bsc-mainnet/1.0.0/gn",
+        "vault": "0xc975a3eef2e49f8eddef585340c43f15300fcb82"
+      },
+      "response": {
+        "pricePerShare": "1091092000000000000",
+        "navUpdatedAt": 1790125943,
+        "navUpdatedBlock": 123474967,
+        "minDepositAssets": "100000000000000000000",
+        "redeemFeeBps": 50,
+        "navStalenessThreshold": null,
+        "settlement": {
+          "samples": 0,
+          "medianHours": null,
+          "pendingCount": 2,
+          "lastRequestedAt": null
+        },
+        "navHistory": [
+          {
+            "at": 1790125943,
+            "pricePerShare": "1091092000000000000",
+            "block": 123474967
+          },
+          {
+            "at": 1789950126,
+            "pricePerShare": "1091152000000000000",
+            "block": 123084402
+          },
+          {
+            "at": 1789693367,
+            "pricePerShare": "1088596000000000000",
+            "block": 122514022
+          },
+          {
+            "at": 1789463028,
+            "pricePerShare": "1089397000000000000",
+            "block": 122002390
+          },
+          {
+            "at": 1789350232,
+            "pricePerShare": "1090228000000000000",
+            "block": 121751838
+          }
+        ]
+      },
+      "ok": true,
+      "durationMs": 190
+    },
+    {
+      "id": "2a191a4a-ad12-4ead-a51f-b9c293365c3c",
+      "at": "2026-09-25T02:50:12.593Z",
+      "kind": "ixs-api",
+      "label": "IXS Vault API · GET /vaults",
+      "request": {
+        "url": "https://api-v2.ixs.finance/vaults"
+      },
+      "response": [
+        {
+          "id": "6a9a59c6ef910c9d0495e7e3",
+          "routeId": "43114-0x864e9c192a724773c2bb8c1e84572996074f0b41",
+          "name": "IX High Yield Bond (USDC)",
+          "symbol": "IXHYB",
+          "chainId": 43114,
+          "contractAddress": "0x864E9C192a724773C2bB8C1e84572996074F0B41",
+          "requiresWhitelist": true,
+          "status": "active",
+          "ttm": 3.07,
+          "underlyingAsset": {
+            "symbol": "USDC",
+            "decimals": 6,
+            "address": "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E"
+          }
+        },
+        {
+          "id": "6a952729732c2b84b55ce89d",
+          "routeId": "43114-0xad01573b459805e3954398796203d830b57a8bd9",
+          "name": "IX High Yield Bond (USDC)",
+          "symbol": "IXHYB",
+          "chainId": 43114,
+          "contractAddress": "0xaD01573b459805E3954398796203d830B57A8bD9",
+          "requiresWhitelist": false,
+          "status": "active",
+          "ttm": 3.07,
+          "underlyingAsset": {
+            "symbol": "USDC",
+            "decimals": 6,
+            "address": "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E"
+          }
+        },
+        {
+          "id": "6a8ecb61732c2b84b55ce88f",
+          "routeId": "56-0xd84129f506d1030dd6b46fe4a600d1e1c3b0802e",
+          "name": "IX High Yield Bond (USDC)",
+          "symbol": "ix7540v1",
+          "chainId": 56,
+          "contractAddress": "0xD84129f506d1030Dd6b46Fe4A600d1E1c3b0802E",
+          "requiresWhitelist": true,
+          "status": "active",
+          "ttm": 3.07,
+          "underlyingAsset": {
+            "symbol": "USDC",
+            "decimals": 18,
+            "address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d"
+          }
+        },
+        {
+          "id": "6a26624ca7d16b245d665475",
+          "routeId": "56-0xc975a3eef2e49f8eddef585340c43f15300fcb82",
+          "name": "IX High Yield Bond (USDC)",
+          "symbol": "ixv1",
+          "chainId": 56,
+          "contractAddress": "0xc975a3EeF2e49F8eDdEf585340C43f15300fCB82",
+          "requiresWhitelist": false,
+          "status": "active",
+          "ttm": 3.07,
+          "underlyingAsset": {
+            "symbol": "USDC",
+            "decimals": 18,
+            "address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d"
+          }
+        }
+      ],
+      "ok": true,
+      "durationMs": 1199
+    }
+  ]
+}
