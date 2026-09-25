@@ -1,6 +1,6 @@
-import { NATIVE_PRICE_KEY, NATIVE_SYMBOL } from "@/lib/chain/config";
-import { ASSET_META, DEMO_HOLDINGS } from "@/lib/demo";
-import { round } from "@/lib/format";
+import { LIVE_MODE_MIN_USDC, NATIVE_PRICE_KEY, NATIVE_SYMBOL } from "@/lib/chain/config";
+import { ASSET_META, DEMO_ADDRESS, DEMO_HOLDINGS } from "@/lib/demo";
+import { round, vaultLabel } from "@/lib/format";
 import type {
   DemoState,
   OnchainReadout,
@@ -19,6 +19,8 @@ export interface ScanInput {
   strategies: VaultStrategy[];
   demoState: DemoState;
   now?: Date;
+  /** Live opt-in for this wallet in this browser (Settings). Off by default: every deposit is simulated. */
+  liveOptIn?: boolean;
 }
 
 interface Holding {
@@ -59,7 +61,7 @@ export function scanTreasury(input: ScanInput): TreasurySnapshot {
     holdings.push(...demo.filter((h) => h.amount > 0));
   }
 
-  // --- on-chain (BSC Testnet) ---
+  // --- on-chain (BNB Chain) ---
   const onchainIdleDays = Math.max(1, Math.round((now.getTime() - new Date(user.firstSeenAt).getTime()) / 86_400_000));
   if (onchain.nativeBalance > 0.0005) holdings.push({ symbol: NATIVE_SYMBOL, amount: onchain.nativeBalance, idleDays: onchainIdleDays, source: "onchain" });
   for (const [symbol, amount] of Object.entries(onchain.balances)) {
@@ -71,7 +73,7 @@ export function scanTreasury(input: ScanInput): TreasurySnapshot {
     holdings.push({ symbol: s.asset, amount: p.assets, deployedIn: p.strategyId, idleDays: 0, source: "onchain" });
   }
 
-  const priceOf = (symbol: string) => prices[symbol] ?? (symbol === NATIVE_SYMBOL ? (prices[NATIVE_PRICE_KEY] ?? 0) : symbol === "ixUSDC" ? 1 : 0);
+  const priceOf = (symbol: string) => prices[symbol] ?? (symbol === NATIVE_SYMBOL ? (prices[NATIVE_PRICE_KEY] ?? 0) : symbol === "USDC" ? 1 : 0);
 
   // --- positions per strategy ---
   const positionMap = new Map<string, VaultPosition>();
@@ -145,7 +147,7 @@ export function scanTreasury(input: ScanInput): TreasurySnapshot {
       a.allocationPct = pct(a.valueUsd, totalUsd);
       a.liquidity = a.idleUsd > 0 && a.deployedUsd === 0 ? "liquid" : a.idleUsd === 0 ? "deployed" : "liquid";
       const where: string[] = [];
-      if (a.deployedIn) where.push(`IXS ${byId.get(a.deployedIn)?.vaultName ?? a.deployedIn}`);
+      if (a.deployedIn) where.push(vaultLabel(byId.get(a.deployedIn)?.vaultName ?? a.deployedIn));
       if (a.idleUsd > 0) where.push(a.deployedUsd > 0 ? `${round(a.idleAmount, a.symbol === "BTC" ? 2 : 0).toLocaleString("en-US")} ${a.symbol} idle` : "Idle");
       a.note = where.join(" · ");
       return a;
@@ -171,6 +173,13 @@ export function scanTreasury(input: ScanInput): TreasurySnapshot {
     maxAssetExposurePct: user.maxAssetExposurePct,
     idlePct,
   });
+  const stableSymbol = strategies.find((s) => s.executable)?.asset ?? "USDC";
+  // Chains where this wallet could run Live (>= 100 USDC there). Live itself is opt-in and never applies to the demo
+  // address or while the simulated treasury is layered on the wallet: the default is Simulate.
+  const liveCapableChainIds = user.walletAddress.toLowerCase() === DEMO_ADDRESS || user.demoMode ? [] : Object.entries(onchain.byChain ?? {}).filter(([, c]) => (c.balances[stableSymbol] ?? 0) >= LIVE_MODE_MIN_USDC).map(([id]) => Number(id));
+  const liveOptIn = Boolean(input.liveOptIn);
+  const liveChainIds = liveOptIn ? liveCapableChainIds : [];
+  const executionMode: TreasurySnapshot["executionMode"] = liveChainIds.length ? "live" : "simulated";
   const bestApy = strategies.filter((s) => s.apy != null && s.status === "active").reduce((m, s) => Math.max(m, s.apy ?? 0), 0);
   const opportunityScore = totalUsd > 0 ? computeOpportunity({ idlePct, idleDays, bestApy }) : 0;
 
@@ -199,5 +208,9 @@ export function scanTreasury(input: ScanInput): TreasurySnapshot {
     demoMode: user.demoMode,
     maxExposure,
     targetAllocationPct: targetAllocationFor(user.riskProfile),
+    executionMode,
+    liveChainIds,
+    liveCapableChainIds,
+    liveOptIn,
   };
 }

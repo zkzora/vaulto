@@ -1,7 +1,53 @@
+import { MIN_DEPOSIT_USDC } from "@/lib/chain/config";
 import { clamp, round } from "@/lib/format";
-import type { AllocationLeg, Metrics, TreasurySnapshot, UserProfile } from "@/lib/types";
+import type { AllocationLeg, Metrics, TreasurySnapshot, UserProfile, VaultStrategy } from "@/lib/types";
 import { computeHealth, pct } from "./scoring";
 import type { Candidate } from "./finder";
+
+const STABLE_ASSETS = new Set(["USDC"]);
+
+export interface LegCap {
+  strategyId: string;
+  vaultName: string;
+  chainId: number;
+  chainName: string;
+  asset: string;
+  /** maxDeposit() for the wallet, null = unlimited. */
+  depositLimitUsd: number | null;
+  priceUsd: number;
+  apy: number;
+  riskScore: number;
+  /** Largest amount (asset units) policy allows into this strategy. */
+  maxAmount: number;
+  maxUsd: number;
+  /** Smallest leg the guardrails allow: the 100 USDC IXS minimum, or on a Live chain the redeemable minimum. */
+  minAmount: number;
+  minUsd: number;
+  minNote: string;
+  /** Why the cap is below the idle balance, if it is. */
+  capNote?: string;
+}
+
+export interface Constraints {
+  totalUsd: number;
+  idleUsd: number;
+  /** USD that must stay liquid after the allocation (policy floor + burn buffer). */
+  keepLiquidUsd: number;
+  /** USD available to deploy across all legs. */
+  budgetUsd: number;
+  /** Stablecoin runway reserve that never leaves the wallet (two months of burn). */
+  stableReserveUsd: number;
+  /** IXS minimum deposit per leg (USD). */
+  minDepositUsd: number;
+  caps: LegCap[];
+  /** Vaults that passed pre-flight but cannot take a leg within the guardrails, with the reason. */
+  dropped: { strategyId: string; reason: string }[];
+}
+
+export interface LegInput {
+  strategyId: string;
+  amount: number;
+}
 
 export interface Plan {
   legs: AllocationLeg[];
@@ -12,6 +58,88 @@ export interface Plan {
   liquidityAfterPct: number;
   txCount: number;
   feeUsd: number;
+}
+
+function roundAmount(asset: string, amount: number, usd: number) {
+  if (asset === "BTC") return Math.floor(amount * 100) / 100;
+  if (asset === "ETH" || asset === "BNB") return Math.floor(amount * 1000) / 1000;
+  return usd >= 10_000 ? Math.floor(amount / 1000) * 1000 : Math.floor(amount * 100) / 100;
+}
+
+/** Smallest leg the guardrails allow into a strategy: the IXS minimum deposit, or on a Live chain the redeemable minimum. */
+export function minLeg(strategy: VaultStrategy, live: boolean): { usd: number; note: string } {
+  const base = strategy.terms?.minDepositUsd ?? 10;
+  const liveMin = strategy.terms?.minLiveDepositUsd ?? 0;
+  if (live && liveMin > base) return { usd: liveMin, note: `Live redeemable minimum of ${liveMin} ${strategy.asset} (${strategy.terms?.minLiveDepositFormula ?? "redeemable minimum"})` };
+  return { usd: base, note: `minimum deposit of ${base} ${strategy.asset}` };
+}
+
+/**
+ * Allocation Planner Agent, step 1 — policy constraints every allocation must respect:
+ * liquidity floor (+1pt), two months of burn kept liquid (at most 10 pts above the floor), and a
+ * stablecoin runway reserve. The decision itself is made by SERV reasoning within these caps.
+ */
+export function planConstraints(snapshot: TreasurySnapshot, approved: Candidate[], user: UserProfile, opts: { maxLiveTxUsd?: number } = {}): Constraints | null {
+  if (!approved.length || snapshot.totalUsd <= 0) return null;
+  const floorUsd = snapshot.totalUsd * ((user.liquidityFloorPct + 1) / 100);
+  const burnBuffer = user.monthlyBurnUsd * 2;
+  const bufferCapUsd = snapshot.totalUsd * Math.min(0.6, (user.liquidityFloorPct + 11) / 100);
+  const keepLiquidUsd = clamp(burnBuffer, floorUsd, Math.max(floorUsd, bufferCapUsd));
+  const budgetUsd = Math.max(0, snapshot.idleUsd - keepLiquidUsd);
+  if (budgetUsd < 50) return null;
+  const stableReserveUsd = user.monthlyBurnUsd > 0 ? burnBuffer : 0;
+
+  const caps: LegCap[] = [];
+  const dropped: Constraints["dropped"] = [];
+  for (const c of approved) {
+    const price = snapshot.prices[c.asset] ?? 1;
+    let maxUsd = Math.min(c.idleUsd, budgetUsd);
+    let capNote: string | undefined;
+    if (STABLE_ASSETS.has(c.asset) && stableReserveUsd > 0) {
+      const afterReserve = Math.max(0, c.idleUsd - stableReserveUsd);
+      if (afterReserve < maxUsd) {
+        maxUsd = afterReserve;
+        capNote = `keeps two months of burn (${Math.round(stableReserveUsd).toLocaleString("en-US")} USD) in stablecoins`;
+      }
+    }
+    const limit = c.strategy.preflight ? (c.strategy.preflight.depositLimitUnlimited ? null : c.strategy.preflight.depositLimitUsd) : (c.strategy.depositLimitUsd ?? null);
+    if (limit != null && limit < maxUsd) {
+      maxUsd = limit;
+      capNote = `IXS deposit limit ${limit.toLocaleString("en-US")} ${c.asset} (maxDeposit on-chain)`;
+    }
+    // Live (opt-in) legs: only the wallet's balance on that chain, and at most the per-transaction hard cap.
+    const live = snapshot.liveChainIds.includes(c.strategy.chainId);
+    if (live) {
+      const onChainUsd = (snapshot.onchain.byChain?.[c.strategy.chainId]?.balances[c.asset] ?? 0) * price;
+      if (onChainUsd < maxUsd) {
+        maxUsd = onChainUsd;
+        capNote = `Live: wallet balance on ${c.strategy.chainName}`;
+      }
+      if (opts.maxLiveTxUsd != null && opts.maxLiveTxUsd < maxUsd) {
+        maxUsd = opts.maxLiveTxUsd;
+        capNote = `Live hard cap ${opts.maxLiveTxUsd.toLocaleString("en-US")} ${c.asset} per transaction (MAX_LIVE_TX_USDC)`;
+      }
+    }
+    const maxAmount = roundAmount(c.asset, maxUsd / price, maxUsd);
+    const min = minLeg(c.strategy, live);
+    if (maxAmount * price < min.usd) {
+      dropped.push({ strategyId: c.strategy.id, reason: `At most ${Math.floor(maxAmount * price).toLocaleString("en-US")} ${c.asset} can go into ${c.strategy.vaultName} within the guardrails (${capNote ?? "liquidity floor and budget"}), below the ${min.note}` });
+      continue;
+    }
+    caps.push({ strategyId: c.strategy.id, vaultName: c.strategy.vaultName, chainId: c.strategy.chainId, chainName: c.strategy.chainName, asset: c.asset, depositLimitUsd: limit, priceUsd: price, apy: c.strategy.apy ?? 0, riskScore: c.strategy.riskScore, maxAmount, maxUsd: Math.round(maxAmount * price), minAmount: min.usd / price, minUsd: min.usd, minNote: min.note, capNote });
+  }
+  if (!caps.length && !dropped.length) return null;
+  return { totalUsd: snapshot.totalUsd, idleUsd: snapshot.idleUsd, keepLiquidUsd: Math.round(keepLiquidUsd), budgetUsd: Math.round(budgetUsd), stableReserveUsd: Math.round(stableReserveUsd), minDepositUsd: MIN_DEPOSIT_USDC, caps, dropped };
+}
+
+/** Deterministic sizing used when SERV reasoning is unavailable: fill caps proportionally to idle size. */
+export function localLegs(constraints: Constraints): LegInput[] {
+  const totalCap = constraints.caps.reduce((s, c) => s + c.maxUsd, 0);
+  return constraints.caps.map((c) => {
+    const share = totalCap > 0 ? c.maxUsd / totalCap : 0;
+    const usd = Math.min(c.maxUsd, constraints.budgetUsd * share);
+    return { strategyId: c.strategyId, amount: roundAmount(c.asset, usd / c.priceUsd, usd) };
+  });
 }
 
 function metricsFor(snapshot: TreasurySnapshot, user: UserProfile, legs: AllocationLeg[]): Metrics {
@@ -45,60 +173,50 @@ function metricsFor(snapshot: TreasurySnapshot, user: UserProfile, legs: Allocat
 }
 
 /**
- * Allocation Planner Agent — sizes deposits so the treasury stays above the liquidity floor
- * (plus a one-point buffer) and keeps at least two months of burn liquid. Never sells assets.
+ * Allocation Planner Agent, step 2 — validates a decision (from SERV reasoning or the local fallback)
+ * against the constraints: unknown strategies are dropped, amounts are clamped to their caps, the total
+ * is scaled down to the budget. Returns the plan with before/after metrics, or null when nothing survives.
  */
-export function planAllocation(snapshot: TreasurySnapshot, approved: Candidate[], user: UserProfile): Plan | null {
-  if (!approved.length || snapshot.totalUsd <= 0) return null;
-  const floorUsd = snapshot.totalUsd * ((user.liquidityFloorPct + 1) / 100);
-  // Two months of burn can raise the liquid reserve above the floor, but by at most 10 points of
-  // treasury, so a large burn setting never blocks a small treasury from deploying anything.
-  const burnBuffer = user.monthlyBurnUsd * 2;
-  const bufferCapUsd = snapshot.totalUsd * Math.min(0.6, (user.liquidityFloorPct + 11) / 100);
-  const keepLiquid = clamp(burnBuffer, floorUsd, Math.max(floorUsd, bufferCapUsd));
-  let budget = Math.max(0, snapshot.idleUsd - keepLiquid);
-  if (budget < 50) return null;
-
-  const totalIdle = approved.reduce((s, c) => s + c.idleUsd, 0);
-  const legs: AllocationLeg[] = [];
-  for (const c of approved) {
-    const share = totalIdle > 0 ? c.idleUsd / totalIdle : 0;
-    let usd = Math.min(c.idleUsd, budget * share);
-    const price = snapshot.prices[c.asset] ?? 1;
-    let amount = usd / price;
-    if (c.asset === "BTC") amount = Math.floor(amount * 100) / 100;
-    else if (c.asset === "ETH") amount = Math.floor(amount * 1000) / 1000;
-    else amount = usd >= 10_000 ? Math.floor(amount / 1000) * 1000 : Math.floor(amount * 100) / 100;
-    usd = amount * price;
-    if (usd < 10) continue;
-    const onchainIdle = c.strategy.executable ? Math.min(snapshot.onchain.balances[c.asset] ?? 0, amount) : 0;
+export function buildPlan(snapshot: TreasurySnapshot, approved: Candidate[], user: UserProfile, constraints: Constraints, input: LegInput[]): Plan | null {
+  const byId = new Map(approved.map((c) => [c.strategy.id, c]));
+  let legs: AllocationLeg[] = [];
+  for (const li of input) {
+    const cap = constraints.caps.find((c) => c.strategyId === li.strategyId);
+    const cand = byId.get(li.strategyId);
+    if (!cap || !cand || !(li.amount > 0)) continue;
+    const amount = roundAmount(cap.asset, Math.min(li.amount, cap.maxAmount), Math.min(li.amount, cap.maxAmount) * cap.priceUsd);
+    const usd = amount * cap.priceUsd;
+    if (usd < cap.minUsd) continue;
     legs.push({
-      strategyId: c.strategy.id,
-      vaultName: c.strategy.vaultName,
-      asset: c.asset,
+      strategyId: cap.strategyId,
+      vaultName: cap.vaultName,
+      asset: cap.asset,
       amount: round(amount, 6),
       amountUsd: Math.round(usd),
-      apy: c.strategy.apy ?? 0,
-      riskScore: c.strategy.riskScore,
-      executable: c.strategy.executable,
-      onchainAmount: round(onchainIdle, 6),
+      apy: cap.apy,
+      riskScore: cap.riskScore,
+      executable: cand.strategy.executable,
+      onchainAmount: cand.strategy.executable ? round(Math.min(snapshot.onchain.byChain?.[cap.chainId]?.balances[cap.asset] ?? snapshot.onchain.balances[cap.asset] ?? 0, amount), 6) : 0,
+      chainId: cap.chainId,
+      chainName: cap.chainName,
     });
   }
+  const sum = legs.reduce((s, l) => s + l.amountUsd, 0);
+  if (sum > constraints.budgetUsd && sum > 0) {
+    const k = constraints.budgetUsd / sum;
+    legs = legs
+      .map((l) => {
+        const amount = roundAmount(l.asset, l.amount * k, l.amountUsd * k);
+        return { ...l, amount: round(amount, 6), amountUsd: Math.round(amount * (l.amountUsd / l.amount)), onchainAmount: round(Math.min(l.onchainAmount, amount), 6) };
+      })
+      .filter((l) => l.amountUsd >= (constraints.caps.find((c) => c.strategyId === l.strategyId)?.minUsd ?? 10));
+  }
   if (!legs.length) return null;
-  budget = legs.reduce((s, l) => s + l.amountUsd, 0);
 
   const before = metricsFor(snapshot, user, []);
   const after = metricsFor(snapshot, user, legs);
+  const totalUsd = legs.reduce((s, l) => s + l.amountUsd, 0);
   const extraMonthlyUsd = Math.round(legs.reduce((s, l) => s + (l.amountUsd * l.apy) / 100 / 12, 0));
   const txCount = legs.reduce((s, l) => s + (l.executable ? 2 : 1), 0);
-  return {
-    legs,
-    before,
-    after,
-    totalUsd: Math.round(budget),
-    extraMonthlyUsd,
-    liquidityAfterPct: clamp(after.liquidPct, 0, 100),
-    txCount,
-    feeUsd: round(0.02 * txCount, 2),
-  };
+  return { legs, before, after, totalUsd: Math.round(totalUsd), extraMonthlyUsd, liquidityAfterPct: clamp(after.liquidPct, 0, 100), txCount, feeUsd: round(0.002 * txCount, 3) };
 }

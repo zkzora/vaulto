@@ -1,95 +1,113 @@
-import { CHAIN_ID, CHAIN_KEY, CHAIN_NAME, EXPLORER, IXS_BSC, IXS_USDC_SYMBOL, STRATEGY_IDS } from "@/lib/chain/config";
+import { MIN_DEPOSIT_USDC, STRATEGY_IDS, chainInfo, redeemableMinimum, strategyIdFor } from "@/lib/chain/config";
 import type { VaultStrategy } from "@/lib/types";
+import type { IxsVaultItem, Registry, RegistryVault } from "./registry";
 
-/** Shape of an item from GET https://api-dev-v2.ixs.finance/vaults. */
-export interface IxsVaultItem {
-  id: string;
-  routeId: string;
-  name: string;
-  symbol: string;
-  chainId: number;
-  network: string;
-  chainName: string;
-  contractAddress: string;
-  explorerUrl?: string;
-  underlyingAsset?: { symbol: string; decimals: number; address: string };
-  requiresWhitelist: boolean;
-  status: string;
-  metrics?: { apy?: number; tvl?: number } | null;
-  ixsRewards?: { active: boolean; multiplier: number } | null;
+export type { IxsVaultItem } from "./registry";
+
+/** IXS FAQ: redemptions can be requested anytime and settle after the current cycle, as fast as T+1. */
+export const REDEMPTION_NOTE = "Request anytime · processed after the current redemption cycle (as fast as T+1, per IXS) · operator pays USDC to the receiver, no claim step";
+
+function termsFor(v: RegistryVault): NonNullable<VaultStrategy["terms"]> {
+  const rm = redeemableMinimum(v.redeem.minAssetsUsd, v.redeem.feeBps, v.asset.symbol);
+  return {
+    minLiveDepositUsd: rm.usd,
+    minLiveDepositFormula: rm.formula,
+    minLiveDepositReason: rm.reason,
+    minDepositUsd: v.minDeposit.usd || MIN_DEPOSIT_USDC,
+    depositFeeBps: 0,
+    redeemFeeBps: v.redeemFeeBps,
+    redemption: REDEMPTION_NOTE,
+    feeSource: v.redeemFeeBps != null ? "on-chain (feeBps)" : "not exposed by the contract",
+    minRedeemUsd: v.redeem.minAssetsUsd,
+    redeemPath: v.redeem.path,
+  };
+}
+
+function fromVault(v: RegistryVault): VaultStrategy {
+  const chain = chainInfo(v.chainId);
+  const licensed = v.requiresWhitelist;
+  const settlementText = v.settlement === "sync" ? "sync ERC-4626 (shares minted in the deposit tx)" : "async ERC-7540 (request → operator settles after the daily cycle)";
+  return {
+    id: strategyIdFor(v.chainId, licensed),
+    provider: "IXS",
+    vaultName: `IX High Yield Bond (USDC) · ${chain.short}${licensed ? " · Licensed" : ""}`,
+    assetType: `${licensed ? "Permissioned" : "Open"} IXS RWA vault · ${v.settlement === "sync" ? "ERC-4626" : "ERC-7540"} · ${v.symbol}`,
+    asset: v.asset.symbol,
+    apy: v.ttm,
+    apyEstimated: false,
+    apyNote: v.ttm != null ? "trailing 12 months · IXS Vault API" : "IXS API reports no yield figure yet",
+    riskScore: licensed ? 88 : 92,
+    liquidity: v.settlement === "sync" ? "Redeem anytime · queued for the operator" : "Request → operator settles (async)",
+    chainId: v.chainId,
+    network: chain.key,
+    chainName: chain.name,
+    contractAddress: v.address,
+    assetAddress: v.asset.address,
+    assetDecimals: v.asset.decimals,
+    shareDecimals: v.shareDecimals,
+    shareSymbol: v.symbol,
+    settlement: v.settlement,
+    requiresWhitelist: licensed,
+    status: v.paused ? "paused" : v.status,
+    description: `${licensed ? "The permissioned" : "The open"} IX High Yield Bond vault on ${chain.name}: stablecoins put to work in U.S. Treasuries and high-yield corporate bonds through IXS. ${settlementText}. ${licensed ? "Identity verification (KYC) through IXS is required; eligibility is checked live through the IXS MCP." : "No whitelist."} Vaulto reads asset(), decimals(), fees and limits from the contract and builds deposits with the IXS MCP.`,
+    source: "catalog",
+    executable: true,
+    tag: v.chainId === 56 && !licensed ? "primary" : licensed ? "opportunity" : "secondary",
+    routeId: v.routeId,
+    apiId: v.apiId,
+    subgraphUrl: v.subgraphUrl,
+    explorerUrl: v.explorerUrl,
+    capacityNote: licensed ? "KYC whitelist required" : "Official IXS vault · calldata by IXS MCP",
+    tvlUsd: v.totalAssets,
+    sharePrice: v.sharePrice,
+    terms: termsFor(v),
+    depositLimitUsd: v.depositLimit.unlimited ? null : v.depositLimit.usd,
+    depositLimitSource: v.depositLimit.source,
+    nav: {
+      pricePerShare: v.nav.pricePerShare,
+      updatedAt: v.nav.updatedAt ? new Date(v.nav.updatedAt * 1000).toISOString() : null,
+      ageHours: v.nav.ageHours,
+      block: v.nav.block,
+      lastChangeTx: v.nav.lastChangeTx,
+      contractThresholdHours: v.nav.contractThresholdHours,
+      source: `${v.nav.source}${v.nav.lastChangeVerified ? " · receipt verified on-chain" : ""}`,
+      history: v.nav.history.map((h) => ({ at: new Date(h.at * 1000).toISOString(), pricePerShare: h.pricePerShare, block: h.block })),
+    },
+    observedSettlementHours: v.settlementObserved.medianHours,
+    cutoffNote: v.cutoff.note,
+    readBlock: v.blockNumber,
+  };
 }
 
 /**
- * IXS strategy catalog on BSC Testnet. Every entry is a real IXS vault:
- *
- * - IX High Yield Bond (IXHYB · BSC): the official IXS vault. Sync ERC-4626, open whitelist. Deposits
- *   are built by the IXS MCP (`vault_build_request_deposit`) and signed by the user's wallet.
- * - Licensed RWA Vault Opportunities: the IXS whitelist-gated ERC-7540 vault; eligibility is checked
- *   live through the IXS MCP.
- *
- * Both take IXS test USDC (ixUSDC), which only IXS can mint.
+ * Vaulto's strategy catalog: every IX High Yield Bond vault the IXS Vault API lists on BNB Chain and Avalanche
+ * (open and licensed), plus BTC Real Yield kept as announced / not deployable so the agent can reject idle BTC
+ * explicitly. Which vault is actually allocatable is decided per analysis by the pre-flight checks and SERV.
  */
-export function buildCatalog(live: IxsVaultItem[] = []): VaultStrategy[] {
-  const explorer = (addr: string) => `${EXPLORER}/address/${addr}`;
-  const hybridLive = live.find((v) => v.routeId === IXS_BSC.hybridRouteId);
-  const licensedLive = live.find((v) => v.routeId === IXS_BSC.licensedRouteId);
-
-  const hybrid: VaultStrategy = {
-    id: STRATEGY_IDS.hybrid,
+export function buildCatalog(registry: Registry, live: IxsVaultItem[] = []): VaultStrategy[] {
+  const out = registry.vaults.map(fromVault);
+  const btcLive = live.some((v) => /BTC/i.test(v.underlyingAsset?.symbol ?? ""));
+  out.push({
+    id: STRATEGY_IDS.btc,
     provider: "IXS",
-    vaultName: "IX High Yield Bond (IXHYB)",
-    assetType: "IXS RWA vault · ERC-4626",
-    asset: IXS_USDC_SYMBOL,
-    apy: hybridLive?.metrics?.apy ?? 4.5,
-    apyEstimated: hybridLive?.metrics?.apy == null,
-    riskScore: 92,
-    liquidity: "Daily (sync settlement)",
-    chainId: CHAIN_ID,
-    network: CHAIN_KEY,
-    chainName: CHAIN_NAME,
-    contractAddress: IXS_BSC.hybridVault,
-    assetAddress: IXS_BSC.usdc,
-    assetDecimals: IXS_BSC.usdcDecimals,
+    vaultName: "BTC Real Yield",
+    assetType: "Bitcoin-denominated real yield · 4–12% indicative (IXS)",
+    asset: "BTC",
+    apy: null,
+    riskScore: 90,
+    liquidity: "—",
+    chainId: 56,
+    network: "bsc",
+    chainName: "BNB Chain",
     settlement: "sync",
-    requiresWhitelist: hybridLive?.requiresWhitelist ?? false,
-    status: hybridLive?.status ?? "active",
-    description:
-      "The official IXS vault on BSC Testnet (high-yield bond exposure). Vaulto reads it through the IXS Vault API and builds deposits with the IXS MCP. Takes IXS test USDC (ixUSDC).",
-    source: "catalog",
-    executable: true,
-    tag: "primary",
-    routeId: IXS_BSC.hybridRouteId,
-    explorerUrl: hybridLive?.explorerUrl ?? explorer(IXS_BSC.hybridVault),
-    capacityNote: "Official IXS vault · calldata by IXS MCP",
-  };
-
-  const licensed: VaultStrategy = {
-    id: STRATEGY_IDS.licensed,
-    provider: "IXS",
-    vaultName: "Licensed RWA Vault Opportunities",
-    assetType: "Regulated RWA · ERC-7540 (async)",
-    asset: IXS_USDC_SYMBOL,
-    apy: licensedLive?.metrics?.apy ?? 6.2,
-    apyEstimated: licensedLive?.metrics?.apy == null,
-    riskScore: 88,
-    liquidity: "Request → claim (async)",
-    chainId: CHAIN_ID,
-    network: CHAIN_KEY,
-    chainName: CHAIN_NAME,
-    contractAddress: IXS_BSC.licensedVault,
-    assetAddress: IXS_BSC.usdc,
-    assetDecimals: IXS_BSC.usdcDecimals,
-    settlement: "async-erc7540",
-    requiresWhitelist: true,
-    status: licensedLive?.status ?? "active",
-    description: "IXS whitelist-gated vault (t_ix7540v1). Regulated, capacity-limited; eligibility is checked live through the IXS MCP before any allocation.",
+    requiresWhitelist: false,
+    status: btcLive ? "active" : "announced",
+    description: "Announced on ixs.finance (BTC Real Yield, 4–12% indicative APY) but no BTC vault exists on the IXS Vault API. Vaulto checks availability on every analysis and will make it allocatable the moment IXS deploys it.",
     source: "catalog",
     executable: false,
-    tag: "opportunity",
-    routeId: IXS_BSC.licensedRouteId,
-    explorerUrl: licensedLive?.explorerUrl ?? explorer(IXS_BSC.licensedVault),
-    capacityNote: "Eligibility check required · async settlement",
-  };
-
-  return [hybrid, licensed];
+    tag: "announced",
+    availability: btcLive ? "live" : "announced",
+    capacityNote: "Announced by IXS · not deployable yet",
+  });
+  return out;
 }

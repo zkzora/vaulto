@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useVaultoAccount } from "@/hooks/use-account";
-import { useResetDemo, useSettings, useUpdateSettings } from "@/hooks/use-vaulto";
-import { CHAIN_NAME } from "@/lib/chain/config";
+import { useResetDemo, useSetLiveOptIn, useSettings, useTreasury, useUpdateSettings } from "@/hooks/use-vaulto";
+import { CHAIN_NAME, chainInfo, modeLabel } from "@/lib/chain/config";
 import { shortAddress } from "@/lib/format";
 import type { RiskProfile, UserPatch } from "@/lib/types";
 import { Card, CardTitle, ErrorState, Pill, Skeleton, cx } from "@/components/ui";
@@ -19,6 +19,8 @@ export default function SettingsPage() {
   const account = useVaultoAccount();
   const update = useUpdateSettings();
   const reset = useResetDemo();
+  const treasury = useTreasury();
+  const setLive = useSetLiveOptIn();
   const [draft, setDraft] = useState<UserPatch | null>(null);
   const [saved, setSaved] = useState(false);
 
@@ -36,6 +38,24 @@ export default function SettingsPage() {
     demoMode: u.demoMode,
   };
   const setForm = setDraft;
+  const liveMins = (treasury.data?.strategies ?? []).filter((s) => s.executable && (s.terms?.minLiveDepositUsd ?? 0) > (s.terms?.minDepositUsd ?? 0));
+  const liveMinText = liveMins.length
+    ? liveMins.map((s) => `${s.terms!.minLiveDepositUsd} ${s.asset} into ${s.shareSymbol ?? s.vaultName} = ${s.terms!.minLiveDepositFormula}`).join("; ")
+    : `${system.minDepositUsdc} USDC (IXS minimum)`;
+  const liveMinWhy = liveMins[0]?.terms?.minLiveDepositReason;
+  const capable = treasury.data?.snapshot.liveCapableChainIds ?? [];
+  const liveOn = system.liveOptIn;
+  const canLive = system.liveMode !== "off" && account.isWallet && !u.demoMode;
+  const liveHint =
+    system.liveMode === "off"
+      ? "Disabled on this deployment (LIVE_MODE=off)."
+      : !account.isWallet
+        ? "Connect a wallet to use it. The demo treasury is always simulated."
+        : u.demoMode
+          ? "Turn off the simulated treasury first: Live never runs on simulated holdings."
+          : capable.length
+            ? `This wallet holds at least ${system.liveMinUsdc} USDC on ${capable.map((c) => chainInfo(c).name).join(" and ")}. The choice is stored as a cookie in this browser only.`
+            : `This wallet holds under ${system.liveMinUsdc} USDC on BNB Chain and Avalanche, so deposits stay simulated even with Live enabled.`;
 
   const set = <K extends keyof UserPatch>(k: K, v: UserPatch[K]) => setDraft({ ...form, [k]: v });
   const save = async () => {
@@ -100,11 +120,30 @@ export default function SettingsPage() {
           </Card>
 
           <Card>
-            <CardTitle action={<Pill tone={form.demoMode ? "amber" : "green"}>{form.demoMode ? "Simulated layer ON" : "Real balances only"}</Pill>}>Demo layer</CardTitle>
+            <CardTitle action={<Pill tone={liveOn ? "green" : "amber"}>{liveOn ? "Live opt-in ON" : "Simulate (default)"}</Pill>}>Execution mode</CardTitle>
+            <div className="mt-3 grid gap-2 text-[13px] leading-[1.5] text-body">
+              <div>
+                <b className="text-ink">Simulate (default).</b> The approve + deposit calldata built by the IXS MCP runs through eth_call with a state override against the real IX High Yield Bond vaults on BNB Chain and Avalanche. Nothing is sent. This is the mode of the hackathon submission.
+              </div>
+              <div>
+                <b className="text-ink">Live (opt-in, ready).</b> Your wallet signs an exact-amount approve and the deposit; hard cap {system.maxLiveTxUsdc.toLocaleString("en-US")} USDC per transaction; minimum {liveMinText}{liveMinWhy ? `, which ${liveMinWhy}` : ""}. Not executed in this submission.
+              </div>
+            </div>
+            <label className="mt-3 flex items-start gap-3">
+              <input type="checkbox" checked={liveOn} disabled={!canLive || setLive.isPending} onChange={(e) => setLive.mutate(e.target.checked)} className="mt-1 h-4 w-4 accent-blue" />
+              <span className="text-[13px] leading-[1.5] text-body">
+                <b className="text-ink">Enable Live mode for this wallet in this browser.</b> {liveHint}
+              </span>
+            </label>
+            {setLive.isError && <div className="mt-2 text-[12px] text-red">{setLive.error.message}</div>}
+          </Card>
+
+          <Card>
+            <CardTitle action={<Pill tone={form.demoMode ? "amber" : "green"}>{form.demoMode ? "Simulated treasury ON" : "Real balances only"}</Pill>}>Simulated treasury</CardTitle>
             <label className="mt-3 flex items-start gap-3">
               <input type="checkbox" checked={Boolean(form.demoMode)} onChange={(e) => set("demoMode", e.target.checked)} className="mt-1 h-4 w-4 accent-blue" />
               <span className="text-[13px] leading-[1.5] text-body">
-                <b className="text-ink">Add the simulated Acme DAO treasury (≈ $2.8M of fake BTC, USDC and T-bills) on top of my real wallet.</b> Meant for walkthroughs without test funds. Leave it off to see only what your wallet actually holds on {CHAIN_NAME}; on-chain balances, faucet assets and vault positions are always real either way.
+                <b className="text-ink">Add the simulated Acme DAO treasury (≈ $2M of fake BTC and USDC) on top of my real wallet.</b> Meant for walkthroughs without test funds. Leave it off to see only what your wallet actually holds on {CHAIN_NAME} and Avalanche; on-chain balances, vault addresses and calldata are always real either way, and every deposit is labelled with its execution mode.
               </span>
             </label>
             {form.demoMode && account.isWallet && (
@@ -137,7 +176,7 @@ export default function SettingsPage() {
             <div className="mt-4 grid gap-3 text-[13px]">
               {[
                 ["Wallet", account.isWallet ? `${account.connector ?? "Wallet"} · ${shortAddress(account.address)}` : `Demo address · ${shortAddress(account.address)}`, account.isWallet ? "green" : "amber", account.isWallet ? "Connected" : "Demo"],
-                ["Network", `${system.network} (chain ${system.chainId})`, account.isWallet && account.chainId !== system.chainId ? "red" : "green", account.isWallet && account.chainId !== system.chainId ? "Switch network" : "Ready"],
+                ["Networks", `${system.network} (chain ${system.chainId}) + Avalanche C-Chain (43114)`, account.isWallet && account.chainId !== system.chainId && account.chainId !== 43114 ? "red" : "green", account.isWallet && account.chainId !== system.chainId && account.chainId !== 43114 ? "Switch network" : "Ready"],
                 [
                   "OpenServ reasoning",
                   system.openserv
@@ -148,12 +187,22 @@ export default function SettingsPage() {
                   system.openserv ? "green" : "amber",
                   system.openserv ? "Live" : "Fallback",
                 ],
-                ["IXS adapter", "api-dev-v2.ixs.finance · MCP + Vault API", "green", "Connected"],
+                ["IXS adapter", `${system.ixsApi} · production Vault API + MCP`, "green", "Connected"],
                 [
-                  "Testnet faucet",
-                  system.faucet ? `Sends ${CHAIN_NAME} gas and forwards IXS test USDC while the faucet wallet holds some` : "FAUCET_PRIVATE_KEY missing",
-                  system.faucet ? "green" : "amber",
-                  system.faucet ? "Ready" : "Missing",
+                  "Execution mode",
+                  system.rpcKind === "fork"
+                    ? `RPC ${system.rpcUrl} · local Anvil fork of mainnet`
+                    : treasury.data?.snapshot.liveChainIds.length
+                      ? `Live (opt-in) on ${treasury.data.snapshot.liveChainIds.map((c) => chainInfo(c).name).join(", ")} · real deposits signed by your wallet, hard cap per transaction`
+                      : `Simulate: eth_call + state override against the real IXS vaults on BNB Chain and Avalanche · Live is an opt-in capability (above), not executed in this submission`,
+                  system.rpcKind === "fork" ? "blue" : treasury.data?.snapshot.liveChainIds.length ? "green" : "amber",
+                  system.rpcKind === "fork" ? modeLabel("simulated", 56, "fork", treasury.data?.snapshot.onchain.byChain?.[56]?.blockNumber) : treasury.data?.snapshot.liveChainIds.length ? "Live (opt-in)" : "Simulate",
+                ],
+                [
+                  "Guardrails (deterministic)",
+                  `SERV decides; these hard limits are enforced around it: liquidity floor ${u.liquidityFloorPct}% · exposure cap ${u.maxAssetExposurePct}% · min vault score ${u.minVaultRiskScore} · min deposit ${system.minDepositUsdc} USDC · Live deposit minimum ${liveMinText}${liveMinWhy ? ` (${liveMinWhy})` : ""} · Live hard cap ${system.maxLiveTxUsdc.toLocaleString("en-US")} USDC per transaction · NAV stale after ${system.navStaleHours} h`,
+                  "green",
+                  "Enforced",
                 ],
                 ["Database", system.database === "postgres" ? "PostgreSQL via Prisma" : "JSON file store (.data/) · set DATABASE_URL for Postgres", system.database === "postgres" ? "green" : "muted", system.database === "postgres" ? "Postgres" : "File"],
               ].map(([k, v, tone, label]) => (
@@ -173,7 +222,7 @@ export default function SettingsPage() {
               <li>• No unrestricted autonomous transfers. OpenServ proposes; it never executes.</li>
               <li>• Every transaction shows amount, destination, expected outcome and risk before you sign.</li>
               <li>• Vaulto holds no keys. Your wallet signs on {CHAIN_NAME}; IXS MCP and the adapter build calldata only.</li>
-              <li>• Reasoning, confidence and transaction hashes are logged in Activity.</li>
+              <li>• Reasoning, confidence, simulation results and (in Live mode) transaction hashes are logged in Activity and on the public Evidence page.</li>
             </ul>
           </Card>
         </div>

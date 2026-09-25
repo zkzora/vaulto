@@ -1,10 +1,24 @@
-import { CHAIN_ID, DEFAULT_RPC } from "@/lib/chain/config";
+import { CHAINS, CHAIN_ID, MAX_LIVE_TX_USDC_DEFAULT, NAV_STALE_HOURS_DEFAULT } from "@/lib/chain/config";
+
+const num = (v: string | undefined, fallback: number) => {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+};
 
 export const env = {
   chainId: CHAIN_ID,
-  rpcUrl: process.env.RPC_URL ?? process.env.NEXT_PUBLIC_RPC_URL ?? DEFAULT_RPC,
-  ixsApiBaseUrl: process.env.IXS_API_BASE_URL ?? "https://api-dev-v2.ixs.finance",
-  ixsMcpUrl: process.env.IXS_MCP_URL ?? "https://api-dev-v2.ixs.finance/mcp",
+  /** BNB Chain RPC. Point it at http://127.0.0.1:8545 to run the app against an Anvil mainnet fork. */
+  rpcUrl: process.env.RPC_URL || process.env.NEXT_PUBLIC_RPC_URL || CHAINS[56].defaultRpc,
+  /** Avalanche C-Chain RPC (http://127.0.0.1:8546 for a fork). */
+  avaxRpcUrl: process.env.AVAX_RPC_URL || process.env.NEXT_PUBLIC_AVAX_RPC_URL || CHAINS[43114].defaultRpc,
+  // IXS production Vault API + MCP (BNB Chain and Avalanche vaults).
+  ixsApiBaseUrl: (process.env.IXS_API_BASE_URL || "https://api-v2.ixs.finance").replace(/\/$/, ""),
+  ixsMcpUrl: process.env.IXS_MCP_URL || "https://api-v2.ixs.finance/mcp",
+  // Policy knobs
+  navStaleHours: num(process.env.NAV_STALE_HOURS, NAV_STALE_HOURS_DEFAULT),
+  maxLiveTxUsdc: num(process.env.MAX_LIVE_TX_USDC, MAX_LIVE_TX_USDC_DEFAULT),
+  /** "opt-in" (default): Live only after the viewer enables it in Settings. "off": Live disabled on this deployment. */
+  liveMode: (process.env.LIVE_MODE === "off" ? "off" : "opt-in") as "opt-in" | "off",
   // OpenServ (no OpenAI key involved).
   //  - inference: OpenServ Inference API, OpenAI-compatible, authenticated with the serv_… key (default)
   //  - platform:  tasks assigned to the Vaulto agent in an OpenServ workspace (needs workspace + agent)
@@ -17,10 +31,12 @@ export const env = {
   openservAgentId: process.env.OPENSERV_AGENT_ID ?? "",
   openservAgentName: process.env.OPENSERV_AGENT_NAME ?? "Vaulto",
   openservTimeoutMs: Number(process.env.OPENSERV_TIMEOUT_MS ?? 90_000),
-  // Testnet faucet / deployer wallet
-  faucetPrivateKey: (process.env.FAUCET_PRIVATE_KEY ?? "") as `0x${string}` | "",
   databaseUrl: process.env.DATABASE_URL ?? "",
 };
+
+export function rpcUrlFor(chainId: number): string {
+  return chainId === 43114 ? env.avaxRpcUrl : env.rpcUrl;
+}
 
 /** True when Vaulto can hand reasoning to OpenServ (inference key, or platform key + workspace). */
 export const openservConfigured = () =>

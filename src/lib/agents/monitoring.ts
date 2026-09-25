@@ -1,5 +1,5 @@
-import { fmtUsd } from "@/lib/format";
-import type { PortfolioReport, Recommendation, RiskReport, TreasurySnapshot, UserProfile } from "@/lib/types";
+import { fmtUsd, vaultLabel } from "@/lib/format";
+import type { PortfolioReport, Recommendation, RiskReport, TreasurySnapshot, UserProfile, VaultStrategy } from "@/lib/types";
 import { healthLabel } from "./scoring";
 
 /** Realized 30d BTC volatility (annualized %) above which Vaulto flags exposure. */
@@ -9,7 +9,17 @@ const VOL_HIGH = 60;
 /**
  * Monitoring Agent — scores the treasury against policy and drafts warnings / corrective actions.
  */
-export function buildRiskReport(snapshot: TreasurySnapshot, user: UserProfile, rec: Recommendation | null, btcVol30d: number | null = null): RiskReport {
+export interface WatchSummary {
+  waiting: { vault: string; chainName: string; navAgeHours: number | null; navUpdatedAt: number | null; depositLimitUsd: number | null }[];
+  events: { id: string; at: string; message: string; kind: "limit" | "nav" }[];
+}
+
+export function buildRiskReport(snapshot: TreasurySnapshot, user: UserProfile, rec: Recommendation | null, btcVol30d: number | null = null, strategies: VaultStrategy[] = [], watch?: WatchSummary): RiskReport {
+  const primary = strategies.find((s) => s.tag === "primary") ?? strategies.find((s) => s.executable);
+  const terms = primary?.terms;
+  const termsText = terms
+    ? ` Redemption path: requested → awaiting RWA sale & operator finalization → paid (no claim step; operator sends USDC to the receiver). Fees: ${terms.depositFeeBps / 100}% on deposit, ${terms.redeemFeeBps != null ? `${terms.redeemFeeBps / 100}% on redemption (${terms.feeSource})` : "redemption fee not exposed on-chain"}. Minimum deposit ${terms.minDepositUsd} ${primary?.asset ?? "USDC"} (confirmed by IXS, enforced on-chain). Async vaults: daily cutoff 17:00 SGT on Singapore business days, settlement ≈ 1 business day (per IXS, 24 Sep 2026).`
+    : "";
   const lowestVault = snapshot.positions.length ? Math.min(...snapshot.positions.map((p) => p.riskScore)) : null;
   const deviation = snapshot.allocatedPct - snapshot.targetAllocationPct;
   const nearLimit = snapshot.maxExposure.pct > user.maxAssetExposurePct * 0.8;
@@ -30,9 +40,7 @@ export function buildRiskReport(snapshot: TreasurySnapshot, user: UserProfile, r
       key: "vault",
       title: "Vault risk",
       level: lowestVault == null ? "Low" : lowestVault >= user.minVaultRiskScore ? "Low" : "Medium",
-      description: snapshot.positions.length
-        ? `${snapshot.positions.map((p) => `IXS ${p.vaultName} scores ${p.riskScore}`).join(" and ")}. No leverage, daily or 24h withdrawal.`
-        : "No vault positions yet. Every IXS strategy Vaulto proposes is scored before it reaches you.",
+      description: `${snapshot.positions.length ? `${snapshot.positions.map((p) => `${vaultLabel(p.vaultName)} scores ${p.riskScore}`).join(" and ")}. No leverage.` : "No vault positions yet. Every IXS strategy Vaulto proposes is scored before it reaches you."}${termsText}`,
       value: lowestVault == null ? "—" : String(lowestVault),
       sub: "lowest vault score",
     },
@@ -59,6 +67,18 @@ export function buildRiskReport(snapshot: TreasurySnapshot, user: UserProfile, r
   ];
 
   const alerts: RiskReport["alerts"] = [];
+  for (const w of watch?.waiting ?? []) {
+    alerts.push({
+      id: `nav-${w.vault}-${w.chainName}`,
+      kind: "info",
+      title: `${w.chainName} vault temporarily paused — waiting NAV refresh`,
+      body: `Deposit limit is 0 while the NAV is stale (last update ${w.navUpdatedAt ? new Date(w.navUpdatedAt * 1000).toISOString().slice(0, 16).replace("T", " ") + " UTC" : "unknown"}${w.navAgeHours != null ? `, ${(w.navAgeHours / 24).toFixed(1)} days ago` : ""}). Per IXS (24 Sep 2026) this is the NAV-staleness effect, not a closed vault. Vaulto watches the limit and NAV on every scan and will flag the vault the moment it reopens.`,
+      cta: "analyze",
+    });
+  }
+  for (const e of (watch?.events ?? []).slice(0, 3)) {
+    alerts.push({ id: e.id, kind: e.kind === "limit" ? "action" : "info", title: e.kind === "limit" ? "Deposit limit changed" : "NAV refreshed", body: e.message, cta: "analyze" });
+  }
   if (rec && rec.status === "proposed") {
     alerts.push({
       id: "idle",
@@ -118,7 +138,7 @@ export function buildRiskReport(snapshot: TreasurySnapshot, user: UserProfile, r
 }
 
 /** Synthesizes a smooth value history ending at the current treasury value. */
-export function buildPortfolioReport(snapshot: TreasurySnapshot, periodDays = 30): PortfolioReport {
+export function buildPortfolioReport(snapshot: TreasurySnapshot, user: UserProfile, periodDays = 30): PortfolioReport {
   const yieldEarnedUsd = Math.round((snapshot.earned30dUsd * periodDays) / 30);
   const btc = snapshot.assets.find((a) => a.symbol === "BTC");
   const priceChangeUsd = btc ? Math.round(btc.valueUsd * (btc.change30dPct / 100) * (periodDays / 30)) : 0;
@@ -139,18 +159,21 @@ export function buildPortfolioReport(snapshot: TreasurySnapshot, periodDays = 30
   }
   const stable = snapshot.assets.filter((a) => a.symbol === "USDC").reduce((s, a) => s + a.allocationPct, 0);
   const btcPct = btc?.allocationPct ?? 0;
-  const rwa = snapshot.assets.filter((a) => a.symbol === "USTB").reduce((s, a) => s + a.allocationPct, 0);
+  const rwa = snapshot.allocatedPct;
+  // Targets come from the user's policy and risk profile, so they match the Risk Center.
   const targets = [
-    { label: "Stablecoins", actualPct: stable, targetPct: 25, color: "#5B8DEF" },
-    { label: "BTC", actualPct: btcPct, targetPct: 60, color: "#F2A93B" },
-    { label: "RWA", actualPct: rwa, targetPct: 15, color: "#17996A" },
+    { label: "Stablecoins (liquidity floor)", actualPct: stable, targetPct: user.liquidityFloorPct, color: "#5B8DEF" },
+    { label: "BTC (exposure cap)", actualPct: btcPct, targetPct: user.maxAssetExposurePct, color: "#F2A93B" },
+    { label: "In IXS vaults", actualPct: rwa, targetPct: snapshot.targetAllocationPct, color: "#17996A" },
   ];
   const over = targets.find((t) => t.actualPct - t.targetPct >= 2);
   return {
     history,
     targets,
     note: over
-      ? `${over.label} is ${over.actualPct - over.targetPct} pts over target. Within tolerance; Vaulto rebalances by allocating idle capital, not by selling assets.`
+      ? over.label.startsWith("BTC")
+        ? `BTC is ${over.actualPct - over.targetPct} pts over the exposure cap. Vaulto never sells assets; the Risk Center flags exposure above the cap.`
+        : `${over.label.replace(/ (.*)$/, "")} is ${over.actualPct - over.targetPct} pts over target. Within tolerance; Vaulto rebalances by allocating idle capital into IXS vaults, not by selling assets.`
       : "Allocation is within target tolerance. Vaulto rebalances by allocating idle capital, not by selling assets.",
     yieldEarnedUsd,
     priceChangeUsd,

@@ -10,8 +10,8 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "agent": "node --env-file=.env scripts/openserv-agent.mjs",
-    "probe:ixs": "node scripts/probe-ixs-chains.mjs",
-    "e2e:onchain": "node --env-file=.env scripts/e2e-onchain.mjs"
+    "fork:demo": "node --env-file=.env scripts/fork-demo.mjs",
+    "evidence:snapshot": "node scripts/evidence-snapshot.mjs"
   },
   "dependencies": {
     "@openserv-labs/sdk": "^2.4.1",

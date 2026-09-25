@@ -44,3 +44,9 @@ next-env.d.ts
 .data/
 .env
 !.env.example
+
+.vercel
+
+# scratch files
+*.tmp.mjs
+*.tmp.ts

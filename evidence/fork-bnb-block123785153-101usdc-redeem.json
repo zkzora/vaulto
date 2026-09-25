@@ -1,0 +1,125 @@
+{
+  "label": "Mainnet fork (block 123785153)",
+  "chainId": 56,
+  "chain": "BNB Chain",
+  "forkBlock": 123785153,
+  "amount": "101 USDC",
+  "demoWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "vaults": [
+    {
+      "label": "Mainnet fork (block 123785153)",
+      "chainId": 56,
+      "chain": "BNB Chain",
+      "forkBlock": 123785153,
+      "vault": {
+        "name": "IX High Yield Bond (USDC)",
+        "symbol": "ix7540v1",
+        "address": "0xD84129f506d1030Dd6b46Fe4A600d1E1c3b0802E",
+        "routeId": "56-0xd84129f506d1030dd6b46fe4a600d1e1c3b0802e",
+        "requiresWhitelist": true
+      },
+      "demoWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "asset": {
+        "address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+        "symbol": "USDC",
+        "decimals": 18
+      },
+      "shares": {
+        "symbol": "ix7540v1",
+        "decimals": 18
+      },
+      "redeemFeeBps": 50,
+      "preflight": {
+        "depositLimit": "0 USDC",
+        "whitelistEnabled": true,
+        "whitelisted": false,
+        "paused": false
+      },
+      "verdict": "REJECT",
+      "status": "Demo wallet is not whitelisted (KYC vault); nothing built."
+    },
+    {
+      "label": "Mainnet fork (block 123785153)",
+      "chainId": 56,
+      "chain": "BNB Chain",
+      "forkBlock": 123785153,
+      "vault": {
+        "name": "IX High Yield Bond (USDC)",
+        "symbol": "ixv1",
+        "address": "0xc975a3EeF2e49F8eDdEf585340C43f15300fCB82",
+        "routeId": "56-0xc975a3eef2e49f8eddef585340c43f15300fcb82",
+        "requiresWhitelist": false
+      },
+      "demoWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "asset": {
+        "address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+        "symbol": "USDC",
+        "decimals": 18
+      },
+      "shares": {
+        "symbol": "ixv1",
+        "decimals": 18
+      },
+      "redeemFeeBps": 50,
+      "preflight": {
+        "depositLimit": "unlimited",
+        "whitelistEnabled": false,
+        "whitelisted": true,
+        "paused": false
+      },
+      "calldataBuiltBy": "IXS MCP vault_build_request_deposit",
+      "settlement": "sync",
+      "txs": [
+        {
+          "step": "erc20_approve_exact",
+          "hash": "0xf16048fa3d604e157307ba4ea8a2b24f05b117868cdd69b21517df0ef3f2c13f",
+          "status": "success",
+          "gasUsed": 53452
+        },
+        {
+          "step": "vault_deposit",
+          "hash": "0x580e15049670a530fce83e5d53a0e904ecf98ab68105915dfa15015ead58ae90",
+          "status": "success",
+          "gasUsed": 119563
+        }
+      ],
+      "pricePerShare": 1.091092,
+      "verdict": "ALLOCATE",
+      "sharesReceived": 92.56781279672109,
+      "sharesValue": 101,
+      "depositEvent": {
+        "assets": 101,
+        "shares": 92.56781279672109
+      },
+      "status": "Shares minted on the fork (sync ERC-4626): 101 USDC → 92.56781279672109 ixv1 (≈ 101 USDC) in the deposit transaction. Anvil fork only; no mainnet funds moved.",
+      "redeem": {
+        "shares": 92.56781279672109,
+        "minRedeemAssets": 100,
+        "previewNetAssets": 100.495,
+        "path": "requestRedeem → queued → operator sells RWA and finalizes → USDC paid to the receiver (no claim step)",
+        "tx": {
+          "hash": "0xe7fca32148c027604b58ed2cb02ed097fe391e9d4f7451b037847f423e31dc14",
+          "status": "success",
+          "gasUsed": 228595
+        },
+        "settlement": "queued",
+        "sharesAfter": 0,
+        "status": "Redemption requested → awaiting RWA sale & operator finalization → paid (fork: IXS operator not present, stays queued)"
+      },
+      "liveDepositMinimum": {
+        "usd": 104,
+        "formula": "ceil(100 / 0.995 × 1.03) = 104 USDC",
+        "depositMeetsIt": false
+      },
+      "redeemCheck": {
+        "derived": true,
+        "outcome": "requestRedeem of all shares succeeded on the fork (previewRedeem 100.495 USDC net ≥ 100), with under 0.5% headroom: a small NAV drop would push it below the minimum. The 104 USDC Live minimum adds a 3% NAV buffer."
+      }
+    }
+  ],
+  "amountUsdc": 101,
+  "recordedAt": "2026-09-24T23:01:50+07:00",
+  "source": "scripts/fork-demo.mjs output (REDEEM=1 AMOUNT=101), committed in 6159737 as docs/fork-demo-sample.json",
+  "relabelled": "Status wording updated on 2026-09-25 (no 'deposited' claims, label 'Mainnet fork (block N)'); fork block, amounts, shares and fork tx hashes are unchanged from the original script output.",
+  "note": "Anvil fork of mainnet: IXS vault contracts and IXS MCP calldata are real; the demo wallet is Anvil test account #0 funded on the fork; nothing touches mainnet."
+}

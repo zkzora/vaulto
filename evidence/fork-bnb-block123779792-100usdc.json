@@ -1,0 +1,113 @@
+{
+  "label": "Mainnet fork (block 123779792)",
+  "chainId": 56,
+  "chain": "BNB Chain",
+  "forkBlock": 123779792,
+  "amount": "100 USDC",
+  "demoWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "vaults": [
+    {
+      "label": "Mainnet fork (block 123779792)",
+      "chainId": 56,
+      "chain": "BNB Chain",
+      "forkBlock": 123779792,
+      "vault": {
+        "name": "IX High Yield Bond (USDC)",
+        "symbol": "ix7540v1",
+        "address": "0xD84129f506d1030Dd6b46Fe4A600d1E1c3b0802E",
+        "routeId": "56-0xd84129f506d1030dd6b46fe4a600d1e1c3b0802e",
+        "requiresWhitelist": true
+      },
+      "demoWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "asset": {
+        "address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+        "symbol": "USDC",
+        "decimals": 18
+      },
+      "shares": {
+        "symbol": "ix7540v1",
+        "decimals": 18
+      },
+      "redeemFeeBps": 50,
+      "preflight": {
+        "depositLimit": "0 USDC",
+        "whitelistEnabled": true,
+        "whitelisted": false,
+        "paused": false
+      },
+      "verdict": "REJECT",
+      "status": "Demo wallet is not whitelisted (KYC vault); nothing built."
+    },
+    {
+      "label": "Mainnet fork (block 123779792)",
+      "chainId": 56,
+      "chain": "BNB Chain",
+      "forkBlock": 123779792,
+      "vault": {
+        "name": "IX High Yield Bond (USDC)",
+        "symbol": "ixv1",
+        "address": "0xc975a3EeF2e49F8eDdEf585340C43f15300fCB82",
+        "routeId": "56-0xc975a3eef2e49f8eddef585340c43f15300fcb82",
+        "requiresWhitelist": false
+      },
+      "demoWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "asset": {
+        "address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+        "symbol": "USDC",
+        "decimals": 18
+      },
+      "shares": {
+        "symbol": "ixv1",
+        "decimals": 18
+      },
+      "redeemFeeBps": 50,
+      "preflight": {
+        "depositLimit": "unlimited",
+        "whitelistEnabled": false,
+        "whitelisted": true,
+        "paused": false
+      },
+      "calldataBuiltBy": "IXS MCP vault_build_request_deposit",
+      "settlement": "sync",
+      "txs": [
+        {
+          "step": "erc20_approve_exact",
+          "hash": "0x856f62c48f4645e1df1ea6acc08528129943bf7c5fd03d8ea667e1fe2719513e",
+          "status": "success",
+          "gasUsed": 53452
+        },
+        {
+          "step": "vault_deposit",
+          "hash": "0xce79d69bbd4eb417fa2f11b2d563d2ed8468600380b88572eed0d9cc3f706a1c",
+          "status": "success",
+          "gasUsed": 119563
+        }
+      ],
+      "pricePerShare": 1.091092,
+      "verdict": "ALLOCATE",
+      "sharesReceived": 91.65129979873375,
+      "sharesValue": 100,
+      "depositEvent": {
+        "assets": 100,
+        "shares": 91.65129979873375
+      },
+      "status": "Shares minted on the fork (sync ERC-4626): 100 USDC → 91.65129979873375 ixv1 (≈ 100 USDC) in the deposit transaction. Anvil fork only; no mainnet funds moved.",
+      "liveDepositMinimum": {
+        "usd": 104,
+        "formula": "ceil(100 / 0.995 × 1.03) = 104 USDC",
+        "depositMeetsIt": false
+      },
+      "redeemCheck": {
+        "derived": true,
+        "netIfRedeemedAll": 99.5,
+        "minRedeemAssets": 100,
+        "outcome": "Redeeming all 91.65129979873375 ixv1 returns ≈ 99.50 USDC net after the 0.5% fee, below the 100 USDC minRedeemAssets: requestRedeem reverts \"below min redeem\" (confirmed by the eth_call redeem simulation in the evidence snapshot). This is why Live deposits into ixv1 need at least 104 USDC."
+      }
+    }
+  ],
+  "amountUsdc": 100,
+  "recordedAt": "2026-09-24T22:20:44+07:00",
+  "source": "scripts/fork-demo.mjs output, committed in 0b3190c as docs/fork-demo-sample.json",
+  "relabelled": "Status wording updated on 2026-09-25 (no 'deposited' claims, label 'Mainnet fork (block N)'); fork block, amounts, shares and fork tx hashes are unchanged from the original script output.",
+  "note": "Anvil fork of mainnet: IXS vault contracts and IXS MCP calldata are real; the demo wallet is Anvil test account #0 funded on the fork; nothing touches mainnet."
+}

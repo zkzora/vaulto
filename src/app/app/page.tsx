@@ -5,7 +5,7 @@ import { RecommendationCard } from "@/components/dashboard/recommendation-card";
 import { AgentActivityList } from "@/components/dashboard/agent-activity";
 import { useVaultoAccount } from "@/hooks/use-account";
 import { useActivity, useAnalyze, useTreasury } from "@/hooks/use-vaulto";
-import { CHAIN_NAME } from "@/lib/chain/config";
+import { CHAIN_NAME, chainInfo, modeLabel } from "@/lib/chain/config";
 import { fmtDate, fmtUsd, greeting, timeAgo } from "@/lib/format";
 import { Card, CardTitle, Donut, ErrorState, Pill, Skeleton, Stat, cx } from "@/components/ui";
 
@@ -42,7 +42,7 @@ export default function HomePage() {
           <div className="mt-1 text-[14px] text-muted">
             {fmtDate(snapshot.scannedAt)} · Risk preference: <b className="text-ink">{user.riskProfile}</b>
             {snapshot.onchain.rpcOk ? (
-              <span> · {CHAIN_NAME} block {snapshot.onchain.blockNumber?.toLocaleString()}</span>
+              <span> · {CHAIN_NAME} block {snapshot.onchain.blockNumber?.toLocaleString()}{snapshot.onchain.byChain?.[43114]?.rpcOk ? ` · Avalanche block ${snapshot.onchain.byChain[43114].blockNumber?.toLocaleString()}` : ""}</span>
             ) : (
               <span className="text-amber"> · RPC unavailable, showing cached demo values</span>
             )}
@@ -57,14 +57,15 @@ export default function HomePage() {
         </div>
       </div>
 
-      {account.isWallet && (snapshot.onchain.balances.ixUSDC ?? 0) === 0 && snapshot.onchain.positions.length === 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-tint px-4 py-3 text-[13px] text-body">
-          <span>
-            <b className="text-ink">No IXS test USDC in this wallet yet.</b> Claim gas and ixUSDC from the {CHAIN_NAME} faucet to run a real allocation into the IXS vault.
-          </span>
-          <Link href="/app/faucet" className="btn btn-primary h-9 text-[13px]">Get test funds</Link>
-        </div>
-      )}
+      <div className={cx("flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line px-4 py-3 text-[13px] text-body", snapshot.executionMode === "live" ? "bg-green-tint" : "bg-tint")}>
+        <span>
+          <b className="text-ink">{snapshot.liveChainIds.length ? snapshot.liveChainIds.map((c) => modeLabel("live", c)).join(" + ") : snapshot.onchain.rpcKind === "fork" ? modeLabel("simulated", 56, "fork", snapshot.onchain.byChain?.[56]?.blockNumber) : "Simulated on BNB + Avalanche mainnet"}.</b>{" "}
+          {snapshot.executionMode === "live"
+            ? `Live mode is on for this wallet (opt-in). It holds ${snapshot.liveChainIds.map((c) => `${fmtUsd(snapshot.onchain.byChain?.[c]?.balances.USDC ?? 0)} USDC on ${chainInfo(c).name}`).join(" and ")}: approved deposits there are real and signed by your wallet (exact-amount approvals, hard cap per transaction).`
+            : `${account.isWallet ? `This wallet holds ${fmtUsd(snapshot.onchain.balances.USDC ?? 0)} USDC across BNB Chain and Avalanche.` : "Simulated treasury (Acme DAO)."} Approve + deposit calldata from the IXS MCP is simulated with eth_call + state override against the real IX High Yield Bond vaults; nothing is sent. ${snapshot.liveCapableChainIds.length ? "Live mode is available for this wallet as an opt-in in Settings." : "Live mode is an opt-in capability (Settings), not executed in this submission."}`}
+        </span>
+        <Link href="/app/vaults" className="btn btn-soft h-9 text-[13px]">IXS vault terms</Link>
+      </div>
 
       <div className="grid items-start gap-5 xl:grid-cols-2">
         <Card>
@@ -140,7 +141,6 @@ export default function HomePage() {
                 <div key={a.symbol} className="flex items-center gap-2">
                   <span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: a.color }} />
                   {a.symbol}
-                  {a.symbol === "USTB" && <span className="text-faint">(T-bills)</span>}
                   <span className="ml-auto font-semibold text-ink">{a.allocationPct}%</span>
                 </div>
               ))}
@@ -168,11 +168,11 @@ export default function HomePage() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="font-display text-[16px] font-semibold text-ink">{s.apy != null ? `${s.apy}%` : "—"}</div>
+                      <div className="font-display text-[16px] font-semibold text-ink">{s.availability === "announced" ? "4–12%" : s.apy != null ? `${s.apyEstimated ? "~" : ""}${s.apy}%` : "—"}</div>
                       <div className="mt-1 flex justify-end gap-1.5">
                         <Pill tone="green" className="h-5 px-[7px] text-[10px]">Risk {s.riskScore}</Pill>
                         <Pill tone={p ? (s.tag === "primary" ? "blue" : "muted") : "muted"} className="h-5 px-[7px] text-[10px]">
-                          {p ? `Active${s.tag === "secondary" ? " · Secondary" : ""}` : s.requiresWhitelist ? "Eligibility check" : "Available"}
+                          {s.availability === "announced" ? "Announced · not deployable" : p ? `Active${s.tag === "secondary" ? " · Secondary" : ""}` : s.requiresWhitelist ? "Eligibility check" : "Available"}
                         </Pill>
                       </div>
                     </div>

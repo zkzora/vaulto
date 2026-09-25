@@ -16,7 +16,7 @@ import type {
 import { normalizeAddress, type Store } from "./store";
 
 interface FileData {
-  users: Record<string, UserProfile & { demoState: DemoState; lastFaucetAt?: string | null }>;
+  users: Record<string, UserProfile & { demoState: DemoState }>;
   treasury: { address: string; snapshotAt: string; assets: TreasuryAsset[] }[];
   strategies: Record<string, VaultStrategy>;
   recommendations: Recommendation[];
@@ -79,10 +79,9 @@ function defaultUser(address: string): UserProfile & { demoState: DemoState } {
   };
 }
 
-const strip = (u: UserProfile & { demoState: DemoState; lastFaucetAt?: string | null }): UserProfile => {
-  const { demoState: _ignored, lastFaucetAt: _ignored2, ...rest } = u;
+const strip = (u: UserProfile & { demoState: DemoState }): UserProfile => {
+  const { demoState: _ignored, ...rest } = u;
   void _ignored;
-  void _ignored2;
   return rest;
 };
 
@@ -183,15 +182,6 @@ export const fileStore: Store = {
       .logs.filter((l) => l.walletAddress === a)
       .slice(-limit)
       .reverse();
-  },
-  async getFaucetClaim(address) {
-    await this.getOrCreateUser(address);
-    return data().users[normalizeAddress(address)].lastFaucetAt ?? null;
-  },
-  async setFaucetClaim(address, at) {
-    await this.getOrCreateUser(address);
-    data().users[normalizeAddress(address)].lastFaucetAt = at;
-    persist();
   },
   async resetUser(address) {
     const a = normalizeAddress(address);

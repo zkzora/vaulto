@@ -11,10 +11,10 @@ const NAV = [
   { href: "/app/strategy", label: "Strategy", icon: Icons.spark },
   { href: "/app/portfolio", label: "Portfolio", icon: Icons.pie },
   { href: "/app/vaults", label: "IXS Strategies", icon: Icons.vault },
-  { href: "/app/faucet", label: "Faucet", icon: Icons.drop },
   { href: "/app/risk", label: "Risk Center", icon: Icons.shield },
   { href: "/app/activity", label: "Activity", icon: Icons.list },
   { href: "/app/settings", label: "Settings", icon: Icons.settings },
+  { href: "/evidence", label: "Evidence", icon: Icons.list },
 ];
 
 export function Sidebar() {

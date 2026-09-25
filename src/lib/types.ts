@@ -77,15 +77,21 @@ export interface VaultPosition {
 
 export interface OnchainReadout {
   rpcOk: boolean;
+  /** "fork" when the RPC is a local Anvil fork of BNB mainnet. */
+  rpcKind: "mainnet" | "fork";
   chainId: number;
   blockNumber: number | null;
-  /** Native gas token balance (tBNB). */
+  /** Native gas token balance (BNB). */
   nativeBalance: number;
-  /** Wallet balances keyed by canonical symbol (ixUSDC = IXS test USDC). */
+  /** Wallet balances keyed by the asset symbol read from the vault's asset() (USDC). */
   balances: Record<string, number>;
+  /** Per-chain figures (Live mode needs the balance on the vault's chain). */
+  byChain: Record<number, { rpcOk: boolean; rpcKind: "mainnet" | "fork"; blockNumber: number | null; native: number; nativeSymbol: string; balances: Record<string, number>; error?: string }>;
   /** IXS vault share positions, in asset units. */
-  positions: { strategyId: string; shares: number; assets: number }[];
-  vaults: Record<string, { address: string; tvl: number; sharePrice: number }>;
+  positions: { strategyId: string; shares: number; assets: number; chainId: number }[];
+  vaults: Record<string, { address: string; tvl: number; sharePrice: number; chainId: number }>;
+  /** Symbol of the vault asset as read on-chain. */
+  assetSymbol?: string;
   error?: string;
 }
 
@@ -114,6 +120,14 @@ export interface TreasurySnapshot {
   demoMode: boolean;
   maxExposure: { symbol: string; pct: number };
   targetAllocationPct: number;
+  /** "simulated" by default; "live" only when the viewer opted in (Settings) and the wallet holds >= LIVE_MODE_MIN_USDC. */
+  executionMode: "simulated" | "live";
+  /** Chains on which deposits run Live (opt-in on, >= LIVE_MODE_MIN_USDC of the vault asset there). */
+  liveChainIds: number[];
+  /** Chains on which the wallet could run Live if the viewer opted in. */
+  liveCapableChainIds: number[];
+  /** Live opt-in for this wallet in this browser (cookie). */
+  liveOptIn: boolean;
 }
 
 export interface VaultStrategy {
@@ -123,8 +137,12 @@ export interface VaultStrategy {
   assetType: string;
   asset: string;
   apy: number | null;
-  /** True when the APY is a Vaulto estimate (IXS testnet metrics unavailable). */
+  /** True when the APY is a Vaulto estimate rather than an IXS figure. */
   apyEstimated?: boolean;
+  /** Where the yield figure comes from (e.g. trailing 12 months, IXS Vault API). */
+  apyNote?: string;
+  /** "announced": IXS has announced the product but no vault is deployed (checked against the IXS Vault API). */
+  availability?: "live" | "announced";
   riskScore: number;
   liquidity: string;
   chainId: number;
@@ -133,6 +151,8 @@ export interface VaultStrategy {
   contractAddress?: string;
   assetAddress?: string;
   assetDecimals?: number;
+  shareDecimals?: number;
+  shareSymbol?: string;
   settlement: "sync" | "async-erc7540";
   requiresWhitelist: boolean;
   status: string;
@@ -141,10 +161,105 @@ export interface VaultStrategy {
   sharePrice?: number | null;
   source: "live" | "catalog";
   executable: boolean;
-  tag: "primary" | "secondary" | "opportunity" | "live";
+  tag: "primary" | "secondary" | "opportunity" | "live" | "announced";
   routeId?: string;
   explorerUrl?: string;
   capacityNote?: string;
+  /** Vault terms Vaulto enforces and displays (minimum deposit, fees read on-chain, redemption cadence). */
+  terms?: VaultTerms;
+  apiId?: string;
+  subgraphUrl?: string;
+  /** maxDeposit() for a new depositor: null = unlimited, 0 = closed. */
+  depositLimitUsd?: number | null;
+  depositLimitSource?: string;
+  nav?: VaultNav;
+  /** Median hours from deposit request to processing observed on the IXS subgraph (async vaults). */
+  observedSettlementHours?: number | null;
+  cutoffNote?: string;
+  /** Block number of the last contract read behind these figures. */
+  readBlock?: number | null;
+  /** Pre-flight result for the analysed wallet (attached during analysis). */
+  preflight?: VaultPreflight;
+}
+
+export interface CutoffInfoLite {
+  nextCutoffUtc: string;
+  nextCutoffSgt: string;
+  hoursUntilCutoff: number;
+  todayCutoffStillOpen: boolean;
+  estimatedSettlementUtc: string;
+  estimatedSettlementSgt: string;
+  skipped: { date: string; reason: string }[];
+  holidayAssumption: string;
+  source: string;
+}
+
+export interface VaultNav {
+  pricePerShare: number | null;
+  updatedAt: string | null;
+  ageHours: number | null;
+  block: number | null;
+  /** Transaction of the last on-chain NAV change (from the IXS subgraph, verified by receipt). */
+  lastChangeTx?: string | null;
+  /** navStalenessThreshold() read from the contract, in hours (null when not exposed). */
+  contractThresholdHours?: number | null;
+  source: string;
+  history: { at: string; pricePerShare: number; block: number | null }[];
+}
+
+export interface VaultCheck {
+  key: string;
+  label: string;
+  ok: boolean;
+  /** block → REJECT when failing, defer → DEFER (waiting NAV refresh) when failing, info → never blocks. */
+  severity: "block" | "defer" | "info";
+  value: string;
+  detail: string;
+  source: string;
+}
+
+export interface VaultPreflight {
+  ok: boolean;
+  /** Deterministic hint: allocate (all pass), defer (limit 0 / stale NAV), reject (whitelist, pause, minimum). */
+  verdict: "allocate" | "defer" | "reject";
+  checkedAt: string;
+  wallet: string;
+  chainId: number;
+  blockNumber: number | null;
+  checks: VaultCheck[];
+  depositLimitUsd: number | null;
+  depositLimitUnlimited: boolean;
+  navUpdatedAt: string | null;
+  navAgeHours: number | null;
+  navLastChangeTx: string | null;
+  navLastChangeBlock: number | null;
+  minDepositUsd: number;
+  settlement: "sync" | "async-erc7540";
+  observedSettlementHours: number | null;
+  /** Next IXS cutoff and settlement estimate (async vaults only). */
+  cutoff: CutoffInfoLite | null;
+  redeemPath: string;
+  mcpAccepts: boolean | null;
+  mcpReason?: string;
+  whitelisted: boolean | null;
+  /** True when the pre-flight ran for a Live deposit (opt-in on for this chain). */
+  live?: boolean;
+  minLiveDepositUsd?: number;
+}
+
+export interface VaultTerms {
+  minDepositUsd: number;
+  depositFeeBps: number;
+  redeemFeeBps: number | null;
+  redemption: string;
+  feeSource: string;
+  /** minRedeemAssets() on-chain, in asset units (null when not exposed). */
+  minRedeemUsd?: number | null;
+  redeemPath?: string;
+  /** Live deposit minimum that keeps the position redeemable: ceil(minRedeemAssets / (1 - fee) × 1.03), >= 100 USDC. */
+  minLiveDepositUsd?: number;
+  minLiveDepositFormula?: string;
+  minLiveDepositReason?: string;
 }
 
 export interface AllocationLeg {
@@ -157,6 +272,8 @@ export interface AllocationLeg {
   riskScore: number;
   executable: boolean;
   onchainAmount: number;
+  chainId: number;
+  chainName: string;
 }
 
 export interface Metrics {
@@ -178,6 +295,7 @@ export interface RejectedOption {
   option: string;
   reason: string;
   tone: "warn" | "muted";
+  verdict?: "reject" | "defer";
 }
 
 export type RecommendationStatus =
@@ -213,6 +331,61 @@ export interface Recommendation {
   idleUsd: number;
   /** Treasury context at creation; used to expire proposals when conditions change. */
   context?: { demoMode: boolean; totalUsd: number };
+  /** Investment-committee style memo written by SERV reasoning. */
+  memo?: Memo;
+  /** Exact input handed to SERV reasoning and the raw output it returned. */
+  trace?: ReasoningTrace;
+  /** Pre-flight results per strategy id at analysis time. */
+  preflights?: Record<string, VaultPreflight>;
+  /** Vaults deferred ("temporarily paused — waiting NAV refresh"). */
+  deferred?: RejectedOption[];
+  /** One verdict per candidate vault, as returned by SERV reasoning (or the local engine). */
+  decisions?: { strategyId: string; verdict: "allocate" | "defer" | "reject"; amount?: number; reason: string }[];
+  /** Next IXS cutoff at analysis time. */
+  cutoff?: CutoffInfoLite;
+  /** Times the deterministic validator overrode a SERV allocation (0 in a clean run). */
+  validatorOverrides?: string[];
+  /** Hard limits the deterministic guardrails enforce around SERV's decisions. */
+  guardrails?: {
+    liquidityFloorPct: number;
+    maxAssetExposurePct: number;
+    minVaultRiskScore: number;
+    minDepositUsd: number;
+    maxLiveTxUsdc: number;
+    navStaleHours: number;
+    liveMode?: "opt-in" | "off";
+    liveOptIn?: boolean;
+    liveDepositMinimums?: { strategyId: string; vault: string; symbol: string; usd: number; formula: string; reason: string }[];
+  };
+}
+
+export interface Memo {
+  title: string;
+  sections: { heading: string; body: string }[];
+}
+
+export interface ReasoningTrace {
+  source: "openserv" | "local";
+  model?: string;
+  at: string;
+  decision: { input: unknown; output: unknown };
+  narrative?: { input: unknown; output: unknown };
+}
+
+export interface StepSimulation {
+  ok: boolean;
+  /** "Simulated on BNB mainnet" or "Mainnet fork". */
+  label: string;
+  /** Storage overrides applied to the eth_call (balance / allowance). */
+  overrides: string[];
+  block?: number;
+  gasEstimate?: number;
+  expectedShares?: number;
+  previewShares?: number;
+  shareSymbol?: string;
+  sharePrice?: number;
+  requestId?: string;
+  revertReason?: string;
 }
 
 export interface TxStep {
@@ -232,6 +405,13 @@ export interface TxStep {
   builtBy: "ixs-mcp" | "local-encoder" | "simulation";
   /** Condition to wait for before sending (public RPC nodes can lag behind the previous receipt). */
   precheck?: { kind: "allowance"; token: `0x${string}`; spender: `0x${string}`; amount: string };
+  /** Amount in asset base units (from the contract's decimals). */
+  units?: string;
+  /** eth_call + state override result when the step is simulated. */
+  simulation?: StepSimulation;
+  note?: string;
+  /** Honest label for this step's chain and mode. */
+  label?: string;
 }
 
 export interface PreparedTransaction {
@@ -256,7 +436,12 @@ export interface PreparedTransaction {
     feeUsd: number;
   };
   createdAt: string;
-  mode: "onchain" | "hybrid" | "simulated";
+  mode: "onchain" | "simulated";
+  executionMode: "simulated" | "live";
+  rpcKind: "mainnet" | "fork";
+  /** Honest label shown everywhere: "Live · BNB Chain", "Simulated on BNB mainnet" or "Mainnet fork". */
+  label: string;
+  notes: string[];
 }
 
 export type TxStatus = "prepared" | "pending" | "confirmed" | "failed" | "simulated";
@@ -274,6 +459,8 @@ export interface TransactionRecord {
   explorerUrl?: string;
   createdAt: string;
   kind: string;
+  label?: string;
+  simulation?: StepSimulation;
 }
 
 export interface AgentLog {

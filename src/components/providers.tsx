@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RainbowKitProvider, getDefaultConfig, lightTheme } from "@rainbow-me/rainbowkit";
 import { injectedWallet, metaMaskWallet, walletConnectWallet } from "@rainbow-me/rainbowkit/wallets";
 import { WagmiProvider, http } from "wagmi";
-import { CHAIN, CHAIN_ID, PUBLIC_RPC } from "@/lib/chain/config";
+import { CHAIN, CHAINS, PUBLIC_AVAX_RPC, PUBLIC_RPC } from "@/lib/chain/config";
 import { AccountProvider } from "@/hooks/use-account";
 import { TxnProvider } from "@/components/txn/txn-provider";
 
@@ -17,9 +17,10 @@ export const wagmiConfig = getDefaultConfig({
   appName: "Vaulto",
   appDescription: "AI treasury allocation agent",
   projectId,
-  chains: [CHAIN],
+  chains: [CHAIN, CHAINS[43114].chain],
   transports: {
-    [CHAIN_ID]: http(PUBLIC_RPC),
+    [CHAIN.id]: http(PUBLIC_RPC),
+    [CHAINS[43114].id]: http(PUBLIC_AVAX_RPC),
   },
   wallets: WALLETCONNECT_ENABLED
     ? [

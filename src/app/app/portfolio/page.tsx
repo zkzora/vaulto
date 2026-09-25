@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { usePortfolio } from "@/hooks/use-vaulto";
-import { fmtShortDate, fmtUsd } from "@/lib/format";
+import { fmtShortDate, fmtUsd, vaultLabel } from "@/lib/format";
 import { Card, CardTitle, ErrorState, Skeleton, TargetBar, cx } from "@/components/ui";
 
 const PERIODS = [
@@ -128,7 +128,7 @@ export default function PortfolioPage() {
             <div key={a.symbol} className="table-row text-ink" style={{ gridTemplateColumns: "1.6fr 1fr 1fr .8fr .8fr 1.6fr" }}>
               <div className="flex items-center gap-3">
                 <span className="flex h-[34px] w-[34px] items-center justify-center rounded-full font-display text-[12px] font-bold text-white" style={{ background: a.color }}>
-                  {a.symbol === "BTC" ? "₿" : a.symbol === "ixUSDC" ? "$" : a.symbol === "tBNB" ? "B" : a.symbol[0]}
+                  {a.symbol === "BTC" ? "₿" : a.symbol === "USDC" ? "$" : a.symbol[0]}
                 </span>
                 <div>
                   <div className="font-semibold">{a.symbol}</div>
@@ -143,13 +143,13 @@ export default function PortfolioPage() {
               <span className="font-display text-[15px] font-semibold">{a.apy.toFixed(1)}%</span>
               <span className={a.change30dPct > 0.1 ? "text-green" : "text-muted"}>+{a.change30dPct}%</span>
               <span className="text-[13px] font-normal text-muted">
-                {a.deployedIn ? `IXS ${byId.get(a.deployedIn)?.vaultName ?? a.deployedIn}` : ""}
+                {a.deployedIn ? vaultLabel(byId.get(a.deployedIn)?.vaultName ?? a.deployedIn) : ""}
                 {a.deployedIn && a.idleUsd > 0 ? " · " : ""}
-                {a.idleUsd > 0 ? (a.deployedIn ? "Idle" : a.symbol === "ixUSDC" ? "Idle · IX High Yield Bond recommended" : "Idle · no IXS vault for this asset yet") : ""}
+                {a.idleUsd > 0 ? (a.deployedIn ? "Idle" : a.symbol === "USDC" ? "Idle · IX High Yield Bond candidate" : "Idle · no IXS vault for this asset yet") : ""}
               </span>
             </div>
           ))}
-          {!snapshot.assets.length && <div className="py-8 text-center text-[13px] text-muted">No assets found. Claim test funds on the Faucet page, or enable the demo layer in Settings.</div>}
+          {!snapshot.assets.length && <div className="py-8 text-center text-[13px] text-muted">No assets found on BNB Chain or Avalanche for this wallet. Turn on the simulated treasury in Settings to walk through the flow.</div>}
         </div>
       </div>
     </div>
