@@ -5,7 +5,7 @@ import type { IxsVaultItem, Registry, RegistryVault } from "./registry";
 export type { IxsVaultItem } from "./registry";
 
 /** IXS FAQ: redemptions can be requested anytime and settle after the current cycle, as fast as T+1. */
-export const REDEMPTION_NOTE = "Request anytime · processed after the current redemption cycle (as fast as T+1, per IXS) · operator pays USDC to the receiver, no claim step";
+export const REDEMPTION_NOTE = "Request anytime · processed after the current redemption cycle (as fast as T+1, per the IXS vault FAQ) · operator sends USDC directly to the receiver, no claim step (IXS stated, 24 Sep 2026)";
 
 function termsFor(v: RegistryVault): NonNullable<VaultStrategy["terms"]> {
   const rm = redeemableMinimum(v.redeem.minAssetsUsd, v.redeem.feeBps, v.asset.symbol);

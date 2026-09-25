@@ -1,4 +1,5 @@
-import { BaseError, ContractFunctionRevertedError, RawContractError, decodeErrorResult, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, formatUnits, hexToBigInt, keccak256, numberToHex, toBytes } from "viem";
+import { BaseError, ContractFunctionRevertedError, RawContractError, decodeErrorResult, decodeFunctionResult, encodeAbiParameters, encodeFunctionData, formatUnits, hexToBigInt, keccak256, numberToHex, toBytes, type PublicClient } from "viem";
+import { chainAt, getReplay } from "@/lib/replay";
 import { erc20Abi, erc4626Abi, vaultErrorsAbi } from "./abi";
 import { publicClient, rpcKind } from "./client";
 import { modeLabel } from "./config";
@@ -20,11 +21,17 @@ const nestedSlot = (inner: `0x${string}`, key: `0x${string}`) => keccak256(encod
 const word = (v: bigint) => numberToHex(v, { size: 32 });
 
 /** Finds the storage slots of balanceOf and allowance mappings by probing overrides (cached per chain + token). */
-async function findSlots(chainId: number, token: `0x${string}`, owner: `0x${string}`, spender: `0x${string}`) {
+/** Client + label for a simulation in this request: the replay block (archive RPC) or the chain's mainnet head. */
+async function simContext(chainId: number): Promise<{ client: PublicClient; label: string }> {
+  const replay = await getReplay();
+  if (replay) return { client: chainAt(replay, chainId).client, label: replay.label };
+  return { client: publicClient(chainId), label: modeLabel("simulated", chainId, rpcKind(chainId)) };
+}
+
+async function findSlots(client: PublicClient, chainId: number, token: `0x${string}`, owner: `0x${string}`, spender: `0x${string}`) {
   const key = `${chainId}:${token.toLowerCase()}`;
   const hit = slotCache.get(key);
   if (hit) return hit;
-  const client = publicClient(chainId);
   const probe = 987_654_321n * 10n ** 18n;
   let balance = -1;
   for (let s = 0; s < MAX_SLOT && balance < 0; s++) {
@@ -110,14 +117,13 @@ export interface SimulateInput {
 
 /** Simulates every step in order; a failed step stops the sequence (later steps are marked skipped). */
 export async function simulateDepositSteps(input: SimulateInput): Promise<Record<number, StepSimulation>> {
-  const client = publicClient(input.chainId);
-  const label = modeLabel("simulated", input.chainId, rpcKind(input.chainId));
+  const { client, label } = await simContext(input.chainId);
   const out: Record<number, StepSimulation> = {};
   const started = Date.now();
   const [block, balance, slots] = await Promise.all([
     client.getBlockNumber().catch(() => null),
     client.readContract({ address: input.asset.address, abi: erc20Abi, functionName: "balanceOf", args: [input.owner] }).catch(() => 0n),
-    findSlots(input.chainId, input.asset.address, input.owner, input.vault),
+    findSlots(client, input.chainId, input.asset.address, input.owner, input.vault),
   ]);
   const needBalance = balance < input.amountUnits;
   const balanceDiff = needBalance ? [{ slot: mappingSlot(input.owner, slots.balance), value: word(input.amountUnits) }] : [];
@@ -220,8 +226,7 @@ function erc7201Base(): bigint {
  * request id or the decoded revert (e.g. "below min redeem") plus previewRedeem (net USDC after the 0.5% fee).
  */
 export async function simulateRedeem(i: RedeemSimInput): Promise<RedeemSimulation> {
-  const client = publicClient(i.chainId);
-  const label = modeLabel("simulated", i.chainId, rpcKind(i.chainId));
+  const { client, label } = await simContext(i.chainId);
   const started = Date.now();
   const path = "requestRedeem → queued → operator sells RWA and finalizes → USDC paid to the receiver (no claim step)";
   const [block, balance, preview, gross, supply] = await Promise.all([

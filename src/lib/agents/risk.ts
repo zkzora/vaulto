@@ -57,7 +57,7 @@ export function assessCandidates(candidates: Candidate[], snapshot: TreasurySnap
         reason = p.checks.filter((ch) => ch.severity === "block" && !ch.ok).map((ch) => `${ch.label}: ${ch.detail}`).join("; ");
       } else if (p.verdict === "defer") {
         hint = "defer";
-        reason = `Temporarily paused — waiting NAV refresh (${p.checks.filter((ch) => ch.severity === "defer" && !ch.ok).map((ch) => `${ch.label.toLowerCase()} ${ch.value}`).join(", ")}; per IXS 24 Sep 2026 a stale NAV drives the deposit limit to 0 until the next update)`;
+        reason = `Temporarily paused — waiting NAV refresh (${p.checks.filter((ch) => ch.severity === "defer" && !ch.ok).map((ch) => `${ch.label.toLowerCase()} ${ch.value}`).join(", ")}; IXS stated on 24 Sep 2026 that a 0 limit relates to NAV staleness, and Vaulto policy defers such vaults)`;
       }
     }
     if (hint === "allocate" && s.riskScore < user.minVaultRiskScore) {

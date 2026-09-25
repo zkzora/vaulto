@@ -60,7 +60,7 @@ function Facts({ s }: { s: VaultStrategy }) {
           <div className="flex justify-between gap-3">
             <span>Minimum deposit</span>
             <span className="font-semibold text-ink">
-              {s.terms.minDepositUsd} {s.asset} · confirmed by IXS
+              {s.terms.minDepositUsd} {s.asset} · stated by IXS
             </span>
           </div>
           {s.terms.minLiveDepositUsd != null && s.terms.minLiveDepositUsd > s.terms.minDepositUsd && (
@@ -81,7 +81,7 @@ function Facts({ s }: { s: VaultStrategy }) {
       )}
       <div className="flex justify-between gap-3">
         <span className="shrink-0">Cutoff</span>
-        <span className="text-right font-semibold text-ink">{s.settlement === "sync" ? "n/a · settles in the deposit tx" : "17:00 SGT, SG business days (IXS, 24 Sep 2026)"}</span>
+        <span className="text-right font-semibold text-ink">{s.settlement === "sync" ? "n/a · settles in the deposit tx" : "17:00 SGT, SG business days (stated by IXS, 24 Sep 2026)"}</span>
       </div>
       <div className="flex justify-between gap-3">
         <span className="shrink-0">Redemption</span>
@@ -196,7 +196,7 @@ export default function VaultsPage() {
                 <div className="mt-4 rounded-xl border border-line bg-canvas px-3.5 py-3 text-[12px]">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-semibold text-ink">
-                      {modeLabel("simulated", s.chainId, snapshot?.onchain.byChain?.[s.chainId]?.rpcKind ?? "mainnet")} · {s.terms?.minDepositUsd ?? 100} {s.asset}
+                      {snapshot?.replay ? `Replay @ block ${s.chainId === 43114 ? (snapshot.replay.avaxBlock ?? "?") : snapshot.replay.block}` : modeLabel("simulated", s.chainId, snapshot?.onchain.byChain?.[s.chainId]?.rpcKind ?? "mainnet")} · {s.terms?.minDepositUsd ?? 100} {s.asset}
                     </span>
                     <div className="flex gap-1.5">
                       <button className="btn btn-soft h-8 text-[12px]" disabled={simulate.isPending} onClick={() => simulate.mutate({ strategyId: s.id })}>

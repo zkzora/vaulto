@@ -56,7 +56,7 @@ export default function StrategyPage() {
   const hasLegs = rec.legs.length > 0;
   const legChains = [...new Set(rec.legs.map((l) => l.chainId))];
   const live = legChains.length > 0 && legChains.every((c) => snapshot.liveChainIds.includes(c));
-  const execLabel = legChains.length ? legChains.map((c) => modeLabel(snapshot.liveChainIds.includes(c) ? "live" : "simulated", c, snapshot.onchain.byChain?.[c]?.rpcKind ?? "mainnet")).join(" + ") : modeLabel("simulated", 56);
+  const execLabel = snapshot.replay ? snapshot.replay.label : legChains.length ? legChains.map((c) => modeLabel(snapshot.liveChainIds.includes(c) ? "live" : "simulated", c, snapshot.onchain.byChain?.[c]?.rpcKind ?? "mainnet")).join(" + ") : modeLabel("simulated", 56);
   const asyncLegs = rec.legs.filter((l) => byId.get(l.strategyId)?.settlement === "async-erc7540");
   const stepDone = (i: number) => rec.status === "executed" || (rec.status === "approved" ? i <= 2 : closed ? i <= 2 : i <= 1);
   const stepCurrent = (i: number) => !closed && rec.status !== "executed" && (rec.status === "approved" ? i === 3 : i === 2);

@@ -4,8 +4,8 @@ import type { Registry, RegistryVault } from "./registry";
 /**
  * NAV + deposit-limit watcher. Every registry refresh is compared with the last observation; a vault whose
  * deposit limit moves from 0 to > 0, or whose NAV timestamp changes, produces an event that the Monitoring Agent
- * logs and the UI surfaces as a notification. Per IXS (24 Sep 2026) a limit of 0 is the NAV-staleness effect, so
- * vaults in that state are listed as "waiting NAV refresh".
+ * logs and the UI surfaces as a notification. IXS stated (24 Sep 2026) that a limit of 0 relates to NAV staleness;
+ * Vaulto policy lists such vaults as "waiting NAV refresh".
  */
 
 export interface WatchEvent {

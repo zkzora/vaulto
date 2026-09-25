@@ -42,6 +42,7 @@ export function TxnProvider({ children }: { children: ReactNode }) {
   const [executing, setExecuting] = useState(false);
   const [toast, setToast] = useState<ToastData | null>(null);
   const heldRec = treasury.data?.recommendation ?? null;
+  const replayBlock = treasury.data?.snapshot.replay?.block ?? null;
 
   /** Prepares the workflow. The server picks the mode (Live at >= 100 USDC, otherwise simulated); `simulate` forces a simulation. */
   const load = useCallback(
@@ -52,7 +53,7 @@ export function TxnProvider({ children }: { children: ReactNode }) {
       setPrepared(null);
       setRecId(recommendationId);
       try {
-        const held = heldRec?.id === recommendationId ? heldRec : recallRecommendation(account.address);
+        const held = heldRec?.id === recommendationId ? heldRec : recallRecommendation(account.address, replayBlock);
         const res = await api.prepare(account.address, recommendationId, simulate, held?.id === recommendationId ? held : null);
         rememberEvidence(res.evidence);
         const { prepared } = res;
@@ -64,7 +65,7 @@ export function TxnProvider({ children }: { children: ReactNode }) {
         setLoading(false);
       }
     },
-    [account.address, heldRec],
+    [account.address, heldRec, replayBlock],
   );
 
   const open = useCallback(
@@ -152,7 +153,7 @@ export function TxnProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const held = heldRec?.id === prepared.recommendationId ? heldRec : recallRecommendation(account.address);
+      const held = heldRec?.id === prepared.recommendationId ? heldRec : recallRecommendation(account.address, replayBlock);
       const fin = await api.finalize(account.address, prepared.id, results, { prepared, recommendation: held?.id === prepared.recommendationId ? held : null });
       rememberActivity(account.address, { transactions: fin.transactions });
       if (fin.recommendation) rememberRecommendation(account.address, fin.recommendation);
@@ -179,7 +180,7 @@ export function TxnProvider({ children }: { children: ReactNode }) {
       router.push("/app");
       setTimeout(() => setToast(null), 7000);
     }
-  }, [prepared, account.address, account.chainId, publicClient, qc, router, sendTransactionAsync, switchChainAsync, heldRec]);
+  }, [prepared, account.address, account.chainId, publicClient, qc, router, sendTransactionAsync, switchChainAsync, heldRec, replayBlock]);
 
   const notify = useCallback((data: ToastData) => {
     setToast(data);

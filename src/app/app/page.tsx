@@ -5,6 +5,7 @@ import { RecommendationCard } from "@/components/dashboard/recommendation-card";
 import { AgentActivityList } from "@/components/dashboard/agent-activity";
 import { useVaultoAccount } from "@/hooks/use-account";
 import { useActivity, useAnalyze, useTreasury } from "@/hooks/use-vaulto";
+import { ReplayToggle } from "@/components/dashboard/replay-toggle";
 import { CHAIN_NAME, chainInfo, modeLabel } from "@/lib/chain/config";
 import { fmtDate, fmtUsd, greeting, timeAgo } from "@/lib/format";
 import { Card, CardTitle, Donut, ErrorState, Pill, Skeleton, Stat, cx } from "@/components/ui";
@@ -57,11 +58,15 @@ export default function HomePage() {
         </div>
       </div>
 
+      <ReplayToggle />
+
       <div className={cx("flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line px-4 py-3 text-[13px] text-body", snapshot.executionMode === "live" ? "bg-green-tint" : "bg-tint")}>
         <span>
-          <b className="text-ink">{snapshot.liveChainIds.length ? snapshot.liveChainIds.map((c) => modeLabel("live", c)).join(" + ") : snapshot.onchain.rpcKind === "fork" ? modeLabel("simulated", 56, "fork", snapshot.onchain.byChain?.[56]?.blockNumber) : "Simulated on BNB + Avalanche mainnet"}.</b>{" "}
+          <b className="text-ink">{snapshot.liveChainIds.length ? snapshot.liveChainIds.map((c) => modeLabel("live", c)).join(" + ") : snapshot.onchain.rpcKind === "fork" ? modeLabel("simulated", 56, "fork", snapshot.onchain.byChain?.[56]?.blockNumber) : snapshot.replay ? snapshot.replay.label : "Simulated on BNB + Avalanche mainnet"}.</b>{" "}
           {snapshot.executionMode === "live"
             ? `Live mode is on for this wallet (opt-in). It holds ${snapshot.liveChainIds.map((c) => `${fmtUsd(snapshot.onchain.byChain?.[c]?.balances.USDC ?? 0)} USDC on ${chainInfo(c).name}`).join(" and ")}: approved deposits there are real and signed by your wallet (exact-amount approvals, hard cap per transaction).`
+            : snapshot.replay
+            ? `Vault and wallet state are read at that past block through an archive RPC (Avalanche at block ${snapshot.replay.avaxBlock ?? "?"}); SERV analyses that state and deposits are simulated at that block with calldata encoded against the vault ABI. Nothing is sent. Switch to Current for today's state.`
             : `${account.isWallet ? `This wallet holds ${fmtUsd(snapshot.onchain.balances.USDC ?? 0)} USDC across BNB Chain and Avalanche.` : "Simulated treasury (Acme DAO)."} Approve + deposit calldata from the IXS MCP is simulated with eth_call + state override against the real IX High Yield Bond vaults; nothing is sent. ${snapshot.liveCapableChainIds.length ? "Live mode is available for this wallet as an opt-in in Settings." : "Live mode is an opt-in capability (Settings), not executed in this submission."}`}
         </span>
         <Link href="/app/vaults" className="btn btn-soft h-9 text-[13px]">IXS vault terms</Link>

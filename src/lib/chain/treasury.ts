@@ -3,6 +3,7 @@ import { publicClient, rpcKind } from "./client";
 import { erc20Abi, erc4626Abi } from "./abi";
 import { CHAIN_ID, chainInfo, strategyIdFor } from "./config";
 import { getRegistry } from "@/lib/ixs/registry";
+import { chainAt, getReplay } from "@/lib/replay";
 import type { OnchainReadout } from "@/lib/types";
 
 const empty = (error?: string): OnchainReadout => ({
@@ -36,12 +37,13 @@ export function invalidateOnchain(address: string, confirmedBlock?: number) {
  */
 export async function readOnchainTreasury(address: string): Promise<OnchainReadout> {
   if (!isAddress(address)) return empty("invalid address");
-  const key = address.toLowerCase();
+  const replay = await getReplay();
+  const key = `${address.toLowerCase()}${replay ? `@${replay.block}` : ""}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;
 
   // Public RPC nodes can lag a few blocks; after a confirmed tx insist on a node that has reached it.
-  const floor = minBlock.get(key) ?? 0;
+  const floor = replay ? 0 : (minBlock.get(key) ?? 0);
   let last: OnchainReadout = empty();
   for (let attempt = 0; attempt < 6; attempt++) {
     last = await readOnce(address as `0x${string}`);
@@ -53,7 +55,8 @@ export async function readOnchainTreasury(address: string): Promise<OnchainReado
 }
 
 async function readChain(chainId: number, owner: `0x${string}`, vaults: { id: string; address: `0x${string}`; assetDecimals: number; assetSymbol: string; shareDecimals: number }[], tokens: { key: string; address: `0x${string}`; decimals: number }[]) {
-  const client = publicClient(chainId);
+  const replay = await getReplay();
+  const client = replay ? chainAt(replay, chainId).client : publicClient(chainId);
   const contracts = [
     ...tokens.map((t) => ({ address: t.address, abi: erc20Abi, functionName: "balanceOf" as const, args: [owner] as const })),
     ...vaults.flatMap((v) => [

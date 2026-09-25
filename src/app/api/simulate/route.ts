@@ -28,7 +28,7 @@ const body = z.object({
  * 1. pre-flight (limit, NAV age, minimum, MCP probe, eligibility, cutoff);
  * 2. when the verdict is ALLOCATE, approve + deposit calldata from the IXS MCP;
  * 3. eth_call with a state override for the wallet's balance and allowance → expected shares or revert reason.
- * A DEFER / REJECT verdict returns the checks and builds nothing (per IXS: never build when limit / NAV fail).
+ * A DEFER / REJECT verdict returns the checks and builds nothing (Vaulto policy: never build when limit / NAV fail).
  */
 export async function POST(req: Request) {
   const parsed = body.safeParse(await req.json().catch(() => ({})));
@@ -74,7 +74,7 @@ export async function POST(req: Request) {
 
     const preflight = await runPreflight(rv, address, amount);
     if (preflight.verdict !== "allocate") {
-      return { label, strategyId, amount, asset: strategy.asset, chainId: strategy.chainId, preflight, verdict: preflight.verdict, builtBy: null, steps: [], note: preflight.verdict === "defer" ? "Temporarily paused — waiting NAV refresh: per IXS (24 Sep 2026) Vaulto does not build calldata while the deposit limit is 0 or the NAV is stale." : "Rejected by pre-flight: nothing is built." };
+      return { label, strategyId, amount, asset: strategy.asset, chainId: strategy.chainId, preflight, verdict: preflight.verdict, builtBy: null, steps: [], note: preflight.verdict === "defer" ? "Temporarily paused — waiting NAV refresh. Vaulto policy: no calldata is built while the deposit limit is 0 or the NAV is stale (IXS stated on 24 Sep 2026 that a 0 limit relates to NAV staleness)." : "Rejected by pre-flight: nothing is built." };
     }
     const built = await buildDepositSteps(strategy, address, amount, { preflightOk: true, simulation: true });
     const steps = built.steps.map((s, index) => ({ ...s, index, mode: "simulated" as const, amountUsd: Math.round(s.amount), label }));

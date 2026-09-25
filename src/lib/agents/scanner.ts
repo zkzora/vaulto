@@ -1,4 +1,4 @@
-import { LIVE_MODE_MIN_USDC, NATIVE_PRICE_KEY, NATIVE_SYMBOL } from "@/lib/chain/config";
+import { LIVE_MODE_MIN_USDC, NATIVE_PRICE_KEY, NATIVE_SYMBOL, type ReplayInfo } from "@/lib/chain/config";
 import { ASSET_META, DEMO_ADDRESS, DEMO_HOLDINGS } from "@/lib/demo";
 import { round, vaultLabel } from "@/lib/format";
 import type {
@@ -21,6 +21,8 @@ export interface ScanInput {
   now?: Date;
   /** Live opt-in for this wallet in this browser (Settings). Off by default: every deposit is simulated. */
   liveOptIn?: boolean;
+  /** Replay mode: the on-chain state is read at a past block; Live is never available there. */
+  replay?: ReplayInfo | null;
 }
 
 interface Holding {
@@ -176,7 +178,7 @@ export function scanTreasury(input: ScanInput): TreasurySnapshot {
   const stableSymbol = strategies.find((s) => s.executable)?.asset ?? "USDC";
   // Chains where this wallet could run Live (>= 100 USDC there). Live itself is opt-in and never applies to the demo
   // address or while the simulated treasury is layered on the wallet: the default is Simulate.
-  const liveCapableChainIds = user.walletAddress.toLowerCase() === DEMO_ADDRESS || user.demoMode ? [] : Object.entries(onchain.byChain ?? {}).filter(([, c]) => (c.balances[stableSymbol] ?? 0) >= LIVE_MODE_MIN_USDC).map(([id]) => Number(id));
+  const liveCapableChainIds = user.walletAddress.toLowerCase() === DEMO_ADDRESS || user.demoMode || input.replay ? [] : Object.entries(onchain.byChain ?? {}).filter(([, c]) => (c.balances[stableSymbol] ?? 0) >= LIVE_MODE_MIN_USDC).map(([id]) => Number(id));
   const liveOptIn = Boolean(input.liveOptIn);
   const liveChainIds = liveOptIn ? liveCapableChainIds : [];
   const executionMode: TreasurySnapshot["executionMode"] = liveChainIds.length ? "live" : "simulated";
@@ -212,5 +214,6 @@ export function scanTreasury(input: ScanInput): TreasurySnapshot {
     liveChainIds,
     liveCapableChainIds,
     liveOptIn,
+    replay: input.replay ?? null,
   };
 }

@@ -4,6 +4,7 @@ import { publicClient } from "@/lib/chain/client";
 import { CHAINS, IXS_KNOWN_VAULTS, IXS_PRODUCT_ID, MIN_DEPOSIT_USDC, SUPPORTED_CHAIN_IDS, chainInfo } from "@/lib/chain/config";
 import { env } from "@/lib/env";
 import { recordEvidence } from "@/lib/evidence";
+import { chainAt, getReplay, type ChainAt } from "@/lib/replay";
 import { vaultGet, type Settlement } from "./mcp";
 import { readSubgraphVault, type SubgraphVaultInfo } from "./subgraph";
 
@@ -83,6 +84,8 @@ export interface RegistryVault {
 
 export interface Registry {
   vaults: RegistryVault[];
+  /** Set in Replay mode: every on-chain read is at this BNB block (Avalanche at its block closest in time). */
+  replay?: { block: number; avaxBlock: number | null; label: string } | null;
   /** Address list came from the live API ("api") or the last-known fallback ("fallback"). */
   source: "api" | "fallback";
   apiOk: boolean;
@@ -91,7 +94,7 @@ export interface Registry {
 
 const TIMEOUT_MS = 8_000;
 const TTL_MS = 3 * 60_000;
-let cache: { at: number; value: Registry } | null = null;
+const caches = new Map<string, { at: number; value: Registry }>();
 
 async function fetchItems(): Promise<IxsVaultItem[] | null> {
   const ctrl = new AbortController();
@@ -118,8 +121,8 @@ type McResult = { status: "success"; result: unknown } | { status: "failure"; er
 const num = (v: unknown, fallback: number | null = null): number | null => (typeof v === "bigint" ? Number(v) : typeof v === "number" ? v : fallback);
 const UINT_MAX = 2n ** 256n - 1n;
 
-async function readChain(chainId: number, list: Skeleton[]): Promise<RegistryVault[]> {
-  const client = publicClient(chainId);
+async function readChain(chainId: number, list: Skeleton[], at: ChainAt | null = null): Promise<RegistryVault[]> {
+  const client = at?.client ?? publicClient(chainId);
   const info = chainInfo(chainId);
   const addr = (s: Skeleton) => s.contractAddress as `0x${string}`;
   const FIELDS = ["asset", "decimals", "totalAssets", "totalSupply", "paused", "whitelistEnabled", "feeBps", "redeemFeeBps", "priceUpdatedAt", "navStalenessThreshold", "minRedeemAssets"] as const;
@@ -177,7 +180,7 @@ async function readChain(chainId: number, list: Skeleton[]): Promise<RegistryVau
   const subgraphs = await Promise.all(list.map((s) => readSubgraphVault(s.subgraphUrl, s.contractAddress, chainId)));
 
   const out: RegistryVault[] = [];
-  const now = Date.now() / 1000;
+  const now = at ? at.timestamp : Date.now() / 1000;
   for (const [i, s] of list.entries()) {
     const assetAddr = (get(i, "asset") as string | null)?.toLowerCase() ?? null;
     const meta = assetAddr ? assetMeta.get(assetAddr) : undefined;
@@ -196,11 +199,14 @@ async function readChain(chainId: number, list: Skeleton[]): Promise<RegistryVau
     const wl = get(i, "whitelistEnabled");
     const maxDep = get(i, "maxDeposit") as bigint | null;
     const sg: SubgraphVaultInfo | null = subgraphs[i];
+    // Replay: the subgraph's latest values postdate the replay block, so NAV history is cut at that block and the
+    // price comes from convertToAssets() read at the block.
+    const navHistory = (sg?.navHistory ?? []).filter((h) => !at || h.block == null || h.block <= Number(at.block));
     const navAtChain = num(get(i, "priceUpdatedAt"));
-    const navAt = navAtChain && navAtChain > 0 ? navAtChain : (sg?.navUpdatedAt ?? null);
+    const navAt = navAtChain && navAtChain > 0 ? navAtChain : at ? (navHistory[0]?.at ?? null) : (sg?.navUpdatedAt ?? null);
     const thresholdSec = num(get(i, "navStalenessThreshold")) ?? sg?.navStalenessThreshold ?? null;
     const minRedeemRaw = get(i, "minRedeemAssets") as bigint | null;
-    const navPps = sg?.pricePerShare != null ? Number(formatUnits(sg.pricePerShare, asset.decimals)) : one != null ? Number(formatUnits(one, asset.decimals)) : null;
+    const navPps = at ? (one != null ? Number(formatUnits(one, asset.decimals)) : null) : sg?.pricePerShare != null ? Number(formatUnits(sg.pricePerShare, asset.decimals)) : one != null ? Number(formatUnits(one, asset.decimals)) : null;
     const minFromSg = sg?.minDepositAssets != null ? Number(formatUnits(sg.minDepositAssets, asset.decimals)) : null;
     const settlementGuess: Settlement = /7540/i.test(`${s.subgraphUrl ?? ""} ${s.symbol}`) ? "async-erc7540" : "sync";
     out.push({
@@ -228,7 +234,7 @@ async function readChain(chainId: number, list: Skeleton[]): Promise<RegistryVau
       subgraphUrl: s.subgraphUrl,
       onchainOk,
       blockNumber: block != null ? Number(block) : null,
-      readAt: new Date().toISOString(),
+      readAt: new Date(now * 1000).toISOString(),
       depositLimit: maxDep == null
         ? { usd: null, unlimited: false, source: "maxDeposit() unavailable" }
         : maxDep >= UINT_MAX / 2n
@@ -239,16 +245,16 @@ async function readChain(chainId: number, list: Skeleton[]): Promise<RegistryVau
         pricePerShare: navPps,
         updatedAt: navAt,
         ageHours: navAt != null ? Math.round(((now - navAt) / 3600) * 10) / 10 : null,
-        block: sg?.navUpdatedBlock ?? null,
-        lastChangeTx: sg?.navHistory[0]?.txHash ?? null,
+        block: at ? (navHistory[0]?.block ?? null) : (sg?.navUpdatedBlock ?? null),
+        lastChangeTx: navHistory[0]?.txHash ?? null,
         lastChangeVerified: false,
         contractThresholdHours: thresholdSec != null ? Math.round((thresholdSec / 3600) * 10) / 10 : null,
         source: navAtChain && navAtChain > 0 ? "priceUpdatedAt() on-chain" + (sg ? " · history from the IXS subgraph (NAV events)" : "") : sg ? (sg.kind === "erc7540" ? "subgraph Vault.priceUpdatedAt / navUpdates (on-chain NAV events)" : "subgraph vaultActivities NAV_UPDATED (on-chain events)") : "unavailable",
-        history: (sg?.navHistory ?? []).slice(0, 8).map((h) => ({ at: h.at, pricePerShare: Number(formatUnits(h.pricePerShare, asset.decimals)), block: h.block, txHash: h.txHash })),
+        history: navHistory.slice(0, 12).map((h) => ({ at: h.at, pricePerShare: Number(formatUnits(h.pricePerShare, asset.decimals)), block: h.block, txHash: h.txHash })),
       },
       settlementObserved: { samples: sg?.settlement.samples ?? 0, medianHours: sg?.settlement.medianHours ?? null, pendingCount: sg?.settlement.pendingCount ?? 0 },
       redeem: { minAssetsUsd: minRedeemRaw != null ? Number(formatUnits(minRedeemRaw, asset.decimals)) : null, feeBps: fee ?? sg?.redeemFeeBps ?? null, path: "requestRedeem → queued → operator sells RWA and finalizes → USDC paid to the receiver (no claim step)" },
-      cutoff: settlementGuess === "sync" ? { known: false, note: "not applicable: sync ERC-4626, settles in the deposit transaction" } : { known: true, note: "17:00 SGT (09:00 UTC) on Singapore business days, settlement ≈ 1 business day later (IXS answer to participants, 24 Sep 2026)" },
+      cutoff: settlementGuess === "sync" ? { known: false, note: "not applicable: sync ERC-4626, settles in the deposit transaction" } : { known: true, note: "17:00 SGT (09:00 UTC) on Singapore business days, requests processed at the next cutoff (IXS stated, 24 Sep 2026); settlement ≈ 1 business day later is a Vaulto estimate" },
     });
   }
   // Cross-check the last NAV change against the chain: the receipt must exist at the block the subgraph reports.
@@ -278,8 +284,14 @@ async function readChain(chainId: number, list: Skeleton[]): Promise<RegistryVau
   return out;
 }
 
-/** The IX High Yield Bond vaults on every supported chain with live on-chain + subgraph state. Cached 3 minutes. */
-export async function getRegistry(): Promise<Registry> {
+/**
+ * The IX High Yield Bond vaults on every supported chain with on-chain + subgraph state. Cached 3 minutes.
+ * In Replay mode (cookie) the on-chain state is read at the replay block; `{ current: true }` always reads today.
+ */
+export async function getRegistry(opts: { current?: boolean } = {}): Promise<Registry> {
+  const replay = opts.current ? null : await getReplay();
+  const cacheKey = replay ? `replay:${replay.block}` : "current";
+  const cache = caches.get(cacheKey) ?? null;
   if (cache && Date.now() - cache.at < TTL_MS) return cache.value;
   const items = await fetchItems();
   const apiOk = items != null;
@@ -290,7 +302,7 @@ export async function getRegistry(): Promise<Registry> {
 
   const byChain = new Map<number, Skeleton[]>();
   for (const s of skeleton) byChain.set(s.chainId, [...(byChain.get(s.chainId) ?? []), s]);
-  const vaults = (await Promise.all([...byChain.entries()].map(([chainId, list]) => readChain(chainId, list)))).flat();
+  const vaults = (await Promise.all([...byChain.entries()].map(([chainId, list]) => readChain(chainId, list, replay ? chainAt(replay, chainId) : null)))).flat();
 
   // Settlement kind from the IXS MCP (vault_get), which is authoritative; the subgraph name is only a guess.
   await Promise.all(
@@ -311,8 +323,8 @@ export async function getRegistry(): Promise<Registry> {
   );
   vaults.sort((a, b) => (a.chainId === 56 ? 0 : 1) - (b.chainId === 56 ? 0 : 1) || Number(a.requiresWhitelist) - Number(b.requiresWhitelist));
 
-  const value: Registry = { vaults, source: fromApi.length ? "api" : "fallback", apiOk, fetchedAt: new Date().toISOString() };
-  if (vaults.length && vaults.some((v) => v.onchainOk)) cache = { at: Date.now(), value };
+  const value: Registry = { vaults, source: fromApi.length ? "api" : "fallback", apiOk, fetchedAt: new Date().toISOString(), replay: replay ? { block: replay.block, avaxBlock: replay.avaxBlock, label: replay.label } : null };
+  if (vaults.length && vaults.some((v) => v.onchainOk)) caches.set(cacheKey, { at: Date.now(), value });
   else if (cache) return cache.value;
   return value;
 }

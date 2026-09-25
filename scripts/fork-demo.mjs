@@ -5,7 +5,8 @@
  * For every IX High Yield Bond vault the IXS Vault API lists on the forked chain:
  *  1. Anvil forks the chain (BNB mainnet by default; Avalanche with FORK_CHAIN=43114).
  *  2. asset() / decimals() are read from the vault contract; maxDeposit(demo) is the pre-flight deposit limit.
- *  3. Limit 0 → the vault is reported as "DEFER — temporarily paused, waiting NAV refresh" (per IXS, 24 Sep 2026)
+ *  3. Limit 0 → the vault is reported as "DEFER — temporarily paused, waiting NAV refresh" (Vaulto policy; IXS stated
+ *     on 24 Sep 2026 that a 0 limit relates to NAV staleness)
  *     and nothing is built. Not whitelisted → REJECT.
  *  4. Otherwise a large USDC holder is impersonated to fund the demo wallet, the IXS MCP builds approve + deposit /
  *     requestDeposit, both are sent from the demo wallet and the outcome is read back:
@@ -210,7 +211,7 @@ async function main() {
       const units = parseUnits(AMOUNT, assetDecimals);
       if (!unlimited && maxDep < units) {
         entry.verdict = "DEFER";
-        entry.status = `Deposit limit ${limit} below ${AMOUNT} ${assetSymbol}: temporarily paused — waiting NAV refresh (per IXS, 24 Sep 2026). Nothing built.`;
+        entry.status = `Deposit limit ${limit} below ${AMOUNT} ${assetSymbol}: temporarily paused — waiting NAV refresh (Vaulto policy: DEFER; IXS stated on 24 Sep 2026 that a 0 limit relates to NAV staleness). Nothing built.`;
         log(`${v.symbol}: ${entry.verdict} — ${entry.status}`);
         continue;
       }

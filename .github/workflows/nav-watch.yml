@@ -1,0 +1,34 @@
+name: nav-watch
+
+# Checks the open IXS vaults every 10 minutes and opens a "nav-watch" issue (GitHub emails the repo owner) and/or
+# posts to NOTIFY_WEBHOOK_URL when ixv1 (or the Avalanche vault) accepts deposits again or its NAV changes.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+concurrency:
+  group: nav-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/nav-watch.mjs
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check deposit limits and NAV
+        run: node scripts/nav-watch.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}

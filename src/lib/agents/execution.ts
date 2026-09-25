@@ -65,7 +65,7 @@ export async function prepareTransaction(
         continue;
       }
     }
-    const label = modeLabel(mode, s.chainId, kind);
+    const label = snapshot.replay ? snapshot.replay.label : modeLabel(mode, s.chainId, kind);
     modes.add(mode);
     labels.add(label);
 

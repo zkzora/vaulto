@@ -21,7 +21,9 @@ const BASE = (process.env.BASE_URL || "https://vaulto-five.vercel.app").replace(
 const DEMO = "0x7a3f5c1e9b2d4a6f8c0e1d3b5a7c9e2f4b6d9c21";
 const EMPTY = `0x${randomBytes(20).toString("hex")}`;
 const started = new Date();
-const OUT = process.env.OUT || join("evidence", `snapshot-${started.toISOString().slice(0, 10)}.json`);
+// REPLAY_BLOCK=123779792 captures the Replay view (BNB mainnet state at that block, via the archive RPC).
+const REPLAY_BLOCK = process.env.REPLAY_BLOCK ? Number(process.env.REPLAY_BLOCK) : null;
+const OUT = process.env.OUT || join("evidence", REPLAY_BLOCK ? `replay-block${REPLAY_BLOCK}.json` : `snapshot-${started.toISOString().slice(0, 10)}.json`);
 const log = (...a) => console.error("[snapshot]", ...a);
 
 /** Evidence each response carried for its own request (serverless instances do not share the in-memory log). */
@@ -29,7 +31,8 @@ const requestEvidence = [];
 
 async function call(method, path, body) {
   const t = Date.now();
-  const res = await fetch(`${BASE}${path}`, { method, headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  const headers = { "content-type": "application/json", ...(REPLAY_BLOCK ? { cookie: `vaulto_replay=${REPLAY_BLOCK}` } : {}) };
+  const res = await fetch(`${BASE}${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
   const json = await res.json().catch(() => ({}));
   if (Array.isArray(json.evidence) && path !== "/api/evidence") {
     requestEvidence.push(...json.evidence);
@@ -116,12 +119,15 @@ async function main() {
     baseUrl: BASE,
     deployment: e.deployment,
     submission: e.submission,
-    note: allocate.length
+    note: REPLAY_BLOCK
+      ? `${analyze.json.snapshot?.replay?.label ?? `Replay @ block ${REPLAY_BLOCK}`}: every vault and wallet read in this run is the BNB mainnet state at that past block (Avalanche at its block closest in time), read through an archive RPC. Deposits are simulated at that block with calldata encoded directly against the vault ABI (the IXS MCP builds against the current state only). Nothing is sent.`
+      : allocate.length
       ? undefined
       : "At capture time no IXS vault accepted deposits: both open vaults returned maxDeposit 0 (NAV older than the contract's staleness threshold, the NAV-staleness effect IXS described on 24 Sep 2026), so SERV deferred them and nothing was built. Simulations and fork runs from when the NAV was fresh are listed below.",
     openserv: { ping: settings.json.openservPing, model: settings.json.system?.openservModel, mode: settings.json.system?.openservMode },
     system: settings.json.system,
-    statements: e.ixsStatements,
+    statements: e.statements,
+    replay: analyze.json.snapshot?.replay ?? null,
     registry: { source: e.registrySource, vaults: e.vaults },
     cutoff: e.cutoff,
     watch: e.watch,

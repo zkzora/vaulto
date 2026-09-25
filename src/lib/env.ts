@@ -11,6 +11,9 @@ export const env = {
   rpcUrl: process.env.RPC_URL || process.env.NEXT_PUBLIC_RPC_URL || CHAINS[56].defaultRpc,
   /** Avalanche C-Chain RPC (http://127.0.0.1:8546 for a fork). */
   avaxRpcUrl: process.env.AVAX_RPC_URL || process.env.NEXT_PUBLIC_AVAX_RPC_URL || CHAINS[43114].defaultRpc,
+  /** Archive RPCs used by Replay (eth_call with state overrides at a past block). */
+  bscArchiveRpcUrl: process.env.BSC_ARCHIVE_RPC_URL || "https://bsc-mainnet.public.blastapi.io",
+  avaxArchiveRpcUrl: process.env.AVAX_ARCHIVE_RPC_URL || "https://api.avax.network/ext/bc/C/rpc",
   // IXS production Vault API + MCP (BNB Chain and Avalanche vaults).
   ixsApiBaseUrl: (process.env.IXS_API_BASE_URL || "https://api-v2.ixs.finance").replace(/\/$/, ""),
   ixsMcpUrl: process.env.IXS_MCP_URL || "https://api-v2.ixs.finance/mcp",

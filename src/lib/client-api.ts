@@ -1,3 +1,4 @@
+import type { ReplayInfo } from "./chain/config";
 import type {
   AgentLog,
   AnalysisResult,
@@ -139,6 +140,7 @@ export interface EvidenceSnapshot {
   baseUrl: string;
   deployment?: { source?: string; commit?: string | null };
   note?: string;
+  replay?: ReplayInfo | null;
   openserv?: { ping?: { ok: boolean; model?: string; error?: string }; model?: string };
   analysis?: {
     wallet: string;
@@ -167,12 +169,17 @@ export interface EvidenceResponse {
   submission: { path: string; label: string; liveExecuted: boolean; note: string };
   deployment: { source: string; commit: string | null; ref: string | null; repo: string | null };
   sources: { ixsApi: string; ixsMcp: string; rpcs: Record<string, string>; openserv: { model: string; mode: string } };
-  ixsStatements: { date: string; source: string; statement: string }[];
+  statements: {
+    ixsStated: { date: string; source: string; items: string[] };
+    judgesStated: { date: string; source: string; items: string[] };
+    vaultoPolicy: string[];
+  };
   vaults: Record<string, unknown>[];
   registrySource: string;
   cutoff: CutoffInfoLite;
   watch: WatchStatus;
   snapshot: EvidenceSnapshot | null;
+  replaySnapshot: EvidenceSnapshot | null;
   forkRuns: Record<string, unknown>[];
   instanceLogCount: number;
   log: EvidenceLogEntry[];
@@ -200,6 +207,7 @@ export interface SystemInfo {
   liveMinUsdc: number;
   liveMode: "opt-in" | "off";
   liveOptIn: boolean;
+  replay: ReplayInfo | null;
   redeemNavBufferPct: number;
   deployment: { source: "git" | "vercel" | "local"; commit: string | null; ref: string | null; repo: string | null };
   maxLiveTxUsdc: number;
@@ -210,7 +218,16 @@ export interface SystemInfo {
   network: string;
 }
 
+export interface ReplayResponse {
+  defaultBlock: number;
+  active: ReplayInfo | null;
+  options: { block: number; label: string; default: boolean }[];
+}
+
 export const api = {
+  replay: () => request<ReplayResponse>("/api/replay"),
+  setReplay: (address: string, block: number | null) =>
+    request<{ user: UserProfile; system: SystemInfo }>("/api/settings", { method: "PATCH", body: JSON.stringify({ address, replayBlock: block }) }),
   treasury: (address: string) => request<TreasuryResponse>(`/api/treasury?address=${address}`),
   vaults: () => request<{ strategies: VaultStrategy[]; liveOk: boolean; liveVaults: LiveVault[]; registry: { source: "api" | "fallback"; apiOk: boolean; fetchedAt: string; onchainOk: boolean } }>("/api/vaults"),
   mainnet: () => request<{ vaults: MainnetVault[]; ok: boolean }>("/api/ixs/mainnet"),
