@@ -2,6 +2,7 @@ import { formatUnits, parseUnits } from "viem";
 import { erc4626Abi } from "@/lib/chain/abi";
 import { publicClient } from "@/lib/chain/client";
 import { redeemableMinimum } from "@/lib/chain/config";
+import { chainAt, getReplay } from "@/lib/replay";
 import { env } from "@/lib/env";
 import { recordEvidence } from "@/lib/evidence";
 import type { VaultCheck, VaultPreflight } from "@/lib/types";
@@ -12,11 +13,11 @@ import type { RegistryVault } from "./registry";
 /**
  * Pre-flight safety checks for one vault and one wallet, from the IXS MCP, the contracts and the IXS subgraph:
  *  - vault status (API status, paused())                                   → fail = REJECT
- *  - deposit limit for this wallet (maxDeposit(wallet)) + MCP build probe   → 0 = DEFER (NAV-staleness effect, per IXS 24 Sep 2026)
+ *  - deposit limit for this wallet (maxDeposit(wallet)) + MCP build probe   → 0 = DEFER (IXS stated a 0 limit relates to NAV staleness; DEFER is Vaulto policy)
  *  - NAV age (subgraph priceUpdatedAt / NAV_UPDATED) vs the staleness policy → stale = DEFER (waiting NAV refresh)
- *  - minimum deposit 100 USDC (confirmed by IXS) vs the intended amount     → fail = REJECT
+ *  - minimum deposit 100 USDC (stated by IXS) vs the intended amount        → fail = REJECT
  *  - eligibility (vault_check_whitelist) for whitelist-gated vaults          → fail = REJECT
- *  - cutoff / settlement (17:00 SGT business days, per IXS) and redemption path → informational
+ *  - cutoff (17:00 SGT business days, stated by IXS; settlement estimate is Vaulto's) and redemption path → informational
  * The checks are facts; SERV reasoning turns them into ALLOCATE / DEFER / REJECT with explicit reasons.
  */
 
@@ -30,17 +31,21 @@ export const REDEEM_PATH = "Redemption requested → awaiting RWA sale & operato
 
 export async function runPreflight(v: RegistryVault, wallet: string, amountUsd?: number, opts: { live?: boolean } = {}): Promise<VaultPreflight> {
   const live = opts.live === true;
-  const key = `${v.routeId}#${wallet.toLowerCase()}#${amountUsd ?? ""}#${live ? "live" : "sim"}`;
+  const replay = await getReplay();
+  const at = replay ? chainAt(replay, v.chainId) : null;
+  const key = `${v.routeId}#${wallet.toLowerCase()}#${amountUsd ?? ""}#${live ? "live" : "sim"}#${at ? `@${at.block}` : "now"}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < TTL_MS) return hit.value;
 
-  const client = publicClient(v.chainId);
+  const client = at?.client ?? publicClient(v.chainId);
   const minUnits = parseUnits(String(v.minDeposit.usd), v.asset.decimals);
+  const gated = v.requiresWhitelist || v.whitelistEnabled === true;
+  // In Replay the IXS MCP (current state only) is not asked; eligibility is read on-chain at the replay block.
   const [blockRes, maxDepRes, mcp, whitelistedMcp] = await Promise.all([
     client.getBlockNumber().catch(() => null),
     client.readContract({ address: v.address, abi: erc4626Abi, functionName: "maxDeposit", args: [wallet as `0x${string}`] }).catch(() => null),
-    probeDeposit(v.routeId, wallet, minUnits),
-    v.requiresWhitelist || v.whitelistEnabled ? checkWhitelist(v.routeId, wallet) : Promise.resolve<boolean | null>(true),
+    at ? Promise.resolve({ ok: true as const, settlement: v.settlement }) : probeDeposit(v.routeId, wallet, minUnits),
+    gated ? (at ? Promise.resolve<boolean | null>(null) : checkWhitelist(v.routeId, wallet)) : Promise.resolve<boolean | null>(true),
   ]);
   const block = blockRes != null ? Number(blockRes) : null;
   // If the IXS MCP could not answer, read whitelist(wallet) on the vault itself.
@@ -50,7 +55,7 @@ export async function runPreflight(v: RegistryVault, wallet: string, amountUsd?:
     const onchain = await client.readContract({ address: v.address, abi: erc4626Abi, functionName: "whitelist", args: [wallet as `0x${string}`] }).catch(() => null);
     if (onchain != null) {
       whitelisted = Boolean(onchain);
-      wlSource = "whitelist(wallet) on-chain (IXS MCP vault_check_whitelist did not answer)";
+      wlSource = at ? `whitelist(wallet) on-chain at block ${at.block}` : "whitelist(wallet) on-chain (IXS MCP vault_check_whitelist did not answer)";
     }
   }
   const unlimited = maxDepRes != null && maxDepRes >= UINT_MAX / 2n;
@@ -85,11 +90,11 @@ export async function runPreflight(v: RegistryVault, wallet: string, amountUsd?:
     value: age == null ? "unknown" : `${fmtAge(age)}${v.nav.pricePerShare != null ? ` · ${v.nav.pricePerShare.toFixed(6)} ${v.asset.symbol}/share` : ""}`,
     detail: age == null
       ? "no NAV timestamp available from the IXS subgraph"
-      : `${age <= env.navStaleHours ? "within" : "older than"} the Vaulto staleness policy of ${env.navStaleHours} h${v.nav.contractThresholdHours != null ? ` (contract navStalenessThreshold() = ${v.nav.contractThresholdHours} h${age > v.nav.contractThresholdHours ? ", exceeded" : ", not exceeded"})` : " (contract exposes no threshold)"}. Last NAV change ${v.nav.updatedAt ? new Date(v.nav.updatedAt * 1000).toISOString() : "?"}${v.nav.block ? ` at block ${v.nav.block}` : ""}${v.nav.lastChangeTx ? ` (tx ${v.nav.lastChangeTx.slice(0, 12)}…)` : ""}. ${navOk ? "" : "Per IXS (24 Sep 2026) a stale NAV drives the deposit limit to 0 until the next refresh: temporarily paused, waiting NAV refresh."}`,
+      : `${age <= env.navStaleHours ? "within" : "older than"} the Vaulto staleness policy of ${env.navStaleHours} h${v.nav.contractThresholdHours != null ? ` (contract navStalenessThreshold() = ${v.nav.contractThresholdHours} h${age > v.nav.contractThresholdHours ? ", exceeded" : ", not exceeded"})` : " (contract exposes no threshold)"}. Last NAV change ${v.nav.updatedAt ? new Date(v.nav.updatedAt * 1000).toISOString() : "?"}${v.nav.block ? ` at block ${v.nav.block}` : ""}${v.nav.lastChangeTx ? ` (tx ${v.nav.lastChangeTx.slice(0, 12)}…)` : ""}. ${navOk ? "" : "IXS stated (24 Sep 2026) that a 0 deposit limit relates to NAV staleness; Vaulto policy treats a stale NAV as temporarily paused, waiting NAV refresh (DEFER)."}`,
     source: v.nav.source,
   });
 
-  // Limit 0 is the NAV-staleness effect, not a closed vault (IXS, 24 Sep 2026): DEFER, unless the wallet is simply not whitelisted.
+  // IXS stated (24 Sep 2026) that a 0 limit relates to NAV staleness. Vaulto policy: DEFER, unless the wallet is simply not whitelisted.
   const limitOk = unlimited || (limitUsd != null && limitUsd >= v.minDeposit.usd);
   checks.push({
     key: "deposit-limit",
@@ -104,12 +109,22 @@ export async function runPreflight(v: RegistryVault, wallet: string, amountUsd?:
         : limitUsd === 0
           ? needsWl && !wlOk
             ? "maxDeposit(wallet) is 0 because the wallet is not whitelisted"
-            : "maxDeposit(wallet) is 0: per IXS (24 Sep 2026) this is the NAV-staleness effect between updates, not a closed vault → temporarily paused, waiting NAV refresh"
+            : "maxDeposit(wallet) is 0. IXS stated (24 Sep 2026) that a 0 limit relates to NAV staleness (NAV drift between updates); Vaulto policy treats it as temporarily paused, waiting NAV refresh (DEFER, not REJECT)"
           : `maxDeposit(wallet) = ${limitUsd} ${v.asset.symbol}`,
     source: `maxDeposit() on-chain · block ${block ?? "?"}`,
   });
 
-  checks.push({
+  if (at)
+    checks.push({
+      key: "mcp",
+      label: "IXS MCP builds the deposit request",
+      ok: true,
+      severity: "info",
+      value: "not used in Replay",
+      detail: "The IXS MCP builds against the current state only. In Replay the calldata is encoded directly against the vault ABI (IXS stated on 24 Sep 2026 that building directly against the contract is allowed) and only simulated at the replay block.",
+      source: "Vaulto Replay mode",
+    });
+  else checks.push({
     key: "mcp",
     label: "IXS MCP builds the deposit request",
     ok: mcp.ok,
@@ -126,7 +141,7 @@ export async function runPreflight(v: RegistryVault, wallet: string, amountUsd?:
     ok: amountOk,
     severity: "block",
     value: `${v.minDeposit.usd} ${v.asset.symbol}`,
-    detail: `${amountUsd == null ? "applies to every request" : amountOk ? `intended ${amountUsd.toLocaleString("en-US")} ${v.asset.symbol} is above the minimum` : `intended ${amountUsd.toLocaleString("en-US")} ${v.asset.symbol} is below the minimum`} · 100 USDC confirmed by IXS (24 Sep 2026)`,
+    detail: `${amountUsd == null ? "applies to every request" : amountOk ? `intended ${amountUsd.toLocaleString("en-US")} ${v.asset.symbol} is above the minimum` : `intended ${amountUsd.toLocaleString("en-US")} ${v.asset.symbol} is below the minimum`} · minimum of 100 USDC stated by IXS (24 Sep 2026)`,
     source: v.minDeposit.source,
   });
 
@@ -143,7 +158,7 @@ export async function runPreflight(v: RegistryVault, wallet: string, amountUsd?:
     source: "Vaulto guardrail · minRedeemAssets() + feeBps() on-chain",
   });
 
-  const cutoff = nextCutoff();
+  const cutoff = nextCutoff(at ? new Date(at.timestamp * 1000) : undefined);
   const observed = v.settlementObserved;
   checks.push({
     key: "cutoff",
@@ -178,8 +193,9 @@ export async function runPreflight(v: RegistryVault, wallet: string, amountUsd?:
     observedSettlementHours: observed.medianHours,
     cutoff: v.settlement === "sync" ? null : cutoff,
     redeemPath: REDEEM_PATH,
-    mcpAccepts: mcp.ok,
+    mcpAccepts: at ? null : mcp.ok,
     mcpReason: mcp.ok ? undefined : mcp.reason,
+    replayBlock: at ? Number(at.block) : null,
     whitelisted: needsWl ? whitelisted : null,
     live,
     minLiveDepositUsd: rm.usd,

@@ -5,6 +5,7 @@ import { getRegistry } from "@/lib/ixs/registry";
 import { RPC_KIND } from "@/lib/chain/client";
 import { env, openservConfigured } from "@/lib/env";
 import { liveOptedIn, setLiveOptIn } from "@/lib/live-optin";
+import { getReplay, setReplay } from "@/lib/replay";
 import { checkInference } from "@/lib/openserv/inference";
 import { getStore } from "@/lib/db";
 import { getUser, resetUser, updateUser } from "@/lib/orchestrator";
@@ -12,7 +13,7 @@ import { getUser, resetUser, updateUser } from "@/lib/orchestrator";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-async function systemInfo(liveOptIn: boolean) {
+async function systemInfo(liveOptIn: boolean, replayOverride?: { value: Awaited<ReturnType<typeof getReplay>> }) {
   const store = await getStore();
   const registry = await getRegistry().catch(() => null);
   const liveDepositMinimums = (registry?.vaults ?? []).map((v) => ({ vault: v.symbol, chainId: v.chainId, ...redeemableMinimum(v.redeem.minAssetsUsd, v.redeem.feeBps, v.asset.symbol) })).map(({ vault, chainId, usd, formula }) => ({ vault, chainId, usd, formula }));
@@ -31,6 +32,7 @@ async function systemInfo(liveOptIn: boolean) {
     liveDepositMinimums,
     liveMode: env.liveMode,
     liveOptIn,
+    replay: replayOverride ? replayOverride.value : await getReplay().catch(() => null),
     maxLiveTxUsdc: env.maxLiveTxUsdc,
     redeemNavBufferPct: REDEEM_NAV_BUFFER_PCT,
     navStaleHours: env.navStaleHours,
@@ -67,17 +69,20 @@ const patchBody = z.object({
   demoMode: z.boolean().optional(),
   /** Live mode opt-in for this wallet in this browser (cookie). Off by default. */
   liveOptIn: z.boolean().optional(),
+  /** Replay block (BNB) for this browser; null returns to the current state. */
+  replayBlock: z.number().int().positive().nullable().optional(),
 });
 
 /** PATCH /api/settings — update treasury goal, risk policy, simulated treasury and the Live opt-in. */
 export async function PATCH(req: Request) {
   const parsed = patchBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return bad(parsed.error.issues[0]?.message ?? "invalid body");
-  const { address, liveOptIn, ...patch } = parsed.data;
+  const { address, liveOptIn, replayBlock, ...patch } = parsed.data;
   return handle(async () => {
     const optIn = liveOptIn === undefined ? await liveOptedIn(address) : await setLiveOptIn(address, liveOptIn);
+    const replay = replayBlock === undefined ? undefined : { value: await setReplay(replayBlock) };
     const user = Object.keys(patch).length ? await updateUser(address, patch) : await getUser(address);
-    return { user, system: await systemInfo(optIn) };
+    return { user, system: await systemInfo(optIn, replay) };
   });
 }
 

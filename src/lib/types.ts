@@ -1,3 +1,5 @@
+import type { ReplayInfo } from "@/lib/chain/config";
+
 export type RiskProfile = "Conservative" | "Balanced" | "Growth";
 
 export interface UserProfile {
@@ -128,6 +130,8 @@ export interface TreasurySnapshot {
   liveCapableChainIds: number[];
   /** Live opt-in for this wallet in this browser (cookie). */
   liveOptIn: boolean;
+  /** Replay mode: the vault and wallet state are read at this past block (null = current state). */
+  replay?: ReplayInfo | null;
 }
 
 export interface VaultStrategy {
@@ -244,6 +248,8 @@ export interface VaultPreflight {
   whitelisted: boolean | null;
   /** True when the pre-flight ran for a Live deposit (opt-in on for this chain). */
   live?: boolean;
+  /** Replay block the checks were read at (null = current state). */
+  replayBlock?: number | null;
   minLiveDepositUsd?: number;
 }
 
@@ -333,7 +339,7 @@ export interface Recommendation {
   feeUsd: number;
   idleUsd: number;
   /** Treasury context at creation; used to expire proposals when conditions change. */
-  context?: { demoMode: boolean; totalUsd: number };
+  context?: { demoMode: boolean; totalUsd: number; replayBlock?: number | null };
   /** Investment-committee style memo written by SERV reasoning. */
   memo?: Memo;
   /** Exact input handed to SERV reasoning and the raw output it returned. */

@@ -72,7 +72,7 @@ export function buildRiskReport(snapshot: TreasurySnapshot, user: UserProfile, r
       id: `nav-${w.vault}-${w.chainName}`,
       kind: "info",
       title: `${w.chainName} vault temporarily paused — waiting NAV refresh`,
-      body: `Deposit limit is 0 while the NAV is stale (last update ${w.navUpdatedAt ? new Date(w.navUpdatedAt * 1000).toISOString().slice(0, 16).replace("T", " ") + " UTC" : "unknown"}${w.navAgeHours != null ? `, ${(w.navAgeHours / 24).toFixed(1)} days ago` : ""}). Per IXS (24 Sep 2026) this is the NAV-staleness effect, not a closed vault. Vaulto watches the limit and NAV on every scan and will flag the vault the moment it reopens.`,
+      body: `Deposit limit is 0 while the NAV is stale (last update ${w.navUpdatedAt ? new Date(w.navUpdatedAt * 1000).toISOString().slice(0, 16).replace("T", " ") + " UTC" : "unknown"}${w.navAgeHours != null ? `, ${(w.navAgeHours / 24).toFixed(1)} days ago` : ""}). IXS stated (24 Sep 2026) that a 0 limit relates to NAV staleness; Vaulto policy defers the vault, watches the limit and NAV on every scan and flags the vault the moment it reopens.`,
       cta: "analyze",
     });
   }

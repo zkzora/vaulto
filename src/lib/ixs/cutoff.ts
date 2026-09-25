@@ -1,14 +1,14 @@
 /**
  * IXS settlement cutoff calculator.
  *
- * Source (IXS answer to hackathon participants, 24 Sep 2026): deposit / redeem requests can be sent at any time and
- * are processed at the next daily cutoff, 17:00 Singapore time (UTC+8) = 09:00 UTC, on Singapore business days
- * (Monday–Friday). Settlement is estimated at one business day after the cutoff. Singapore public holidays come from
- * the public MOM calendar and are marked "assumed, not confirmed by IXS".
+ * IXS stated (24 Sep 2026, reply in the public OpenServ Telegram): requests can be sent at any time and are processed
+ * at the next daily cutoff, 17:00 Singapore time (UTC+8) = 09:00 UTC, on Singapore business days (Monday–Friday).
+ * Vaulto assumptions (not stated by IXS): settlement about one business day after the cutoff, and Singapore public
+ * holidays from the public MOM calendar.
  */
 
 export const CUTOFF_HOUR_UTC = 9; // 17:00 SGT
-export const CUTOFF_SOURCE = "IXS answer to hackathon participants, 24 Sep 2026: daily cutoff 17:00 SGT (09:00 UTC), Singapore business days Mon–Fri; requests are processed at the next cutoff, settlement ≈ 1 business day later";
+export const CUTOFF_SOURCE = "IXS stated (24 Sep 2026): daily cutoff 17:00 SGT (09:00 UTC) on Singapore business days Mon–Fri; requests can be sent anytime and are processed at the next cutoff. Settlement ≈ 1 business day later is a Vaulto estimate";
 
 /** Singapore public holidays (gazetted dates as published; treated as ASSUMED, not confirmed by IXS). */
 export const SG_HOLIDAYS: Record<string, string> = {
@@ -93,7 +93,7 @@ export function nextCutoff(now: Date = new Date()): CutoffInfo {
     estimatedSettlementUtc: settlement.toISOString(),
     estimatedSettlementSgt: sgt(settlement),
     skipped,
-    holidayAssumption: "Singapore public holidays from the public calendar: assumed, not confirmed by IXS",
+    holidayAssumption: "Singapore public holidays from the public calendar and the settlement estimate are Vaulto assumptions, not IXS statements",
     source: CUTOFF_SOURCE,
   };
 }

@@ -25,15 +25,16 @@ function SnapshotBadge({ s }: { s: EvidenceSnapshot }) {
   );
 }
 
-function ServCard({ s }: { s: EvidenceSnapshot }) {
+function ServCard({ s, title }: { s: EvidenceSnapshot; title?: string }) {
   const a = s.analysis;
   if (!a) return null;
   return (
     <Card>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="font-display text-[16px] font-semibold text-ink">SERV verdicts per vault · public demo run</div>
+        <div className="font-display text-[16px] font-semibold text-ink">{title ?? "SERV verdicts per vault · public demo run (current state)"}</div>
         <SnapshotBadge s={s} />
       </div>
+      {s.replay && <div className="mt-2 rounded-xl bg-tint px-3.5 py-2.5 text-[12px] font-semibold text-blue-deep">{s.replay.label} · {s.replay.iso.slice(0, 16).replace("T", " ")} UTC · Avalanche at block {s.replay.avaxBlock ?? "?"}</div>}
       <div className="mt-1 text-[12px] text-muted">
         {a.treasury} · wallet <span className="mono">{a.wallet}</span> · verdicts <b className="text-ink">{(a.decisionSource ?? a.reasoningSource) === "openserv" ? `SERV · OpenServ (${a.reasoningModel ?? "SERV"})` : "local fallback"}</b> · memo <b className="text-ink">{(a.narrativeSource ?? a.reasoningSource) === "openserv" ? "written by OpenServ" : "local engine"}</b>
         {a.confidence != null ? ` · confidence ${a.confidence}%` : ""} · validator overrides <b className="text-ink">{a.validatorOverrides?.length ?? 0}</b> · captured from <span className="mono">{s.baseUrl}</span>
@@ -94,12 +95,12 @@ function ServCard({ s }: { s: EvidenceSnapshot }) {
   );
 }
 
-function SimulationsCard({ s }: { s: EvidenceSnapshot }) {
+function SimulationsCard({ s, title }: { s: EvidenceSnapshot; title?: string }) {
   if (!s.simulations?.length) return null;
   return (
     <Card>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="font-display text-[16px] font-semibold text-ink">Simulated on mainnet · eth_call + state override</div>
+        <div className="font-display text-[16px] font-semibold text-ink">{title ?? "Simulated on mainnet · eth_call + state override (current state)"}</div>
         <SnapshotBadge s={s} />
       </div>
       <div className="mt-1 text-[12px] text-muted">Deposit and redeem calldata built by the IXS MCP, run against the real vault contracts from an empty wallet. Nothing is sent.</div>
@@ -304,17 +305,31 @@ export default function EvidencePage() {
             </div>
 
             <Card>
-              <div className="font-display text-[16px] font-semibold text-ink">Statements Vaulto relies on</div>
-              <ul className="mt-2 grid gap-1.5 text-[13px] text-body">
-                {d.ixsStatements.map((s) => (
-                  <li key={s.statement} className="flex gap-3">
-                    <span className="w-[92px] shrink-0 font-semibold text-faint">{s.date}</span>
-                    <span>
-                      <b className="text-ink">{s.source}:</b> {s.statement}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <div className="font-display text-[16px] font-semibold text-ink">What others stated, and what is Vaulto policy</div>
+              <div className="mt-3 grid gap-4 md:grid-cols-2">
+                <div>
+                  <div className="text-[12px] font-semibold uppercase tracking-[0.05em] text-faint">IXS stated · {d.statements.ixsStated.date} · {d.statements.ixsStated.source}</div>
+                  <ul className="mt-1.5 grid gap-1 text-[13px] text-body">
+                    {d.statements.ixsStated.items.map((t) => (
+                      <li key={t}>• {t}</li>
+                    ))}
+                  </ul>
+                  <div className="mt-3 text-[12px] font-semibold uppercase tracking-[0.05em] text-faint">Judges stated · {d.statements.judgesStated.date}</div>
+                  <ul className="mt-1.5 grid gap-1 text-[13px] text-body">
+                    {d.statements.judgesStated.items.map((t) => (
+                      <li key={t}>• {t}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <div className="text-[12px] font-semibold uppercase tracking-[0.05em] text-faint">Vaulto policy · our interpretation, not a quote</div>
+                  <ul className="mt-1.5 grid gap-1 text-[13px] text-body">
+                    {d.statements.vaultoPolicy.map((t) => (
+                      <li key={t}>• {t}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
               <div className="mt-3 grid gap-1 text-[12px] text-muted sm:grid-cols-2">
                 <div>IXS Vault API: <span className="mono text-ink">{d.sources.ixsApi}</span></div>
                 <div>IXS MCP: <span className="mono text-ink">{d.sources.ixsMcp}</span></div>
@@ -326,6 +341,12 @@ export default function EvidencePage() {
 
             <VaultTable d={d} />
 
+            {d.replaySnapshot && (
+              <>
+                <ServCard s={d.replaySnapshot} title="SERV verdicts per vault · Replay (past block, NAV fresh)" />
+                <SimulationsCard s={d.replaySnapshot} title="Simulated at the replay block · eth_call + state override" />
+              </>
+            )}
             {d.snapshot ? (
               <>
                 <ServCard s={d.snapshot} />

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useVaultoAccount } from "@/hooks/use-account";
 import { Topbar } from "@/components/shell/topbar";
 import { MobileNav, Sidebar } from "@/components/shell/sidebar";
+import { ReplayBanner } from "@/components/dashboard/replay-toggle";
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const { address, ready } = useVaultoAccount();
@@ -25,6 +26,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-canvas">
       <Topbar />
+      <ReplayBanner />
       <div className="flex">
         <Sidebar />
         <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-7">

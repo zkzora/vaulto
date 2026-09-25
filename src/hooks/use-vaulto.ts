@@ -5,7 +5,8 @@ import { api } from "@/lib/client-api";
 import type { AgentLog, AnalysisResult, Recommendation, RecommendationStatus, TransactionRecord, UserPatch } from "@/lib/types";
 import { useVaultoAccount } from "./use-account";
 
-const recKey = (address: string) => `vaulto:rec:${address.toLowerCase()}`;
+/** Recommendations are kept per view: the current state, or one replay block. */
+const recKey = (address: string, replayBlock?: number | null) => `vaulto:rec:${address.toLowerCase()}${replayBlock ? `@${replayBlock}` : ""}`;
 const actKey = (address: string) => `vaulto:activity:${address.toLowerCase()}`;
 const EVIDENCE_KEY = "vaulto:evidence";
 
@@ -63,18 +64,19 @@ export function rememberActivity(address: string, patch: Partial<Activity>) {
 }
 
 /** Last recommendation per wallet, kept in the browser: serverless instances do not share the JSON store. */
-export function rememberRecommendation(address: string, rec: Recommendation | null) {
+export function rememberRecommendation(address: string, rec: Recommendation | null, replayBlock?: number | null) {
   try {
-    if (rec) localStorage.setItem(recKey(address), JSON.stringify(rec));
-    else localStorage.removeItem(recKey(address));
+    const key = recKey(address, rec?.context?.replayBlock ?? replayBlock ?? null);
+    if (rec) localStorage.setItem(key, JSON.stringify(rec));
+    else localStorage.removeItem(key);
   } catch {
     // ignore
   }
 }
 
-export function recallRecommendation(address: string): Recommendation | null {
+export function recallRecommendation(address: string, replayBlock?: number | null): Recommendation | null {
   try {
-    const raw = localStorage.getItem(recKey(address));
+    const raw = localStorage.getItem(recKey(address, replayBlock ?? null));
     return raw ? (JSON.parse(raw) as Recommendation) : null;
   } catch {
     return null;
@@ -89,8 +91,8 @@ export function useTreasury() {
       const data = await api.treasury(address!);
       if (data.recommendation) rememberRecommendation(address!, data.recommendation);
       else {
-        const cached = recallRecommendation(address!);
-        if (cached && cached.context?.demoMode === data.snapshot.demoMode) data.recommendation = cached;
+        const cached = recallRecommendation(address!, data.snapshot.replay?.block ?? null);
+        if (cached && cached.context?.demoMode === data.snapshot.demoMode && (cached.context?.replayBlock ?? null) === (data.snapshot.replay?.block ?? null)) data.recommendation = cached;
       }
       return data;
     },
@@ -161,11 +163,28 @@ export function useRecommendationStatus() {
   return useMutation({
     mutationFn: ({ id, status }: { id: string; status: RecommendationStatus }) => api.setRecommendationStatus(address!, id, status),
     onSuccess: (result, vars) => {
-      const cached = recallRecommendation(address!);
-      if (cached && cached.id === vars.id) rememberRecommendation(address!, { ...cached, status: vars.status });
+      for (const block of [null, ...(result.recommendation?.context?.replayBlock ? [result.recommendation.context.replayBlock] : [])]) {
+        const cached = recallRecommendation(address!, block);
+        if (cached && cached.id === vars.id) rememberRecommendation(address!, { ...cached, status: vars.status });
+      }
       if (result.recommendation) rememberRecommendation(address!, result.recommendation);
       qc.invalidateQueries();
     },
+  });
+}
+
+/** Replay view of this browser (null = current state) and the blocks it can pick. */
+export function useReplayInfo() {
+  return useQuery({ queryKey: ["replay"], queryFn: api.replay, staleTime: 60_000 });
+}
+
+/** Switch between the current state (null) and a replay block; every view refetches. */
+export function useSetReplay() {
+  const { address } = useVaultoAccount();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (block: number | null) => api.setReplay(address!, block),
+    onSuccess: () => qc.invalidateQueries(),
   });
 }
 

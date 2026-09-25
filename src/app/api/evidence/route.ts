@@ -29,9 +29,9 @@ function evidenceFiles(prefix: string): string[] {
   }
 }
 
-/** Newest committed snapshot of a public demo run (evidence/snapshot-YYYY-MM-DD*.json). */
-function latestSnapshot(): Record<string, unknown> | null {
-  const files = evidenceFiles("snapshot-");
+/** Newest committed snapshot of a public demo run (evidence/snapshot-*.json, or evidence/replay-*.json for Replay). */
+function latestSnapshot(prefix = "snapshot-"): Record<string, unknown> | null {
+  const files = evidenceFiles(prefix);
   return files.length ? readEvidenceFile(files[files.length - 1]) : null;
 }
 
@@ -43,14 +43,35 @@ function forkRuns(): Record<string, unknown>[] {
     .sort((a, b) => Number(a.chainId) - Number(b.chainId) || Number(b.forkBlock) - Number(a.forkBlock));
 }
 
-const STATEMENTS = [
-  { date: "2026-09-24", source: "Hackathon judges (IXS track)", statement: "Simulated execution is accepted for the submission (mainnet preferable). No mock tokens or mock vaults." },
-  { date: "2026-09-24", source: "IXS (answer to participants)", statement: "Daily cutoff 17:00 SGT (09:00 UTC) on Singapore business days (Mon–Fri); requests can be sent anytime and are processed at the next cutoff; settlement ≈ 1 business day. Singapore public holidays: assumed, not confirmed by IXS." },
-  { date: "2026-09-24", source: "IXS (answer to participants)", statement: "A deposit limit of 0 is the NAV-staleness effect between updates, not a closed vault → treat as temporarily paused, waiting NAV refresh (DEFER, not REJECT)." },
-  { date: "2026-09-24", source: "IXS (answer to participants)", statement: "Minimum deposit 100 USDC (official confirmation)." },
-  { date: "2026-09-24", source: "IXS (answer to participants)", statement: "Redemption has no claim step: the vault sells the underlying RWA, the operator finalizes and USDC is sent directly to the receiver." },
-  { date: "2026-09-24", source: "IXS (answer to participants)", statement: "Direct contract builds are allowed for the verified Avalanche proxy 0xaD01573b459805E3954398796203d830B57A8bD9 as a fallback when the MCP fails for a non-safety reason; never when limit / NAV checks fail." },
-];
+/**
+ * What others stated (quoted facts only) is kept apart from Vaulto's own policy (our interpretation of those facts).
+ */
+const STATEMENTS = {
+  ixsStated: {
+    date: "2026-09-24",
+    source: "IXS, reply in the public OpenServ Telegram",
+    items: [
+      "Cutoff 17:00 SGT on Singapore business days (Mon–Fri); requests can be sent at any time and are processed at the next cutoff.",
+      "Building directly against the vault contract, without the IXS API or MCP, is allowed.",
+      "Minimum deposit: 100 USDC.",
+      "A deposit limit of 0 relates to NAV staleness (NAV drift between updates).",
+      "Redemption has no claim step: the operator sends USDC directly to the receiver.",
+    ],
+  },
+  judgesStated: {
+    date: "2026-09-24",
+    source: "Hackathon judges",
+    items: ["\"Mainnet is preferable but simulated is acceptable.\""],
+  },
+  vaultoPolicy: [
+    "A deposit limit of 0 or a stale NAV → DEFER (temporarily paused, waiting NAV refresh), not REJECT.",
+    "Direct contract builds only as a fallback when the IXS MCP fails for a non-safety reason, and never when the deposit-limit or NAV checks fail. In Replay (a past block, simulation only) calldata is encoded directly because the MCP builds against the current state only.",
+    "No mock tokens or mock vaults: only the vaults listed by the IXS Vault API and the asset their contracts report through asset().",
+    "Live deposits into ixv1 need at least 104 USDC = ceil(100 / 0.995 × 1.03), so the position stays redeemable above the 100 USDC net minimum (minRedeemAssets) after the 0.5% fee (feeBps) with a 3% NAV buffer.",
+    "Settlement of async requests is estimated at about one business day after the cutoff, and Singapore public holidays come from the public calendar: both are Vaulto assumptions, not IXS statements.",
+    "A NAV older than 72 h, or older than the contract's navStalenessThreshold(), is treated as stale.",
+  ],
+};
 
 const SUBMISSION = {
   path: "simulated",
@@ -67,11 +88,13 @@ const SUBMISSION = {
  */
 export async function GET() {
   return handle(async () => {
-    const snapshot = latestSnapshot();
+    const snapshot = latestSnapshot("snapshot-");
+    const replaySnapshot = latestSnapshot("replay-");
     let vaults: Record<string, unknown>[] = [];
     let registrySource: string = "snapshot";
     try {
-      const registry = await getRegistry();
+      // The vault table always shows today's state, whatever view this browser is in.
+      const registry = await getRegistry({ current: true });
       registrySource = registry.source;
       vaults = registry.vaults.map((v) => ({
         chainId: v.chainId,
@@ -106,7 +129,7 @@ export async function GET() {
       vaults = ((snapshot?.registry as { vaults?: Record<string, unknown>[] } | undefined)?.vaults ?? []) as Record<string, unknown>[];
     }
     const instanceLog = listEvidence().map((e) => ({ ...e, origin: "instance" as const }));
-    const snapshotLog = (((snapshot?.log as unknown[]) ?? []) as Record<string, unknown>[]).map((e) => ({ ...e, origin: "snapshot" as const }));
+    const snapshotLog = [...(((snapshot?.log as unknown[]) ?? []) as Record<string, unknown>[]), ...(((replaySnapshot?.log as unknown[]) ?? []) as Record<string, unknown>[])].map((e) => ({ ...e, origin: "snapshot" as const }));
     return {
       generatedAt: new Date().toISOString(),
       submission: SUBMISSION,
@@ -122,12 +145,13 @@ export async function GET() {
         rpcs: { 56: env.rpcUrl, 43114: env.avaxRpcUrl },
         openserv: { model: env.openservModel, mode: env.openservReasoningMode },
       },
-      ixsStatements: STATEMENTS,
+      statements: STATEMENTS,
       vaults,
       registrySource,
       cutoff: nextCutoff(),
       watch: watchStatus(),
-      snapshot: snapshot ? { ...snapshot, log: undefined, logCount: snapshotLog.length } : null,
+      snapshot: snapshot ? { ...snapshot, log: undefined, logCount: ((snapshot.log as unknown[]) ?? []).length } : null,
+      replaySnapshot: replaySnapshot ? { ...replaySnapshot, log: undefined, logCount: ((replaySnapshot.log as unknown[]) ?? []).length } : null,
       forkRuns: forkRuns(),
       instanceLogCount: instanceLog.length,
       log: [...instanceLog, ...snapshotLog],

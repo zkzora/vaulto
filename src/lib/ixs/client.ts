@@ -6,6 +6,7 @@ import { buildCatalog } from "./catalog";
 import { buildDepositRequest, checkWhitelist } from "./mcp";
 import { getRegistry, type IxsVaultItem, type Registry } from "./registry";
 import type { TxStep, VaultStrategy } from "@/lib/types";
+import { getReplay } from "@/lib/replay";
 
 /**
  * IXS adapter layer (production, BNB Chain + Avalanche).
@@ -13,15 +14,12 @@ import type { TxStep, VaultStrategy } from "@/lib/types";
  * READ  — vault registry (IXS Vault API + contract + subgraph reads), catalog, availability of announced products.
  * WRITE — approve + deposit calldata via the IXS MCP (`vault_build_request_deposit`). Direct contract encoding is a
  *         fallback only for non-safety MCP failures (network / upstream errors), never when the MCP refused for
- *         limit, NAV, whitelist or pause reasons, and never when the pre-flight did not pass. IXS approved direct
- *         builds against the verified Avalanche proxy (24 Sep 2026); every step records which builder made it.
+ *         limit, NAV, whitelist or pause reasons, and never when the pre-flight did not pass (Vaulto policy). IXS
+ *         stated (24 Sep 2026) that building directly against the contract is allowed; every step records its builder.
  *         Nothing is ever signed or submitted server-side.
  */
 
 export { checkWhitelist };
-
-/** Avalanche proxy IXS explicitly allowed direct contract builds for (verified proxy on Snowtrace). */
-export const IXS_DIRECT_BUILD_ALLOWED = new Set(["0xad01573b459805e3954398796203d830b57a8bd9"]);
 
 const TIMEOUT_MS = 8_000;
 let liveCache: { at: number; items: IxsVaultItem[] } | null = null;
@@ -133,6 +131,14 @@ export async function buildDepositSteps(
   const precheck = { kind: "allowance" as const, token: asset, spender: vault, amount: units.toString() };
   const base = { strategyId: strategy.id, vaultName: strategy.vaultName, chainId: strategy.chainId, amount, asset: strategy.asset, units: units.toString() };
 
+  // Replay (a past block, simulation only): the IXS MCP builds against the current state, so the calldata is encoded
+  // directly against the vault ABI. IXS stated (24 Sep 2026) that building directly against the contract is allowed.
+  const replay = await getReplay();
+  if (replay) {
+    if (!opts.preflightOk) throw new Error(`pre-flight did not pass at block ${replay.block}, so Vaulto does not build calldata (DEFER)`);
+    return encodeDirect(strategy, owner, amount, units, vault, asset, base, precheck, `Replay @ block ${replay.block}: calldata encoded directly against the vault ABI (IXS stated on 24 Sep 2026 that building directly against the contract is allowed; the IXS MCP only builds against the current state). Simulated at that block only; never sent.`);
+  }
+
   let mcpError: string | null = null;
   if (strategy.routeId) {
     try {
@@ -159,18 +165,29 @@ export async function buildDepositSteps(
     }
   }
 
-  // The MCP refusing for a safety reason is the verdict: surface it, never encode around it.
+  // Vaulto policy: the MCP refusing for a safety reason is the verdict (surface it, never encode around it), and a
+  // failed pre-flight never gets calldata. Only a non-safety MCP failure falls back to a direct build.
   if (mcpError && SAFETY_REFUSAL.test(mcpError)) throw new Error(mcpError);
   if (!opts.preflightOk) throw new Error(`${mcpError ?? "no MCP route"}; pre-flight did not pass, so Vaulto does not build calldata (DEFER)`);
-  const directAllowed = opts.simulation || IXS_DIRECT_BUILD_ALLOWED.has(vault.toLowerCase());
-  if (!directAllowed) throw new Error(`${mcpError ?? "no MCP route"}; direct contract builds are only allowed for the IXS-approved Avalanche proxy`);
+  return encodeDirect(strategy, owner, amount, units, vault, asset, base, precheck, `IXS MCP unavailable (${mcpError ?? "no route"}); calldata encoded directly against the vault ABI (${strategy.settlement === "sync" ? "ERC-4626 deposit" : "ERC-7540 requestDeposit"}). IXS stated on 24 Sep 2026 that building directly against the contract is allowed; Vaulto uses it only as a fallback for a non-safety MCP failure.`);
+}
 
+function encodeDirect(
+  strategy: VaultStrategy,
+  owner: string,
+  amount: number,
+  units: bigint,
+  vault: `0x${string}`,
+  asset: `0x${string}`,
+  base: { strategyId: string; vaultName: string; chainId: number; amount: number; asset: string; units: string },
+  precheck: { kind: "allowance"; token: `0x${string}`; spender: `0x${string}`; amount: string },
+  note: string,
+): { steps: BuiltStep[]; builtBy: "local-encoder"; note: string } {
   const approve = encodeFunctionData({ abi: erc20Abi, functionName: "approve", args: [vault, units] });
   const deposit =
     strategy.settlement === "sync"
       ? encodeFunctionData({ abi: erc4626Abi, functionName: "deposit", args: [units, owner as `0x${string}`] })
       : encodeFunctionData({ abi: erc4626Abi, functionName: "requestDeposit", args: [units, owner as `0x${string}`, owner as `0x${string}`] });
-  const note = `IXS MCP unavailable (${mcpError ?? "no route"}); calldata encoded directly against the verified vault ABI (${strategy.settlement === "sync" ? "ERC-4626 deposit" : "ERC-7540 requestDeposit"})${IXS_DIRECT_BUILD_ALLOWED.has(vault.toLowerCase()) ? ", direct build approved by IXS (24 Sep 2026)" : ", simulation only"}`;
   return {
     builtBy: "local-encoder",
     note,

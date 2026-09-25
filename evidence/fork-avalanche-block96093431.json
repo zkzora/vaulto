@@ -72,8 +72,9 @@
         "paused": false
       },
       "verdict": "DEFER",
-      "status": "Deposit limit 0 USDC below 100 USDC: temporarily paused — waiting NAV refresh (per IXS, 24 Sep 2026). Nothing built."
+      "status": "Deposit limit 0 USDC below 100 USDC: temporarily paused — waiting NAV refresh (Vaulto policy: DEFER; IXS stated on 24 Sep 2026 that a 0 limit relates to NAV staleness). Nothing built."
     }
   ],
-  "source": "scripts/fork-demo.mjs output"
+  "source": "scripts/fork-demo.mjs output",
+  "relabelled": "Attribution wording updated on 2026-09-25 (IXS statement vs Vaulto policy); fork block, reads and verdicts unchanged from the original script output."
 }

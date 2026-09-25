@@ -8,6 +8,7 @@ import { env } from "@/lib/env";
 import { recordEvidence } from "@/lib/evidence";
 import { getStore, normalizeAddress } from "@/lib/db";
 import { liveOptedIn } from "@/lib/live-optin";
+import { getReplay } from "@/lib/replay";
 import { fmtAmount, fmtUsd } from "@/lib/format";
 import { getStrategies } from "@/lib/ixs/client";
 import { nextCutoff, type CutoffInfo } from "@/lib/ixs/cutoff";
@@ -75,19 +76,21 @@ const log = async (entry: Omit<AgentLog, "id" | "createdAt">) => (await getStore
 
 export async function scan(address: string): Promise<ScanResult> {
   const store = await getStore();
-  const [user, demoState, onchain, prices, { strategies, liveOk }, liveOptIn] = await Promise.all([
+  const [user, demoState, onchain, prices, { strategies, liveOk }, liveOptIn, replay] = await Promise.all([
     store.getOrCreateUser(address),
     store.getDemoState(address),
     readOnchainTreasury(address),
     getPrices(),
     loadStrategies(),
     liveOptedIn(address),
+    getReplay(),
   ]);
-  const snapshot = scanTreasury({ user, onchain, prices, strategies, demoState, liveOptIn });
+  const snapshot = scanTreasury({ user, onchain, prices, strategies, demoState, liveOptIn, replay });
   store.saveTreasurySnapshot(address, snapshot.assets).catch(() => undefined);
 
   // NAV / deposit-limit watcher: log every change the Monitoring Agent sees.
-  const events = watchRegistry(await getRegistry());
+  // The watcher only observes today's state, never a replayed block.
+  const events = replay ? [] : watchRegistry(await getRegistry({ current: true }));
   for (const e of events) {
     await log({ walletAddress: normalizeAddress(address), agentName: "Monitoring Agent", action: "watch", reasoning: e.message, status: e.kind === "limit" && /reopened/.test(e.message) ? "success" : "info", source: "IXS" });
   }
@@ -269,7 +272,7 @@ export async function analyze(address: string): Promise<AnalysisResult> {
     txCount: plan?.txCount ?? 0,
     feeUsd: plan?.feeUsd ?? 0,
     idleUsd: snapshot.idleUsd,
-    context: { demoMode: snapshot.demoMode, totalUsd: snapshot.totalUsd },
+    context: { demoMode: snapshot.demoMode, totalUsd: snapshot.totalUsd, replayBlock: snapshot.replay?.block ?? null },
     preflights,
     validatorOverrides: validatorNotes,
     guardrails: {
@@ -303,6 +306,8 @@ export async function latestRecommendation(address: string) {
 export async function currentRecommendation(address: string, snapshot: TreasurySnapshot) {
   const store = await getStore();
   const rec = await store.getLatestRecommendation(address);
+  // A recommendation belongs to the view it was made in (current state or one replay block).
+  if (rec && (rec.context?.replayBlock ?? null) !== (snapshot.replay?.block ?? null)) return null;
   if (!rec || (rec.status !== "proposed" && rec.status !== "approved")) return rec;
   const demoChanged = rec.context ? rec.context.demoMode !== snapshot.demoMode : false;
   const drift = (a: number, b: number) => Math.abs(a - b) / Math.max(1, Math.max(a, b));
@@ -373,7 +378,10 @@ export async function prepare(address: string, recommendationId: string, simulat
   if (!snapshot.onchain.rpcOk) {
     throw new Error(`${CHAIN_NAME} RPC is unavailable right now, so Vaulto cannot read balances or simulate against the vault. Try again in a few seconds.`);
   }
-  const prepared = await prepareTransaction(rec, strategies, user, snapshot, { forceSimulated: simulate });
+  if ((rec.context?.replayBlock ?? null) !== (snapshot.replay?.block ?? null)) {
+    throw new Error(rec.context?.replayBlock ? `This recommendation was made in Replay @ block ${rec.context.replayBlock}; switch back to that view or run a new analysis.` : "This recommendation was made on the current state; switch Replay off or run a new analysis.");
+  }
+  const prepared = await prepareTransaction(rec, strategies, user, snapshot, { forceSimulated: simulate || Boolean(snapshot.replay) });
   await store.savePrepared(prepared);
   await store.updateRecommendationStatus(rec.id, "approved");
   const built = prepared.steps.every((s) => s.builtBy === "ixs-mcp") ? "IXS MCP (vault_build_request_deposit)" : "direct vault calldata (IXS MCP unreachable)";

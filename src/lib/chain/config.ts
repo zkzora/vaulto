@@ -124,6 +124,33 @@ export const NAV_STALE_HOURS_DEFAULT = 72;
 /** Hard cap per Live transaction (USDC) unless MAX_LIVE_TX_USDC overrides it. */
 export const MAX_LIVE_TX_USDC_DEFAULT = 25_000;
 
+/**
+ * Replay: SERV analysis + simulations against the mainnet state at a fixed past BNB block where the ixv1 NAV was
+ * fresh. 123,779,792 (2026-09-24 15:19:38 UTC, NAV 38.1 h old vs the 48 h contract threshold) is also the block of
+ * the committed fork run 100 USDC → 91.65 ixv1. Reads go through an archive RPC; nothing is ever sent.
+ */
+export const REPLAY_DEFAULT_BLOCK = 123_779_792;
+export const REPLAY_COOKIE = "vaulto_replay";
+
+export interface ReplayInfo {
+  /** BNB Chain block the state is read at. */
+  block: number;
+  timestamp: number;
+  iso: string;
+  /** Avalanche C-Chain block closest in time (at or before), for the Avalanche vaults. */
+  avaxBlock: number | null;
+  avaxTimestamp: number | null;
+  /** ixv1 NAV age at that block vs the contract's navStalenessThreshold(). */
+  navAgeHours: number | null;
+  navThresholdHours: number | null;
+  navFresh: boolean;
+  label: string;
+}
+
+export function replayLabel(block: number, navFresh: boolean, navAgeHours?: number | null): string {
+  return `Replay: BNB mainnet state @ block ${block} (${navFresh ? "NAV fresh at that block" : `NAV ${navAgeHours != null ? navAgeHours.toFixed(1) : "?"} h old at that block`})`;
+}
+
 export type ExecutionMode = "simulated" | "live";
 export type RpcKind = "mainnet" | "fork";
 
