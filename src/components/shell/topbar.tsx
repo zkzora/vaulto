@@ -75,7 +75,7 @@ export function Topbar() {
         )}
         {waiting.length > 0 && (
           <Link href="/app/vaults" title={waiting.map((w) => `${w.chainName} ${w.symbol}: limit 0, NAV ${w.navAgeHours != null ? `${(w.navAgeHours / 24).toFixed(1)} d old` : "unknown"}`).join(" · ")}>
-            <Pill tone="muted">{waiting.length} vault{waiting.length > 1 ? "s" : ""} waiting NAV refresh</Pill>
+            <Pill tone="muted">{snapshot?.replay ? "Today: " : ""}{waiting.length} vault{waiting.length > 1 ? "s" : ""} waiting NAV refresh</Pill>
           </Link>
         )}
         {account.isWallet && account.chainId != null && !SUPPORTED_CHAIN_IDS.includes(account.chainId) && <Pill tone="red">Wrong network</Pill>}
