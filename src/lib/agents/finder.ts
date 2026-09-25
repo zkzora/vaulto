@@ -21,10 +21,12 @@ export function findOpportunities(snapshot: TreasurySnapshot, strategies: VaultS
   const idleAssets = snapshot.assets.filter((a) => a.idle && a.idleUsd > 0);
   const out: Candidate[] = [];
   for (const s of strategies) {
+    // Every IXS vault is a candidate, even without idle capital in its asset, so each one gets a SERV verdict
+    // (an empty wallet sees "REJECT: nothing idle to allocate" per vault instead of no verdicts at all).
     const idle = idleAssets.find((a) => a.symbol === s.asset);
-    if (!idle) continue;
     const available = s.status === "active" && s.availability !== "announced";
     const notes: string[] = [];
+    if (!idle) notes.push(`No idle ${s.asset} in this treasury`);
     let fit = (s.apy ?? 0) * 10 + s.riskScore * 0.4;
     if (available && s.executable) {
       fit += s.chainId === snapshot.chainId ? 12 : 8;
@@ -45,12 +47,12 @@ export function findOpportunities(snapshot: TreasurySnapshot, strategies: VaultS
     }
     if (user.riskProfile === "Conservative" && s.riskScore < 90) fit -= 10;
     if (user.riskProfile === "Growth") fit += ((s.apy ?? 0) - 4) * 4;
-    if (s.settlement === "async-erc7540") notes.push("Async settlement (request → claim)");
+    if (s.settlement === "async-erc7540") notes.push("Async settlement (request → operator settles after the cutoff, no claim step)");
     out.push({
       strategy: s,
       asset: s.asset,
-      idleAmount: idle.idleAmount,
-      idleUsd: idle.idleUsd,
+      idleAmount: idle?.idleAmount ?? 0,
+      idleUsd: idle?.idleUsd ?? 0,
       apyGain: s.apy ?? 0,
       fitScore: Math.round(fit),
       notes,

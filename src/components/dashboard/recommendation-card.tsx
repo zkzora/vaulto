@@ -71,7 +71,9 @@ export function RecommendationCard({ rec, snapshot }: { rec: Recommendation | nu
         </div>
         <div className="mt-3 font-display text-[18px] font-semibold text-ink">{rec?.status === "rejected" ? "Last recommendation rejected" : rec?.status === "dismissed" ? (rec.legs.length ? "Last recommendation dismissed" : rec.headline) : "No open recommendation"}</div>
         <div className="mt-2 text-[14px] leading-relaxed text-body">
-          {snapshot.idleUsd > 0
+          {rec?.status === "dismissed" && !rec.legs.length
+            ? rec.summary
+            : snapshot.idleUsd > 0
             ? `${fmtUsd(snapshot.idleUsd)} (${snapshot.idlePct}%) of the treasury is idle. Run an analysis and OpenServ will reason about the best IXS RWA strategy under your policy.`
             : "The treasury is fully deployed within policy. Vaulto keeps monitoring and will draft a recommendation when conditions change."}
         </div>
@@ -96,7 +98,7 @@ export function RecommendationCard({ rec, snapshot }: { rec: Recommendation | nu
           <OpenServBadge />
         </div>
         <div className="flex items-center gap-2">
-          {rec.reasoningSource === "local" && <Pill tone="muted">Local reasoning</Pill>}
+          {rec.reasoningSource === "local" ? <Pill tone="muted">Local reasoning</Pill> : rec.narrativeSource === "local" ? <Pill tone="muted">Memo by local engine</Pill> : null}
           <Pill tone="blue" className="h-6 px-2.5 text-[12px]">{rec.confidence}% confidence</Pill>
         </div>
       </div>

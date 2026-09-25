@@ -86,7 +86,9 @@ export interface SimulationResponse {
   minRedeemUsd?: number | null;
   feeBps?: number | null;
   redeem?: RedeemSimulation;
+  shares?: number;
   steps: { index: number; kind: string; to: string; data: string; builtBy: string; simulation?: StepSimulation }[];
+  evidence?: Omit<EvidenceLogEntry, "origin">[];
 }
 
 export interface WatchEvent {
@@ -118,8 +120,8 @@ export interface EvidenceLogEntry {
   response?: unknown;
   ok: boolean;
   durationMs?: number;
-  /** "instance": recorded by the server instance answering now; "snapshot": from the committed public demo run. */
-  origin: "instance" | "snapshot";
+  /** "instance": recorded by the server instance answering now; "browser": returned to this browser's own requests; "snapshot": from the committed public demo run. */
+  origin: "instance" | "browser" | "snapshot";
 }
 
 export interface EvidenceSimulation {
@@ -215,7 +217,7 @@ export const api = {
   setRecommendationStatus: (address: string, id: string, status: RecommendationStatus) =>
     request<{ recommendation: Recommendation | null }>("/api/recommendation", { method: "PATCH", body: JSON.stringify({ address, id, status }) }),
   prepare: (address: string, recommendationId: string, simulate: boolean, recommendation?: Recommendation | null) =>
-    request<{ prepared: PreparedTransaction }>("/api/execute", { method: "POST", body: JSON.stringify({ address, recommendationId, simulate, recommendation: recommendation ?? undefined }) }),
+    request<{ prepared: PreparedTransaction; evidence?: Omit<EvidenceLogEntry, "origin">[] }>("/api/execute", { method: "POST", body: JSON.stringify({ address, recommendationId, simulate, recommendation: recommendation ?? undefined }) }),
   finalize: (address: string, preparedId: string, results: { index: number; hash?: string; status: TxStatus; error?: string }[], extra?: { prepared?: PreparedTransaction; recommendation?: Recommendation | null }) =>
     request<{ transactions: TransactionRecord[]; recommendation: Recommendation | null }>("/api/execute", {
       method: "PUT",

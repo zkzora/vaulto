@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 
 /**
@@ -22,6 +23,18 @@ export interface EvidenceEntry {
 }
 
 const MAX = 400;
+/** Per-request sinks: entries recorded while serving a request are also returned with that request's response. */
+const sinks = new AsyncLocalStorage<EvidenceEntry[]>();
+
+/**
+ * Runs `fn` and returns the evidence it recorded. Serverless instances do not share the in-memory log, so the
+ * analyze / simulate / execute responses carry their own entries (SERV input/output, IXS MCP calls, simulations).
+ */
+export async function collectEvidence<T>(fn: () => Promise<T>): Promise<{ result: T; evidence: EvidenceEntry[] }> {
+  const sink: EvidenceEntry[] = [];
+  const result = await sinks.run(sink, fn);
+  return { result, evidence: sink };
+}
 const g = globalThis as unknown as { __vaultoEvidence?: EvidenceEntry[] };
 const buffer = (): EvidenceEntry[] => (g.__vaultoEvidence ??= []);
 
@@ -44,6 +57,7 @@ export function recordEvidence(entry: Omit<EvidenceEntry, "id" | "at">): Evidenc
   const e: EvidenceEntry = { id: randomUUID(), at: new Date().toISOString(), ...entry, request: trim(entry.request), response: trim(entry.response) };
   const b = buffer();
   b.push(e);
+  sinks.getStore()?.push(e);
   if (b.length > MAX) b.splice(0, b.length - MAX);
   return e;
 }

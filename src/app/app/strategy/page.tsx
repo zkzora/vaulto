@@ -66,7 +66,7 @@ export default function StrategyPage() {
   };
   const stepper = [
     ["Treasury scanned", "Idle capital + pre-flight per vault"],
-    ["SERV reasoning", rec.reasoningSource === "openserv" ? "One verdict per vault + memo" : "Local engine (OpenServ unavailable)"],
+    ["SERV reasoning", (rec.decisionSource ?? rec.reasoningSource) === "openserv" ? ((rec.narrativeSource ?? rec.reasoningSource) === "openserv" ? "One verdict per vault + memo" : "One verdict per vault (memo by the local engine)") : "Local engine (OpenServ unavailable)"],
     ["Recommended allocation", rec.status === "approved" || rec.status === "executed" ? "Approved" : closed ? "Reviewed" : hasLegs ? "Review below" : "Nothing allocatable"],
     ["Your approval", rec.status === "executed" ? (live ? "Executed on-chain" : "Simulation passed") : rec.status === "approved" ? (live ? "Awaiting wallet signature" : "Run the simulation") : closed ? (rec.status === "rejected" ? "Rejected" : "Dismissed") : live ? "Wallet signature" : "Simulation"],
   ];
@@ -314,7 +314,7 @@ export default function StrategyPage() {
 
           {rec.memo && (
             <Card>
-              <CardTitle action={<Pill tone={rec.reasoningSource === "openserv" ? "green" : "muted"}>{rec.reasoningSource === "openserv" ? "written by OpenServ" : "local engine"}</Pill>}>Allocation memo</CardTitle>
+              <CardTitle action={<Pill tone={(rec.narrativeSource ?? rec.reasoningSource) === "openserv" ? "green" : "muted"}>{(rec.narrativeSource ?? rec.reasoningSource) === "openserv" ? "written by OpenServ" : "local engine (OpenServ narrative unavailable)"}</Pill>}>Allocation memo</CardTitle>
               <div className="mt-1 text-[12px] text-muted">{rec.memo.title}</div>
               <div className="mt-3 grid gap-3">
                 {rec.memo.sections.map((sec) => (

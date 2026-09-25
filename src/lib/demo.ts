@@ -1,4 +1,3 @@
-import { STRATEGY_IDS } from "./chain/config";
 import type { DemoState } from "./types";
 
 /**
@@ -20,8 +19,9 @@ export interface DemoHolding {
 
 export const DEMO_HOLDINGS: DemoHolding[] = [
   { symbol: "BTC", name: "Bitcoin · treasury reserve", amount: 12.4, idleDays: 23, color: "#F2A93B" },
-  { symbol: "USDC", name: "USDC · runway", amount: 595_270, idleDays: 23, color: "#2775CA" },
-  { symbol: "USDC", name: "USDC · runway", amount: 347_250, deployedIn: STRATEGY_IDS.hybrid, idleDays: 0, color: "#2775CA" },
+  // No seeded vault position: the real ixv1 vault holds only a few hundred USDC, so a pre-existing simulated position
+  // would contradict its on-chain totalAssets. Positions appear only after a simulated execution, labelled simulated.
+  { symbol: "USDC", name: "USDC · runway", amount: 942_520, idleDays: 23, color: "#2775CA" },
 ];
 
 export const ASSET_META: Record<string, { name: string; color: string }> = {

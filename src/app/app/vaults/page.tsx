@@ -189,7 +189,7 @@ export default function VaultsPage() {
               {!announced && (
                 <div className="mt-2 flex justify-between gap-3 text-[12px] text-muted">
                   <span>Your position</span>
-                  <span className="font-semibold text-ink">{p ? fmtUsd(p.valueUsd) : "—"}</span>
+                  <span className="font-semibold text-ink">{p ? `${fmtUsd(p.valueUsd)}${p.source === "demo" ? " · simulated" : ""}` : "—"}</span>
                 </div>
               )}
               {s.executable && (
@@ -268,7 +268,7 @@ export default function VaultsPage() {
               )}
               <div className="mt-auto flex flex-wrap items-center justify-between gap-2 pt-4">
                 <Pill tone={s.executable ? (s.depositLimitUsd === 0 ? "amber" : "green") : "muted"}>
-                  {s.executable ? (s.depositLimitUsd === 0 ? "Temporarily paused · waiting NAV refresh" : `Executable · IXS MCP · ${mode === "live" ? "Live" : "Simulated"}`) : (s.capacityNote ?? "Not executable")}
+                  {s.executable ? (s.requiresWhitelist ? "Licensed · KYC whitelist required" : s.depositLimitUsd === 0 ? "Temporarily paused · waiting NAV refresh" : `Executable · IXS MCP · ${mode === "live" ? "Live" : "Simulated"}`) : (s.capacityNote ?? "Not executable")}
                 </Pill>
                 {s.explorerUrl && (
                   <a href={s.explorerUrl} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 text-[12px] font-semibold text-blue-deep">

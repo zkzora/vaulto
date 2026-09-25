@@ -24,11 +24,18 @@ const started = new Date();
 const OUT = process.env.OUT || join("evidence", `snapshot-${started.toISOString().slice(0, 10)}.json`);
 const log = (...a) => console.error("[snapshot]", ...a);
 
+/** Evidence each response carried for its own request (serverless instances do not share the in-memory log). */
+const requestEvidence = [];
+
 async function call(method, path, body) {
   const t = Date.now();
   const res = await fetch(`${BASE}${path}`, { method, headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
   const json = await res.json().catch(() => ({}));
-  log(`${method} ${path} → ${res.status} in ${Date.now() - t} ms`);
+  if (Array.isArray(json.evidence) && path !== "/api/evidence") {
+    requestEvidence.push(...json.evidence);
+    delete json.evidence;
+  }
+  log(`${method} ${path} → ${res.status} in ${Date.now() - t} ms${requestEvidence.length ? ` · ${requestEvidence.length} evidence entries so far` : ""}`);
   return { status: res.status, json };
 }
 
@@ -74,7 +81,7 @@ async function main() {
       ok: Boolean(dep?.simulation?.ok),
       summary: dep?.simulation ? (dep.simulation.ok ? `${p.label}: eth_call at block ${dep.simulation.block} returns ${fmt(dep.simulation.expectedShares)} ${dep.simulation.shareSymbol ?? "shares"} (previewDeposit ${fmt(dep.simulation.previewShares)}) for ${fmt(dep.amount, 2)} ${dep.asset}, gas ≈ ${fmt(dep.simulation.gasEstimate, 0)}. Nothing sent.` : `${p.label}: reverts: ${dep.simulation.revertReason}`) : prep.json.error ?? "no prepared transaction",
       request: { endpoint: "POST /api/execute", address: DEMO, recommendationId: rec.id, simulate: true },
-      response: p ? { label: p.label, executionMode: p.executionMode, notes: p.notes, steps: p.steps.map((s) => ({ kind: s.kind, to: s.to, builtBy: s.builtBy, amount: s.amount, asset: s.asset, dataPrefix: s.data.slice(0, 10), simulation: s.simulation })) } : prep.json,
+      response: p ? { label: p.label, executionMode: p.executionMode, notes: p.notes, steps: p.steps.map((s) => ({ kind: s.kind, to: s.to, data: s.data, builtBy: s.builtBy, amount: s.amount, asset: s.asset, simulation: s.simulation })) } : prep.json,
     });
   }
   for (const [strategyId, amount] of [["ixhyb-bnb", 104], ["ixhyb-avax", 100]]) {
@@ -90,7 +97,12 @@ async function main() {
   const evidence = await call("GET", "/api/evidence");
   const e = evidence.json;
   const since = started.getTime() - 60_000;
-  const runLog = (e.log ?? []).filter((x) => x.origin !== "snapshot" && Date.parse(x.at) >= since).map(({ origin, ...x }) => x).slice(0, 200);
+  const instanceLog = (e.log ?? []).filter((x) => x.origin !== "snapshot" && Date.parse(x.at) >= since).map(({ origin, ...x }) => x);
+  const seen = new Set();
+  const runLog = [...requestEvidence, ...instanceLog]
+    .filter((x) => (seen.has(x.id) ? false : (seen.add(x.id), true)))
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .slice(0, 250);
   const forkRuns = readdirSync("evidence").filter((f) => f.startsWith("fork-") && f.endsWith(".json")).sort().map((f) => ({ file: `evidence/${f}`, ...JSON.parse(readFileSync(join("evidence", f), "utf8")) }));
 
   const allocate = rec.decisions.filter((d) => d.verdict === "allocate");

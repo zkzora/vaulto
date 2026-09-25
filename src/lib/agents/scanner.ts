@@ -165,7 +165,7 @@ export function scanTreasury(input: ScanInput): TreasurySnapshot {
     (m, a) => (a.allocationPct > m.pct ? { symbol: a.symbol, pct: a.allocationPct } : m),
     { symbol: "—", pct: 0 },
   );
-  const healthScore = computeHealth({
+  const healthScore = totalUsd <= 0 ? 0 : computeHealth({
     liquidPct: idlePct,
     liquidityFloorPct: user.liquidityFloorPct,
     positions,

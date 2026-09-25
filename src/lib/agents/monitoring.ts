@@ -84,7 +84,7 @@ export function buildRiskReport(snapshot: TreasurySnapshot, user: UserProfile, r
       id: "idle",
       kind: "action",
       title: `Idle capital at ${snapshot.idlePct}% for ${snapshot.idleDays} days: allocation into IXS strategies drafted`,
-      body: `Adds about ${fmtUsd(rec.extraMonthlyUsd)} a month and leaves ${rec.after.liquidPct}% liquid. Vaulto has prepared ${rec.legs.length} deposit${rec.legs.length > 1 ? "s" : ""} through IXS Agent Rail.`,
+      body: `Adds about ${fmtUsd(rec.extraMonthlyUsd)} a month and leaves ${rec.after.liquidPct}% liquid. Vaulto has prepared ${rec.legs.length} deposit${rec.legs.length > 1 ? "s" : ""} built by the IXS MCP.`,
       cta: "review",
     });
   } else if (snapshot.idlePct > user.liquidityFloorPct + 10) {

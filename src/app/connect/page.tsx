@@ -187,7 +187,7 @@ export default function ConnectPage() {
           </div>
           {error && <div className="mt-4 rounded-xl bg-amber-tint px-4 py-3 text-[13px] leading-relaxed text-amber">{error}</div>}
           <div className="mt-6 border-t border-line-2 pt-5 text-[13px] leading-[1.55] text-muted">
-            By connecting you agree to the <a href="#" className="text-blue-deep">Terms</a>. Connecting only lets Vaulto read balances on {CHAIN_NAME}; every transaction still needs your signature.
+            Connecting only lets Vaulto read balances on {CHAIN_NAME} and Avalanche. Deposits are simulated by default; in Live mode (opt-in) every transaction still needs your signature.
           </div>
         </div>
       </div>

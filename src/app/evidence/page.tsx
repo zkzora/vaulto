@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { useEvidence } from "@/hooks/use-vaulto";
+import { recallEvidence, useEvidence } from "@/hooks/use-vaulto";
 import { chainInfo } from "@/lib/chain/config";
 import type { EvidenceResponse, EvidenceSnapshot } from "@/lib/client-api";
 import { Card, ErrorState, Icons, Pill, Skeleton, VaultoLogo, cx } from "@/components/ui";
@@ -211,7 +211,7 @@ function VaultTable({ d }: { d: EvidenceResponse }) {
                 <span className="text-[12px]">{vault.settlement}</span>
                 <span className={cx("font-display font-semibold", !vault.depositLimit.unlimited && (vault.depositLimit.usd ?? 0) === 0 ? "text-amber" : "")}>
                   {vault.depositLimit.unlimited ? "unlimited" : vault.depositLimit.usd == null ? "?" : `${vault.depositLimit.usd} USDC`}
-                  <div className="text-[10px] font-normal text-faint">{!vault.depositLimit.unlimited && (vault.depositLimit.usd ?? 0) === 0 ? "waiting NAV refresh → DEFER" : vault.depositLimit.source}</div>
+                  <div className="text-[10px] font-normal text-faint">{!vault.depositLimit.unlimited && (vault.depositLimit.usd ?? 0) === 0 ? (vault.requiresWhitelist ? "not whitelisted → REJECT" : "waiting NAV refresh → DEFER") : vault.depositLimit.source}</div>
                 </span>
                 <span className="font-display font-semibold">{vault.pricePerShare?.toFixed(6) ?? "—"}</span>
                 <span className="text-[12px]">
@@ -252,6 +252,8 @@ function VaultTable({ d }: { d: EvidenceResponse }) {
 export default function EvidencePage() {
   const q = useEvidence();
   const [kind, setKind] = useState<(typeof KINDS)[number]>("all");
+  // Entries returned to this browser's own analyze / simulate / execute calls (other serverless instances).
+  const [browserLog] = useState(() => (typeof window === "undefined" ? [] : recallEvidence()));
 
   const exportJson = () => {
     if (!q.data) return;
@@ -265,7 +267,10 @@ export default function EvidencePage() {
   };
 
   const d = q.data;
-  const log = d ? d.log.filter((e) => kind === "all" || e.kind === kind) : [];
+  const instanceIds = new Set((d?.log ?? []).map((e) => e.id));
+  const browserEntries = browserLog.filter((e) => !instanceIds.has(e.id)).map((e) => ({ ...e, origin: "browser" as const }));
+  const merged = d ? [...d.log.filter((e) => e.origin === "instance"), ...browserEntries, ...d.log.filter((e) => e.origin === "snapshot")] : [];
+  const log = merged.filter((e) => kind === "all" || e.kind === kind);
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -361,7 +366,7 @@ export default function EvidencePage() {
             <Card>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="font-display text-[16px] font-semibold text-ink">
-                  Call log · {d.instanceLogCount} from this server instance + {d.log.length - d.instanceLogCount} from the committed snapshot
+                  Call log · {d.instanceLogCount} from this server instance{browserEntries.length ? ` + ${browserEntries.length} from this browser's requests` : ""} + {d.log.length - d.instanceLogCount} from the committed snapshot
                 </div>
                 <div className="flex flex-wrap gap-1">
                   {KINDS.map((k) => (
@@ -379,7 +384,7 @@ export default function EvidencePage() {
                         {e.kind}
                       </Pill>
                       <Pill tone="muted" className="h-5 px-1.5 text-[10px]">
-                        {e.origin === "snapshot" ? "snapshot" : "this instance"}
+                        {e.origin === "snapshot" ? "snapshot" : e.origin === "browser" ? "this browser" : "this instance"}
                       </Pill>
                       <span className="font-semibold text-ink">{e.label}</span>
                       <span className="text-faint">
