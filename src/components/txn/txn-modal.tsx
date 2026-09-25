@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { fmtUsd, shortAddress } from "@/lib/format";
 import type { PreparedTransaction, StepSimulation } from "@/lib/types";
-import { LIVE_MODE_MIN_USDC, chainInfo } from "@/lib/chain/config";
+import { chainInfo } from "@/lib/chain/config";
 import { Icons, IxsMark, Pill, Skeleton, cx } from "@/components/ui";
 import type { StepState } from "./txn-provider";
 
@@ -193,7 +193,7 @@ export function TxnModal({ prepared, loading, error, steps, executing, isDemo, c
               <span className="text-[13px] leading-relaxed text-body">
                 {live
                   ? `I understand my wallet will ask me to sign ${prepared.steps.length} transaction${prepared.steps.length > 1 ? "s" : ""} on ${chains} (real USDC into the IX High Yield Bond vault; approvals are for the exact amount; guardrail: at most ${(maxLiveTxUsdc ?? 0).toLocaleString("en-US")} USDC per transaction). ${hasAsync ? "An async request is not a deposit until the IXS operator settles it. " : ""}Vaulto never holds my funds or keys; nothing moves without my signature.`
-                  : `${prepared.label}: the approve and deposit calldata built by the IXS MCP run through eth_call with a state override (USDC balance + allowance) against the real IX High Yield Bond vault. No transaction is sent and no funds move.${isDemo ? " Connect a wallet holding" : " Hold"} ≥ ${LIVE_MODE_MIN_USDC} USDC on the vault's chain to switch to Live mode.`}
+                  : `${prepared.label}: the approve and deposit calldata built by the IXS MCP run through eth_call with a state override (USDC balance + allowance) against the real IX High Yield Bond vault. No transaction is sent and no funds move.${isDemo ? " The demo treasury is always simulated." : " Live mode is an opt-in capability in Settings."}`}
               </span>
             </div>
 

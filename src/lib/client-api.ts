@@ -107,17 +107,71 @@ export interface WatchStatus {
   waiting: WatchStatus["entries"];
 }
 
+export interface EvidenceLogEntry {
+  id: string;
+  at: string;
+  kind: string;
+  label: string;
+  chainId?: number;
+  blockNumber?: number | null;
+  request?: unknown;
+  response?: unknown;
+  ok: boolean;
+  durationMs?: number;
+  /** "instance": recorded by the server instance answering now; "snapshot": from the committed public demo run. */
+  origin: "instance" | "snapshot";
+}
+
+export interface EvidenceSimulation {
+  label: string;
+  ok: boolean;
+  summary: string;
+  request?: unknown;
+  response?: unknown;
+}
+
+/** Committed snapshot of a public demo run (evidence/snapshot-*.json). */
+export interface EvidenceSnapshot {
+  file?: string;
+  capturedAt: string;
+  baseUrl: string;
+  deployment?: { source?: string; commit?: string | null };
+  note?: string;
+  openserv?: { ping?: { ok: boolean; model?: string; error?: string }; model?: string };
+  analysis?: {
+    wallet: string;
+    treasury: string;
+    reasoningSource: string;
+    reasoningModel?: string;
+    confidence?: number;
+    title?: string;
+    headline?: string;
+    validatorOverrides?: string[];
+    decisions: { strategyId: string; vault?: string; chain?: string; verdict: string; amount?: number; reason: string }[];
+    preflights?: Record<string, { verdict: string; blockNumber: number | null; chainId: number; depositLimitUsd: number | null; depositLimitUnlimited: boolean; navUpdatedAt: string | null; navAgeHours: number | null; minDepositUsd?: number; minLiveDepositUsd?: number }>;
+    legs?: { vaultName: string; amount: number; asset: string; chainName?: string; amountUsd?: number }[];
+    memo?: { title: string; sections: { heading: string; body: string }[] };
+    trace?: { decision?: { input: unknown; output: unknown }; narrative?: { input: unknown; output: unknown } };
+    guardrails?: Record<string, unknown>;
+  };
+  simulations?: EvidenceSimulation[];
+  logCount?: number;
+}
+
 export interface EvidenceResponse {
   generatedAt: string;
+  submission: { path: string; label: string; liveExecuted: boolean; note: string };
+  deployment: { source: string; commit: string | null; ref: string | null; repo: string | null };
   sources: { ixsApi: string; ixsMcp: string; rpcs: Record<string, string>; openserv: { model: string; mode: string } };
-  ixsStatements: { date: string; statement: string }[];
+  ixsStatements: { date: string; source: string; statement: string }[];
   vaults: Record<string, unknown>[];
-  registrySource: "api" | "fallback";
+  registrySource: string;
   cutoff: CutoffInfoLite;
   watch: WatchStatus;
-  forkRun: Record<string, unknown> | null;
-  forkRunAvalanche: Record<string, unknown> | null;
-  log: { id: string; at: string; kind: string; label: string; chainId?: number; blockNumber?: number | null; request?: unknown; response?: unknown; ok: boolean; durationMs?: number }[];
+  snapshot: EvidenceSnapshot | null;
+  forkRuns: Record<string, unknown>[];
+  instanceLogCount: number;
+  log: EvidenceLogEntry[];
 }
 
 export interface TreasuryResponse {
@@ -140,6 +194,10 @@ export interface SystemInfo {
   rpcKind: "mainnet" | "fork";
   rpcUrl: string;
   liveMinUsdc: number;
+  liveMode: "opt-in" | "off";
+  liveOptIn: boolean;
+  redeemNavBufferPct: number;
+  deployment: { source: "git" | "vercel" | "local"; commit: string | null; ref: string | null; repo: string | null };
   maxLiveTxUsdc: number;
   navStaleHours: number;
   minDepositUsdc: number;
@@ -170,6 +228,8 @@ export const api = {
   settings: (address: string) => request<{ user: UserProfile; system: SystemInfo }>(`/api/settings?address=${address}`),
   updateSettings: (address: string, patch: UserPatch) =>
     request<{ user: UserProfile; system: SystemInfo }>("/api/settings", { method: "PATCH", body: JSON.stringify({ address, ...patch }) }),
+  setLiveOptIn: (address: string, on: boolean) =>
+    request<{ user: UserProfile; system: SystemInfo }>("/api/settings", { method: "PATCH", body: JSON.stringify({ address, liveOptIn: on }) }),
   reset: (address: string) => request<{ ok: boolean }>(`/api/settings?address=${address}`, { method: "DELETE" }),
   evidence: () => request<EvidenceResponse>("/api/evidence"),
   simulate: (address: string, strategyId: string, amount?: number, action: "deposit" | "redeem" = "deposit", shares?: number) =>

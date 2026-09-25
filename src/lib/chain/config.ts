@@ -3,9 +3,10 @@ import { avalanche, bsc, type Chain } from "viem/chains";
 /**
  * Chains Vaulto routes to: the IXS IX High Yield Bond vaults live on BNB Chain and Avalanche mainnet.
  * Execution always runs against the real IXS contracts, in one of three modes:
- *  - "simulated": eth_call + state override ("Simulated on <chain> mainnet") while the wallet holds < 100 USDC
- *  - "live":      real deposits signed by the wallet, switched on automatically at >= 100 USDC on that chain
- *  - fork:        the same flows against a local Anvil fork ("Mainnet fork", scripts/fork-demo.mjs)
+ *  - "simulated": eth_call + state override ("Simulated on <chain> mainnet"). The default, and the mode of the submission.
+ *  - "live":      real deposits signed by the wallet. Opt-in per wallet in Settings (browser cookie), only on chains where
+ *                 the wallet holds >= 100 USDC, capped per transaction. A ready capability, not executed in this submission.
+ *  - fork:        the same flows against a local Anvil fork ("Mainnet fork (block N)", scripts/fork-demo.mjs)
  * This file is client-safe (no server secrets).
  */
 export interface ChainInfo {
@@ -76,8 +77,48 @@ export function strategyIdFor(chainId: number, requiresWhitelist: boolean): stri
 
 /** Minimum deposit the agent enforces for the IXS vaults (USDC); the vaults enforce the same on-chain. */
 export const MIN_DEPOSIT_USDC = 100;
-/** Live mode (real, wallet-signed deposits) switches on automatically at this USDC balance on the vault's chain. */
+/** Live mode (real, wallet-signed deposits) is opt-in, and only available on chains where the wallet holds this much USDC. */
 export const LIVE_MODE_MIN_USDC = 100;
+/** Cookie carrying the per-browser Live opt-in (comma-separated wallet addresses): stateless across serverless instances. */
+export const LIVE_OPT_IN_COOKIE = "vaulto_live";
+/** Buffer over the net redeem minimum, so a Live position stays redeemable if the NAV drifts down between updates. */
+export const REDEEM_NAV_BUFFER_PCT = 3;
+
+export interface RedeemableMinimum {
+  /** Smallest Live deposit (asset units ≈ USD) whose shares can always be redeemed above the vault's net minimum. */
+  usd: number;
+  formula: string;
+  reason: string;
+  minRedeemNetUsd: number | null;
+  feeBps: number | null;
+}
+
+/**
+ * Live deposit minimum that keeps the whole position redeemable: ceil(minRedeemAssets / (1 - fee) × (1 + buffer)),
+ * never below the 100 USDC IXS minimum deposit. ixv1 (minRedeemAssets 100 USDC net, feeBps 50): ceil(100 / 0.995 × 1.03) = 104.
+ */
+export function redeemableMinimum(minRedeemNetUsd: number | null | undefined, feeBps: number | null | undefined, symbol = "USDC"): RedeemableMinimum {
+  const fee = Math.max(0, Math.min(0.5, (feeBps ?? 0) / 10_000));
+  const buffer = REDEEM_NAV_BUFFER_PCT / 100;
+  if (minRedeemNetUsd == null || minRedeemNetUsd < 1) {
+    return {
+      usd: MIN_DEPOSIT_USDC,
+      formula: `no practical redeem minimum on-chain, so the ${MIN_DEPOSIT_USDC} ${symbol} IXS minimum deposit applies`,
+      reason: "the vault exposes no meaningful minRedeemAssets()",
+      minRedeemNetUsd: minRedeemNetUsd ?? null,
+      feeBps: feeBps ?? null,
+    };
+  }
+  const usd = Math.max(MIN_DEPOSIT_USDC, Math.ceil((minRedeemNetUsd / (1 - fee)) * (1 + buffer) - 1e-9));
+  const n = (x: number) => Number(x.toFixed(4)).toString();
+  return {
+    usd,
+    formula: `ceil(${n(minRedeemNetUsd)} / ${n(1 - fee)} × ${n(1 + buffer)}) = ${usd} ${symbol}`,
+    reason: `keeps the whole position redeemable above the ${n(minRedeemNetUsd)} ${symbol} net minimum (minRedeemAssets) after the ${n(fee * 100)}% redeem fee (feeBps), with a ${REDEEM_NAV_BUFFER_PCT}% NAV buffer`,
+    minRedeemNetUsd,
+    feeBps: feeBps ?? null,
+  };
+}
 /** Vaulto policy: a NAV older than this is treated as stale (IXS publishes no staleness threshold on-chain). */
 export const NAV_STALE_HOURS_DEFAULT = 72;
 /** Hard cap per Live transaction (USDC) unless MAX_LIVE_TX_USDC overrides it. */
@@ -91,16 +132,9 @@ export function rpcKindOf(url: string): RpcKind {
   return /localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]/.test(url) ? "fork" : "mainnet";
 }
 
-export const MODE_LABEL = {
-  simulated: "Simulated on BNB mainnet",
-  live: "Live mainnet · BNB",
-  mainnet: "BNB mainnet",
-  fork: "Mainnet fork",
-} as const;
-
-/** Honest execution label for a chain: "Simulated on Avalanche mainnet", "Live · BNB Chain", "Mainnet fork (BNB)". */
-export function modeLabel(mode: ExecutionMode, chainId: number, rpcKind: RpcKind = "mainnet"): string {
+/** Honest execution label for a chain: "Simulated on Avalanche mainnet", "Live mainnet · BNB", "Mainnet fork (block N)". */
+export function modeLabel(mode: ExecutionMode, chainId: number, rpcKind: RpcKind = "mainnet", forkBlock?: number | null): string {
   const c = chainInfo(chainId);
-  if (rpcKind === "fork") return `Mainnet fork (${c.short})`;
+  if (rpcKind === "fork") return forkBlock ? `Mainnet fork (block ${forkBlock})` : `Mainnet fork (${c.short})`;
   return mode === "live" ? `Live mainnet · ${c.short}` : `Simulated on ${c.short} mainnet`;
 }

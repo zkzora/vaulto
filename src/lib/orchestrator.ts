@@ -7,6 +7,7 @@ import { formatUnits } from "viem";
 import { env } from "@/lib/env";
 import { recordEvidence } from "@/lib/evidence";
 import { getStore, normalizeAddress } from "@/lib/db";
+import { liveOptedIn } from "@/lib/live-optin";
 import { fmtAmount, fmtUsd } from "@/lib/format";
 import { getStrategies } from "@/lib/ixs/client";
 import { nextCutoff, type CutoffInfo } from "@/lib/ixs/cutoff";
@@ -74,14 +75,15 @@ const log = async (entry: Omit<AgentLog, "id" | "createdAt">) => (await getStore
 
 export async function scan(address: string): Promise<ScanResult> {
   const store = await getStore();
-  const [user, demoState, onchain, prices, { strategies, liveOk }] = await Promise.all([
+  const [user, demoState, onchain, prices, { strategies, liveOk }, liveOptIn] = await Promise.all([
     store.getOrCreateUser(address),
     store.getDemoState(address),
     readOnchainTreasury(address),
     getPrices(),
     loadStrategies(),
+    liveOptedIn(address),
   ]);
-  const snapshot = scanTreasury({ user, onchain, prices, strategies, demoState });
+  const snapshot = scanTreasury({ user, onchain, prices, strategies, demoState, liveOptIn });
   store.saveTreasurySnapshot(address, snapshot.assets).catch(() => undefined);
 
   // NAV / deposit-limit watcher: log every change the Monitoring Agent sees.
@@ -135,14 +137,18 @@ export async function analyze(address: string): Promise<AnalysisResult> {
       .map(async (c) => {
         const rv = findRegistryVault(registry, c.strategy.routeId);
         if (!rv) return;
-        const p = await runPreflight(rv, wallet, c.idleUsd < MIN_DEPOSIT_USDC ? c.idleUsd : undefined);
+        // Live (opt-in) legs must also clear the redeemable minimum, and only the balance on that chain counts.
+        const live = snapshot.liveChainIds.includes(c.strategy.chainId);
+        const minFor = live ? Math.max(MIN_DEPOSIT_USDC, c.strategy.terms?.minLiveDepositUsd ?? MIN_DEPOSIT_USDC) : MIN_DEPOSIT_USDC;
+        const idleHere = live ? Math.min(c.idleUsd, snapshot.onchain.byChain?.[c.strategy.chainId]?.balances[c.asset] ?? 0) : c.idleUsd;
+        const p = await runPreflight(rv, wallet, idleHere < minFor ? idleHere : undefined, { live });
         preflights[c.strategy.id] = p;
         c.strategy.preflight = p;
       }),
   );
 
   const verdict = assessCandidates(candidates, snapshot, user, preflights);
-  const constraints = planConstraints(snapshot, verdict.approved, user);
+  const constraints = planConstraints(snapshot, verdict.approved, user, { maxLiveTxUsd: env.maxLiveTxUsdc });
   logs.push(
     await log({
       walletAddress: wallet,
@@ -164,6 +170,18 @@ export async function analyze(address: string): Promise<AnalysisResult> {
       const hint = verdict.fallbackDecisions.find((f) => f.strategyId === d.strategyId);
       validatorNotes.push(`${d.strategyId}: SERV proposed an allocation but pre-flight is ${hint?.verdict ?? "not passing"}; validator applied ${hint?.verdict ?? "defer"}`);
       return { ...d, verdict: hint?.verdict ?? "defer", amount: undefined, reason: `${hint?.reason ?? "pre-flight not passing"} (validator override of a SERV allocation)` };
+    }
+    if (d.verdict === "allocate") {
+      const cap = constraints?.caps.find((c) => c.strategyId === d.strategyId);
+      const dropped = constraints?.dropped.find((x) => x.strategyId === d.strategyId);
+      if (!cap) {
+        validatorNotes.push(`${d.strategyId}: SERV proposed an allocation but the Planner has no cap for it${dropped ? ` (${dropped.reason})` : " (no budget above the liquidity floor)"}; validator applied ${dropped ? "reject" : "defer"}`);
+        return { ...d, verdict: dropped ? ("reject" as const) : ("defer" as const), amount: undefined, reason: `${dropped?.reason ?? "No budget remains above the liquidity floor and runway reserve"} (validator override of a SERV allocation)` };
+      }
+      if (d.amount != null && d.amount * cap.priceUsd < cap.minUsd) {
+        validatorNotes.push(`${d.strategyId}: SERV amount ${d.amount} is below the ${cap.minNote}; validator applied reject`);
+        return { ...d, verdict: "reject" as const, amount: undefined, reason: `${d.reason} Below the ${cap.minNote} (validator override of a SERV allocation).` };
+      }
     }
     return d;
   });
@@ -252,7 +270,19 @@ export async function analyze(address: string): Promise<AnalysisResult> {
     context: { demoMode: snapshot.demoMode, totalUsd: snapshot.totalUsd },
     preflights,
     validatorOverrides: validatorNotes,
-    guardrails: { liquidityFloorPct: user.liquidityFloorPct, maxAssetExposurePct: user.maxAssetExposurePct, minVaultRiskScore: user.minVaultRiskScore, minDepositUsd: MIN_DEPOSIT_USDC, maxLiveTxUsdc: env.maxLiveTxUsdc, navStaleHours: env.navStaleHours },
+    guardrails: {
+      liquidityFloorPct: user.liquidityFloorPct,
+      maxAssetExposurePct: user.maxAssetExposurePct,
+      minVaultRiskScore: user.minVaultRiskScore,
+      minDepositUsd: MIN_DEPOSIT_USDC,
+      maxLiveTxUsdc: env.maxLiveTxUsdc,
+      navStaleHours: env.navStaleHours,
+      liveMode: env.liveMode,
+      liveOptIn: snapshot.liveOptIn,
+      liveDepositMinimums: strategies
+        .filter((s) => s.executable && s.terms?.minLiveDepositUsd != null)
+        .map((s) => ({ strategyId: s.id, vault: s.vaultName, symbol: s.shareSymbol ?? s.vaultName, usd: s.terms!.minLiveDepositUsd!, formula: s.terms!.minLiveDepositFormula ?? "", reason: s.terms!.minLiveDepositReason ?? "" })),
+    },
     trace: { source: decision.source, model: decision.model ?? narrative.model, at: new Date().toISOString(), decision: { input: decision.input, output: decision.output }, narrative: narrative.input ? { input: narrative.input, output: narrative.output } : undefined },
     cutoff,
   };

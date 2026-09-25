@@ -13,8 +13,8 @@ import type { PreparedTransaction, Recommendation, TxStep, UserProfile, VaultStr
  *
  * - Every leg is built as approve (exact amount) + deposit / requestDeposit calldata by the IXS MCP.
  * - Legs whose pre-flight did not pass (deferred / rejected) are never built.
- * - Live mode (wallet holds >= 100 USDC on the vault's chain): steps are returned unsigned for the wallet to sign,
- *   capped at MAX_LIVE_TX_USDC per transaction.
+ * - Live mode (opt-in in Settings, wallet holds >= 100 USDC on the vault's chain): steps are returned unsigned for the
+ *   wallet to sign, capped at MAX_LIVE_TX_USDC per transaction and never below the Live redeemable minimum.
  * - Simulated mode: the same calldata runs through eth_call with a state override (balance + allowance) against the
  *   vault on that chain's mainnet (or a local Anvil fork); expected shares / revert reason are attached.
  */
@@ -57,6 +57,13 @@ export async function prepareTransaction(
     if (amount <= 0) {
       notes.push(`${leg.vaultName}: wallet holds no ${leg.asset} on ${chain.name}`);
       continue;
+    }
+    if (mode === "live") {
+      const minLive = Math.max(s.terms?.minDepositUsd ?? 0, s.terms?.minLiveDepositUsd ?? 0);
+      if (amount * price < minLive) {
+        notes.push(`${leg.vaultName}: ${fmtAmount(amount, leg.asset)} is below the Live deposit minimum of ${minLive} ${leg.asset} (${s.terms?.minLiveDepositFormula ?? "redeemable minimum"}); nothing built`);
+        continue;
+      }
     }
     const label = modeLabel(mode, s.chainId, kind);
     modes.add(mode);

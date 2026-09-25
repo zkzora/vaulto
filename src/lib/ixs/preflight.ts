@@ -1,6 +1,7 @@
 import { formatUnits, parseUnits } from "viem";
 import { erc4626Abi } from "@/lib/chain/abi";
 import { publicClient } from "@/lib/chain/client";
+import { redeemableMinimum } from "@/lib/chain/config";
 import { env } from "@/lib/env";
 import { recordEvidence } from "@/lib/evidence";
 import type { VaultCheck, VaultPreflight } from "@/lib/types";
@@ -27,8 +28,9 @@ const fmtAge = (hours: number) => (hours < 48 ? `${hours.toFixed(1)} h ago` : `$
 
 export const REDEEM_PATH = "Redemption requested → awaiting RWA sale & operator finalization → paid (USDC sent to the receiver, no claim step)";
 
-export async function runPreflight(v: RegistryVault, wallet: string, amountUsd?: number): Promise<VaultPreflight> {
-  const key = `${v.routeId}#${wallet.toLowerCase()}#${amountUsd ?? ""}`;
+export async function runPreflight(v: RegistryVault, wallet: string, amountUsd?: number, opts: { live?: boolean } = {}): Promise<VaultPreflight> {
+  const live = opts.live === true;
+  const key = `${v.routeId}#${wallet.toLowerCase()}#${amountUsd ?? ""}#${live ? "live" : "sim"}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < TTL_MS) return hit.value;
 
@@ -116,6 +118,19 @@ export async function runPreflight(v: RegistryVault, wallet: string, amountUsd?:
     source: v.minDeposit.source,
   });
 
+  // Vaulto guardrail for Live deposits: the whole position must stay redeemable above the net minimum after the fee.
+  const rm = redeemableMinimum(v.redeem.minAssetsUsd, v.redeem.feeBps, v.asset.symbol);
+  const liveAmountOk = !live || amountUsd == null || amountUsd >= rm.usd;
+  checks.push({
+    key: "redeemable-min",
+    label: "Live deposit minimum (redeemable)",
+    ok: liveAmountOk,
+    severity: live ? "block" : "info",
+    value: `${rm.usd} ${v.asset.symbol}`,
+    detail: `${rm.formula}: ${rm.reason}. ${live ? (amountUsd == null ? "Applies to every Live deposit into this vault." : liveAmountOk ? `Intended ${amountUsd.toLocaleString("en-US")} ${v.asset.symbol} meets it.` : `Intended ${amountUsd.toLocaleString("en-US")} ${v.asset.symbol} is below it, so a Live position could not be fully redeemed.`) : "Guardrail for Live deposits; this run is simulated (Live mode is opt-in)."}`,
+    source: "Vaulto guardrail · minRedeemAssets() + feeBps() on-chain",
+  });
+
   const cutoff = nextCutoff();
   const observed = v.settlementObserved;
   checks.push({
@@ -154,6 +169,8 @@ export async function runPreflight(v: RegistryVault, wallet: string, amountUsd?:
     mcpAccepts: mcp.ok,
     mcpReason: mcp.ok ? undefined : mcp.reason,
     whitelisted: needsWl ? whitelisted : null,
+    live,
+    minLiveDepositUsd: rm.usd,
   };
   cache.set(key, { at: Date.now(), value });
   return value;

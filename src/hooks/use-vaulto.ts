@@ -103,6 +103,16 @@ export function useRecommendationStatus() {
   });
 }
 
+/** Live mode is opt-in per wallet and browser; the server keeps it in a cookie. */
+export function useSetLiveOptIn() {
+  const { address } = useVaultoAccount();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (on: boolean) => api.setLiveOptIn(address!, on),
+    onSuccess: () => qc.invalidateQueries(),
+  });
+}
+
 export function useUpdateSettings() {
   const { address } = useVaultoAccount();
   const qc = useQueryClient();

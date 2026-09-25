@@ -63,6 +63,14 @@ function Facts({ s }: { s: VaultStrategy }) {
               {s.terms.minDepositUsd} {s.asset} · confirmed by IXS
             </span>
           </div>
+          {s.terms.minLiveDepositUsd != null && s.terms.minLiveDepositUsd > s.terms.minDepositUsd && (
+            <div className="flex justify-between gap-3">
+              <span className="shrink-0">Live minimum (redeemable)</span>
+              <span className="text-right font-semibold text-ink" title={s.terms.minLiveDepositReason}>
+                {s.terms.minLiveDepositUsd} {s.asset} · {s.terms.minLiveDepositFormula}
+              </span>
+            </div>
+          )}
           <div className="flex justify-between gap-3">
             <span>Fees</span>
             <span className="text-right font-semibold text-ink">

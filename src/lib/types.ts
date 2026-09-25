@@ -120,10 +120,14 @@ export interface TreasurySnapshot {
   demoMode: boolean;
   maxExposure: { symbol: string; pct: number };
   targetAllocationPct: number;
-  /** "live" when the wallet holds >= LIVE_MODE_MIN_USDC of the vault asset; otherwise deposits are simulated. */
+  /** "simulated" by default; "live" only when the viewer opted in (Settings) and the wallet holds >= LIVE_MODE_MIN_USDC. */
   executionMode: "simulated" | "live";
-  /** Chains on which the wallet holds >= LIVE_MODE_MIN_USDC of the vault asset. */
+  /** Chains on which deposits run Live (opt-in on, >= LIVE_MODE_MIN_USDC of the vault asset there). */
   liveChainIds: number[];
+  /** Chains on which the wallet could run Live if the viewer opted in. */
+  liveCapableChainIds: number[];
+  /** Live opt-in for this wallet in this browser (cookie). */
+  liveOptIn: boolean;
 }
 
 export interface VaultStrategy {
@@ -238,6 +242,9 @@ export interface VaultPreflight {
   mcpAccepts: boolean | null;
   mcpReason?: string;
   whitelisted: boolean | null;
+  /** True when the pre-flight ran for a Live deposit (opt-in on for this chain). */
+  live?: boolean;
+  minLiveDepositUsd?: number;
 }
 
 export interface VaultTerms {
@@ -249,6 +256,10 @@ export interface VaultTerms {
   /** minRedeemAssets() on-chain, in asset units (null when not exposed). */
   minRedeemUsd?: number | null;
   redeemPath?: string;
+  /** Live deposit minimum that keeps the position redeemable: ceil(minRedeemAssets / (1 - fee) × 1.03), >= 100 USDC. */
+  minLiveDepositUsd?: number;
+  minLiveDepositFormula?: string;
+  minLiveDepositReason?: string;
 }
 
 export interface AllocationLeg {
@@ -335,7 +346,17 @@ export interface Recommendation {
   /** Times the deterministic validator overrode a SERV allocation (0 in a clean run). */
   validatorOverrides?: string[];
   /** Hard limits the deterministic guardrails enforce around SERV's decisions. */
-  guardrails?: { liquidityFloorPct: number; maxAssetExposurePct: number; minVaultRiskScore: number; minDepositUsd: number; maxLiveTxUsdc: number; navStaleHours: number };
+  guardrails?: {
+    liquidityFloorPct: number;
+    maxAssetExposurePct: number;
+    minVaultRiskScore: number;
+    minDepositUsd: number;
+    maxLiveTxUsdc: number;
+    navStaleHours: number;
+    liveMode?: "opt-in" | "off";
+    liveOptIn?: boolean;
+    liveDepositMinimums?: { strategyId: string; vault: string; symbol: string; usd: number; formula: string; reason: string }[];
+  };
 }
 
 export interface Memo {

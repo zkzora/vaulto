@@ -17,6 +17,8 @@ export const env = {
   // Policy knobs
   navStaleHours: num(process.env.NAV_STALE_HOURS, NAV_STALE_HOURS_DEFAULT),
   maxLiveTxUsdc: num(process.env.MAX_LIVE_TX_USDC, MAX_LIVE_TX_USDC_DEFAULT),
+  /** "opt-in" (default): Live only after the viewer enables it in Settings. "off": Live disabled on this deployment. */
+  liveMode: (process.env.LIVE_MODE === "off" ? "off" : "opt-in") as "opt-in" | "off",
   // OpenServ (no OpenAI key involved).
   //  - inference: OpenServ Inference API, OpenAI-compatible, authenticated with the serv_… key (default)
   //  - platform:  tasks assigned to the Vaulto agent in an OpenServ workspace (needs workspace + agent)

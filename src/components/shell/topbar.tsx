@@ -29,7 +29,7 @@ export function Topbar() {
   const snapshot = data?.snapshot;
   const rpcKind = snapshot?.onchain.rpcKind ?? "mainnet";
   const liveChains = snapshot?.liveChainIds ?? [];
-  const label = liveChains.length ? liveChains.map((c) => modeLabel("live", c)).join(" + ") : rpcKind === "fork" ? modeLabel("simulated", 56, "fork") : "Simulated on BNB + Avalanche mainnet";
+  const label = liveChains.length ? liveChains.map((c) => modeLabel("live", c)).join(" + ") : rpcKind === "fork" ? modeLabel("simulated", 56, "fork", snapshot?.onchain.byChain?.[56]?.blockNumber) : "Simulated on BNB + Avalanche mainnet";
   const waiting = data?.watch.waiting ?? [];
   const latestEvent = data?.watch.events[0];
 
@@ -62,10 +62,10 @@ export function Topbar() {
             href="/app/settings"
             title={
               liveChains.length
-                ? `Wallet holds ≥ 100 USDC on ${liveChains.map((c) => chainInfo(c).name).join(", ")}: deposits there are real and signed by your wallet.`
+                ? `Live mode (opt-in) on ${liveChains.map((c) => chainInfo(c).name).join(", ")}: deposits there are real, signed by your wallet and capped per transaction.`
                 : rpcKind === "fork"
                   ? "RPC_URL points at a local Anvil fork of mainnet."
-                  : "Deposits are simulated with eth_call + state override against the real IXS vaults. Hold ≥ 100 USDC on a vault's chain to go live there."
+                  : "Default mode: deposits are simulated with eth_call + state override against the real IXS vaults; nothing is sent. Live mode is an opt-in capability in Settings."
             }
           >
             <Pill tone={liveChains.length ? "green" : rpcKind === "fork" ? "blue" : "amber"}>{label}</Pill>

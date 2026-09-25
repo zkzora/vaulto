@@ -19,6 +19,8 @@ export interface ScanInput {
   strategies: VaultStrategy[];
   demoState: DemoState;
   now?: Date;
+  /** Live opt-in for this wallet in this browser (Settings). Off by default: every deposit is simulated. */
+  liveOptIn?: boolean;
 }
 
 interface Holding {
@@ -172,7 +174,11 @@ export function scanTreasury(input: ScanInput): TreasurySnapshot {
     idlePct,
   });
   const stableSymbol = strategies.find((s) => s.executable)?.asset ?? "USDC";
-  const liveChainIds = user.walletAddress.toLowerCase() === DEMO_ADDRESS ? [] : Object.entries(onchain.byChain ?? {}).filter(([, c]) => (c.balances[stableSymbol] ?? 0) >= LIVE_MODE_MIN_USDC).map(([id]) => Number(id));
+  // Chains where this wallet could run Live (>= 100 USDC there). Live itself is opt-in and never applies to the demo
+  // address or while the simulated treasury is layered on the wallet: the default is Simulate.
+  const liveCapableChainIds = user.walletAddress.toLowerCase() === DEMO_ADDRESS || user.demoMode ? [] : Object.entries(onchain.byChain ?? {}).filter(([, c]) => (c.balances[stableSymbol] ?? 0) >= LIVE_MODE_MIN_USDC).map(([id]) => Number(id));
+  const liveOptIn = Boolean(input.liveOptIn);
+  const liveChainIds = liveOptIn ? liveCapableChainIds : [];
   const executionMode: TreasurySnapshot["executionMode"] = liveChainIds.length ? "live" : "simulated";
   const bestApy = strategies.filter((s) => s.apy != null && s.status === "active").reduce((m, s) => Math.max(m, s.apy ?? 0), 0);
   const opportunityScore = totalUsd > 0 ? computeOpportunity({ idlePct, idleDays, bestApy }) : 0;
@@ -204,5 +210,7 @@ export function scanTreasury(input: ScanInput): TreasurySnapshot {
     targetAllocationPct: targetAllocationFor(user.riskProfile),
     executionMode,
     liveChainIds,
+    liveCapableChainIds,
+    liveOptIn,
   };
 }

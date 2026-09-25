@@ -1,4 +1,4 @@
-import { MIN_DEPOSIT_USDC, STRATEGY_IDS, chainInfo, strategyIdFor } from "@/lib/chain/config";
+import { MIN_DEPOSIT_USDC, STRATEGY_IDS, chainInfo, redeemableMinimum, strategyIdFor } from "@/lib/chain/config";
 import type { VaultStrategy } from "@/lib/types";
 import type { IxsVaultItem, Registry, RegistryVault } from "./registry";
 
@@ -8,7 +8,11 @@ export type { IxsVaultItem } from "./registry";
 export const REDEMPTION_NOTE = "Request anytime · processed after the current redemption cycle (as fast as T+1, per IXS) · operator pays USDC to the receiver, no claim step";
 
 function termsFor(v: RegistryVault): NonNullable<VaultStrategy["terms"]> {
+  const rm = redeemableMinimum(v.redeem.minAssetsUsd, v.redeem.feeBps, v.asset.symbol);
   return {
+    minLiveDepositUsd: rm.usd,
+    minLiveDepositFormula: rm.formula,
+    minLiveDepositReason: rm.reason,
     minDepositUsd: v.minDeposit.usd || MIN_DEPOSIT_USDC,
     depositFeeBps: 0,
     redeemFeeBps: v.redeemFeeBps,

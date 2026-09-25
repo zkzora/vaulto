@@ -8,7 +8,7 @@ const STEPS = [
   ["Detect idle capital", "Opportunity Finder scores inefficiency."],
   ["Recommend strategy", "Risk Guardian + Allocation Planner, in plain language."],
   ["Approve", "Nothing moves without your signature."],
-  ["Execute", "Execution Agent via IXS Agent Rail / MCP."],
+  ["Execute", "Simulated on mainnet by default; Live is opt-in and wallet-signed."],
   ["Monitor", "Monitoring Agent tracks outcomes."],
 ];
 
@@ -25,7 +25,7 @@ const FEATURES = [
   },
   {
     title: "Licensed IXS RWA strategies",
-    body: "Only live IXS vaults: IX High Yield Bond and licensed RWA opportunities on BNB Chain, each with yield, risk, liquidity and eligibility status up front.",
+    body: "Only IXS vaults listed by the IXS Vault API: IX High Yield Bond on BNB Chain and Avalanche, open and licensed, each with yield, deposit limit, NAV age and eligibility up front.",
     icon: (
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3F73DA" strokeWidth="1.8" strokeLinecap="round">
         <path d="M4 18h16M6 14V9M11 14V6M16 14v-4" />
@@ -33,8 +33,8 @@ const FEATURES = [
     ),
   },
   {
-    title: "24/7 monitoring",
-    body: "A Monitoring Agent watches utilization, depegs and vault health; a Risk Guardian drafts the exit before you wake up.",
+    title: "NAV and limit watcher",
+    body: "The Monitoring Agent watches every IXS vault's deposit limit and NAV updates, and flags when a deferred vault reopens.",
     icon: (
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3F73DA" strokeWidth="1.8" strokeLinecap="round">
         <circle cx="12" cy="12" r="9" />
@@ -82,8 +82,11 @@ export default function Landing() {
         </p>
         <div className="mt-9 flex flex-wrap justify-center gap-3">
           <Link href="/connect" className="btn btn-primary btn-lg">Launch Vaulto</Link>
-          <a href="#how" className="btn btn-soft btn-lg">See how it works</a>
+          <Link href="/evidence" className="btn btn-soft btn-lg">See the evidence</Link>
         </div>
+        <p className="mx-auto mt-5 max-w-[640px] text-[13px] leading-[1.55] text-muted">
+          Submission mode: <b className="text-ink">Simulated on BNB mainnet</b>. Deposits built by the IXS MCP run through eth_call with a state override against the real IXS vaults; nothing is sent. Live mode is an opt-in capability, not executed in this submission.
+        </p>
 
         {/* Product preview */}
         <div className="mx-auto mb-16 mt-16 max-w-[1120px] overflow-hidden rounded-[20px] border border-line bg-canvas text-left shadow-hero lg:mb-[72px]">
@@ -91,7 +94,7 @@ export default function Landing() {
             <span className="h-2.5 w-2.5 rounded-full bg-line" />
             <span className="h-2.5 w-2.5 rounded-full bg-line" />
             <span className="h-2.5 w-2.5 rounded-full bg-line" />
-            <span className="ml-3.5 text-[12px] font-medium text-faint">app.vaulto.xyz</span>
+            <span className="ml-3.5 text-[12px] font-medium text-faint">Illustration · simulated treasury</span>
           </div>
           <div className="grid gap-5 p-4 sm:p-6 lg:grid-cols-[1.1fr_1fr]">
             <div className="card p-[22px]">
@@ -213,7 +216,7 @@ export default function Landing() {
               <IxsMark size={26} />
             </div>
             <div className="mt-4 font-display text-[22px] font-semibold tracking-[-0.01em] text-ink">IXS RWA Vaults</div>
-            <div className="mt-2 text-[15px] leading-[1.55] text-body">Licensed vault infrastructure and strategy access. Deposits are built by the IXS MCP and routed through IXS Agent Rail; every strategy is a live IXS vault on BSC Testnet.</div>
+            <div className="mt-2 text-[15px] leading-[1.55] text-body">Licensed vault infrastructure and strategy access. Deposits are built by the IXS MCP; every strategy is a real IXS vault on BNB Chain or Avalanche mainnet, listed by the IXS Vault API.</div>
           </div>
           <div className="card rounded-[20px] p-7">
             <div className="flex items-center justify-between">
@@ -221,7 +224,7 @@ export default function Landing() {
               <VaultoLogo height={16} />
             </div>
             <div className="mt-4 font-display text-[22px] font-semibold tracking-[-0.01em] text-ink">Vaulto</div>
-            <div className="mt-2 text-[15px] leading-[1.55] text-body">Connects treasury analysis, strategy recommendation, your approval and capital allocation in one operating system. Non-custodial: your wallet signs every action on BSC Testnet.</div>
+            <div className="mt-2 text-[15px] leading-[1.55] text-body">Connects treasury analysis, strategy recommendation, your approval and capital allocation in one operating system. Non-custodial: simulated by default, and in Live mode your wallet signs every transaction.</div>
           </div>
         </div>
         <div className="mt-6 overflow-x-auto rounded-[20px] border border-line bg-canvas px-6 py-5">
@@ -288,7 +291,7 @@ export default function Landing() {
             {[
               ["Funds stay in your wallet", "Vaulto holds no assets and no signing keys. Revoke access any time."],
               ["Approval workflow", "Each transaction is reviewed with amount, destination, yield and risk before you sign."],
-              ["Full transparency", "Reasoning, confidence and on-chain hashes are logged for every action the agent takes."],
+              ["Full transparency", "SERV input and output, pre-flight facts with block numbers and simulation results are public on the Evidence page."],
             ].map(([t, b]) => (
               <div key={t} className="rounded-2xl border border-white/10 bg-white/[0.06] px-6 py-[22px]">
                 <div className="font-display text-[18px] font-semibold">{t}</div>
@@ -305,33 +308,42 @@ export default function Landing() {
         <p className="mx-auto mt-4 max-w-[480px] text-[18px] leading-[1.5] text-body">Connect your treasury wallet and get your first strategy in under five minutes.</p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           <Link href="/connect" className="btn btn-primary btn-lg">Launch Vaulto</Link>
-          <a href="#architecture" className="btn btn-soft btn-lg">Read the docs</a>
+          <Link href="/evidence" className="btn btn-soft btn-lg">See the evidence</Link>
         </div>
       </section>
 
       {/* Footer */}
       <footer className="mx-auto max-w-[1248px] border-t border-line px-6 pb-10 pt-12 lg:px-16">
-        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr_1fr]">
+        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
           <div>
             <VaultoLogo height={22} />
             <div className="mt-3 max-w-[260px] text-[14px] leading-[1.5] text-muted">AI Treasury Operating System for on-chain treasuries. Powered by OpenServ Reasoning and IXS RWA vaults.</div>
           </div>
-          {[
-            ["Product", ["App", "Strategy engine", "Risk Center", "Pricing"]],
-            ["Developers", ["Docs", "Agent API", "Audits", "Bug bounty"]],
-            ["Company", ["About", "Blog", "Careers", "Contact"]],
-            ["Legal", ["Terms", "Privacy", "Disclosures"]],
-          ].map(([h, items]) => (
-            <div key={h as string} className="grid content-start gap-2.5 text-[14px] font-medium text-body">
-              <div className="text-[13px] font-semibold text-ink">{h as string}</div>
-              {(items as string[]).map((i) => (
-                <div key={i}>{i}</div>
-              ))}
+          {(
+            [
+              ["Product", [["App", "/app"], ["Strategy", "/app/strategy"], ["IXS vaults", "/app/vaults"], ["Risk Center", "/app/risk"]]],
+              ["Proof", [["Evidence", "/evidence"], ["Evidence JSON", "/api/evidence"], ["Source code", "https://github.com/zkzora/vaulto"]]],
+              ["Built on", [["OpenServ", "https://openserv.ai"], ["IXS Finance", "https://ixs.finance"], ["IXS Vault API", "https://api-v2.ixs.finance/vaults"]]],
+            ] as [string, [string, string][]][]
+          ).map(([h, items]) => (
+            <div key={h} className="grid content-start gap-2.5 text-[14px] font-medium text-body">
+              <div className="text-[13px] font-semibold text-ink">{h}</div>
+              {items.map(([label, href]) =>
+                href.startsWith("http") ? (
+                  <a key={label} href={href} target="_blank" rel="noreferrer" className="hover:text-ink">
+                    {label}
+                  </a>
+                ) : (
+                  <Link key={label} href={href} className="hover:text-ink">
+                    {label}
+                  </Link>
+                ),
+              )}
             </div>
           ))}
         </div>
         <div className="mt-10 max-w-[880px] text-[12px] leading-[1.6] text-faint">
-          Vaulto is software that proposes transactions to wallets you control. Intelligence by OpenServ Reasoning; vault access through IXS Agent Rail. It does not custody assets or provide investment advice. Yields shown are variable and illustrative. © 2026 Vaulto.
+          Vaulto is software that proposes transactions to wallets you control. Intelligence by OpenServ Reasoning; vault access through IXS Agent Rail. It does not custody assets or provide investment advice. Yields shown are variable; the treasury on this page is an illustration. Submission mode: simulated on mainnet (no Live deposit executed). © 2026 Vaulto.
         </div>
       </footer>
     </div>
