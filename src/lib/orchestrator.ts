@@ -112,7 +112,7 @@ export async function analyze(address: string): Promise<AnalysisResult> {
       action: "scan",
       reasoning: `Scanned ${snapshot.assets.length} assets, ${snapshot.positions.length} IXS positions${snapshot.onchain.rpcOk ? ` (${Object.entries(snapshot.onchain.byChain ?? {}).filter(([, c]) => c.rpcOk).map(([id, c]) => `${chainInfo(Number(id)).name} block ${c.blockNumber}`).join(", ")})` : ""}. ${snapshot.idlePct}% of capital idle. Execution mode: ${snapshot.executionMode}.`,
       status: "info",
-      source: "OpenServ",
+      source: "Vaulto",
     }),
   );
 
@@ -122,9 +122,9 @@ export async function analyze(address: string): Promise<AnalysisResult> {
       walletAddress: wallet,
       agentName: "Opportunity Finder Agent",
       action: "find",
-      reasoning: `${fmtUsd(snapshot.idleUsd, { compact: true })} inefficient capital, opportunity score ${snapshot.opportunityScore}. ${candidates.length} IXS candidates match idle assets: ${candidates.map((c) => `${c.strategy.vaultName}${c.available ? "" : " (announced, not deployed)"}`).join(", ")}.`,
+      reasoning: `${fmtUsd(snapshot.idleUsd, { compact: true })} inefficient capital, opportunity score ${snapshot.opportunityScore}. ${candidates.length} IXS candidates (every IXS vault gets a verdict): ${candidates.map((c) => `${c.strategy.vaultName}${c.available ? "" : " (announced, not deployed)"}${c.idleUsd > 0 ? "" : " (no idle capital in its asset)"}`).join(", ")}.`,
       status: "info",
-      source: "OpenServ",
+      source: "Vaulto",
     }),
   );
 
@@ -156,7 +156,7 @@ export async function analyze(address: string): Promise<AnalysisResult> {
       action: "evaluate",
       reasoning: `Pre-flight: ${verdict.assessments.map((a) => `${a.candidate.strategy.vaultName} → ${a.verdictHint}${a.preflight ? ` (limit ${a.preflight.depositLimitUnlimited ? "unlimited" : `${a.preflight.depositLimitUsd ?? "?"} USDC`}, NAV ${a.preflight.navAgeHours != null ? `${(a.preflight.navAgeHours / 24).toFixed(1)} d old` : "unknown"}, min ${a.preflight.minDepositUsd} USDC${a.preflight.whitelisted === false ? ", not whitelisted" : ""})` : " (no vault deployed)"}`).join("; ")}. ${constraints ? `Budget ${fmtUsd(constraints.budgetUsd)} with ${fmtUsd(constraints.keepLiquidUsd)} kept liquid${constraints.stableReserveUsd ? ` and ${fmtUsd(constraints.stableReserveUsd)} stablecoin runway reserved` : ""}.` : "No vault passes pre-flight and policy, so there is no budget to size."}`,
       status: verdict.approved.length ? "info" : "warn",
-      source: "OpenServ",
+      source: "Vaulto",
     }),
   );
 
@@ -208,7 +208,7 @@ export async function analyze(address: string): Promise<AnalysisResult> {
       action: "plan",
       reasoning: `${decisionSource === "openserv" ? `SERV reasoning (${decision.model ?? "OpenServ"})` : "Deterministic engine"} verdicts: ${decisions.map((d) => `${strategies.find((s) => s.id === d.strategyId)?.vaultName ?? d.strategyId} → ${d.verdict.toUpperCase()}${d.verdict === "allocate" && d.amount ? ` ${d.amount.toLocaleString("en-US")}` : ""}`).join("; ")}. ${plan ? `Plan: ${plan.legs.map((l) => `${fmtAmount(l.amount, l.asset)} → ${l.vaultName}`).join(", ")} within a ${fmtUsd(constraints!.budgetUsd)} budget.` : "No allocation now."}${decision.rationale ? ` Rationale: ${decision.rationale}` : ""}${validatorNotes.length ? ` Validator: ${validatorNotes.join("; ")}.` : ""}`,
       status: plan ? "success" : "warn",
-      source: "OpenServ",
+      source: decisionSource === "openserv" ? "OpenServ" : "Vaulto",
     }),
   );
 
@@ -234,9 +234,9 @@ export async function analyze(address: string): Promise<AnalysisResult> {
       walletAddress: wallet,
       agentName: "SERV Reasoning",
       action: "explain",
-      reasoning: `${plan ? `${fmtUsd(plan.totalUsd)} across ${plan.legs.map((l) => l.vaultName).join(" and ")}` : "No allocation"}; ${deferred.length} deferred, ${rejected.length} rejected. Memo + explanation by ${narrative.source === "openserv" ? `OpenServ (${narrative.model ?? "platform model"})` : "Vaulto local engine"}, confidence ${narrative.confidence}%.`,
+      reasoning: `${plan ? `${fmtUsd(plan.totalUsd)} across ${plan.legs.map((l) => l.vaultName).join(" and ")}` : "No allocation"}; ${deferred.length} deferred, ${rejected.length} rejected. Verdicts by ${decisionSource === "openserv" ? "SERV (OpenServ)" : "the Vaulto local engine"}; memo + explanation by ${narrative.source === "openserv" ? `OpenServ (${narrative.model ?? "platform model"})` : "the Vaulto local engine (OpenServ narrative unavailable)"}, confidence ${narrative.confidence}%.`,
       status: "success",
-      source: "OpenServ",
+      source: narrative.source === "openserv" ? "OpenServ" : "Vaulto",
     }),
   );
 
@@ -261,6 +261,8 @@ export async function analyze(address: string): Promise<AnalysisResult> {
     memo: narrative.memo,
     status: plan ? "proposed" : "dismissed",
     reasoningSource: decisionSource === "openserv" || narrative.source === "openserv" ? "openserv" : "local",
+    decisionSource,
+    narrativeSource: narrative.source,
     reasoningModel: narrative.model ?? decision.model,
     durationMs: Date.now() - started,
     createdAt: new Date().toISOString(),
@@ -315,7 +317,7 @@ export async function currentRecommendation(address: string, snapshot: TreasuryS
       ? `Recommendation "${rec.title}" expired: the simulated treasury layer was turned ${snapshot.demoMode ? "on" : "off"}, so it no longer matches the treasury. Run a new analysis.`
       : `Recommendation "${rec.title}" expired: idle capital moved from ${fmtUsd(rec.idleUsd)} to ${fmtUsd(snapshot.idleUsd)}. Run a new analysis.`,
     status: "warn",
-    source: "OpenServ",
+    source: "Vaulto",
   });
   return expired;
 }
@@ -511,7 +513,7 @@ export async function finalize(address: string, preparedId: string, results: Ste
       action: "monitor",
       reasoning: `Now tracking ${rec.legs.map((l) => `${l.vaultName} (${fmtAmount(l.amount, l.asset)})`).join(" and ")}. Expected +${fmtUsd(rec.extraMonthlyUsd)} / month; health ${rec.before.healthScore} → ${rec.after.healthScore}. Watching NAV updates and deposit limits on every scan.`,
       status: "info",
-      source: "OpenServ",
+      source: "Vaulto",
     });
   }
   return { transactions: records, recommendation: rec ? await store.getRecommendation(rec.id) : null };

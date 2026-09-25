@@ -76,7 +76,9 @@ export interface RegistryVault {
   /** Redemption terms read on-chain: minimum (minRedeemAssets) and fee (feeBps); settlement "queued" = request, operator finalizes, no claim. */
   redeem: { minAssetsUsd: number | null; feeBps: number | null; path: string };
   settlementObserved: { samples: number; medianHours: number | null; pendingCount: number };
-  cutoff: { known: false; note: string };
+  cutoff: { known: boolean; note: string };
+  /** Set when the IXS MCP and the vault's subgraph family disagree on the settlement kind (the family wins). */
+  settlementConflict?: string;
 }
 
 export interface Registry {
@@ -246,7 +248,7 @@ async function readChain(chainId: number, list: Skeleton[]): Promise<RegistryVau
       },
       settlementObserved: { samples: sg?.settlement.samples ?? 0, medianHours: sg?.settlement.medianHours ?? null, pendingCount: sg?.settlement.pendingCount ?? 0 },
       redeem: { minAssetsUsd: minRedeemRaw != null ? Number(formatUnits(minRedeemRaw, asset.decimals)) : null, feeBps: fee ?? sg?.redeemFeeBps ?? null, path: "requestRedeem → queued → operator sells RWA and finalizes → USDC paid to the receiver (no claim step)" },
-      cutoff: { known: false, note: settlementGuess === "sync" ? "not applicable: sync ERC-4626, settles in the deposit transaction" : "unconfirmed: IXS publishes no cutoff time on the API, MCP or subgraph; requests settle after the operator's next cycle" },
+      cutoff: settlementGuess === "sync" ? { known: false, note: "not applicable: sync ERC-4626, settles in the deposit transaction" } : { known: true, note: "17:00 SGT (09:00 UTC) on Singapore business days, settlement ≈ 1 business day later (IXS answer to participants, 24 Sep 2026)" },
     });
   }
   // Cross-check the last NAV change against the chain: the receipt must exist at the block the subgraph reports.
@@ -295,6 +297,12 @@ export async function getRegistry(): Promise<Registry> {
     vaults.map(async (v) => {
       const info = await vaultGet(v.routeId);
       if (info?.settlement === "sync" || info?.settlement === "async-erc7540") {
+        // The subgraph family ("ixs-erc7540-vault-*" vs "ixs-managed-vault-*") is structural; never let a single
+        // MCP answer contradict it, or SERV would get the wrong settlement kind for the vault.
+        if (v.subgraphUrl && info.settlement !== v.settlement) {
+          v.settlementConflict = `IXS MCP vault_get returned ${info.settlement}, the vault's subgraph family says ${v.settlement}; kept ${v.settlement}`;
+          return;
+        }
         v.settlement = info.settlement;
         v.settlementSource = "ixs-mcp";
         if (info.settlement === "sync") v.cutoff = { known: false, note: "not applicable: sync ERC-4626, settles in the deposit transaction" };

@@ -73,7 +73,7 @@ export default function Landing() {
 
       {/* Hero */}
       <section className="relative px-6 pt-20 text-center lg:px-16 lg:pt-24" style={{ background: "radial-gradient(900px 480px at 50% 0%, #EAF1FE 0%, rgba(234,241,254,0) 70%)" }}>
-        <span className="inline-flex h-8 items-center gap-2 rounded-full bg-tint px-3.5 text-[13px] font-semibold text-blue-deep">Powered by OpenServ Reasoning · Built with IXS Agent Rail</span>
+        <span className="inline-flex h-8 items-center gap-2 rounded-full bg-tint px-3.5 text-[13px] font-semibold text-blue-deep">Powered by OpenServ Reasoning · Built on the IXS MCP</span>
         <h1 className="mx-auto mt-6 max-w-[900px] font-display text-[44px] font-semibold leading-[1.05] tracking-[-0.03em] text-ink sm:text-[56px] lg:text-[68px]" style={{ textWrap: "balance" }}>
           Find idle capital. Deploy smarter.
         </h1>
@@ -99,20 +99,17 @@ export default function Landing() {
           <div className="grid gap-5 p-4 sm:p-6 lg:grid-cols-[1.1fr_1fr]">
             <div className="card p-[22px]">
               <div className="eyebrow">Total treasury</div>
-              <div className="mt-2 font-display text-[40px] font-semibold leading-none tracking-[-0.02em] text-ink">$2,483,020</div>
-              <div className="mt-2 text-[14px] font-semibold text-green">+$4,812 this week</div>
+              <div className="mt-2 font-display text-[40px] font-semibold leading-none tracking-[-0.02em] text-ink">≈ $2.0M</div>
+              <div className="mt-2 text-[14px] font-semibold text-amber">Acme DAO · simulated treasury</div>
               <div className="mt-5 grid grid-cols-3 gap-3">
                 {[
-                  ["Current yield", "2.0%", "text-ink"],
-                  ["Idle", "54%", "text-amber"],
-                  ["Health", "87", "text-green"],
+                  ["Current yield", "0%", "text-ink"],
+                  ["Idle", "100%", "text-amber"],
+                  ["Idle for", "23 days", "text-amber"],
                 ].map(([l, v, c]) => (
                   <div key={l} className="stat-tile">
                     <div className="text-[12px] font-medium text-muted">{l}</div>
-                    <div className={`mt-1 font-display text-[20px] font-semibold ${c}`}>
-                      {v}
-                      {l === "Health" && <span className="text-[13px] text-faint">/100</span>}
-                    </div>
+                    <div className={`mt-1 font-display text-[20px] font-semibold ${c}`}>{v}</div>
                   </div>
                 ))}
               </div>
@@ -148,7 +145,7 @@ export default function Landing() {
             <IxsMark size={36} />
             <span className="grid">
               <span className="font-display text-[18px] font-semibold tracking-[-0.01em] text-white">IXS</span>
-              <span className="text-[12px] font-medium text-cloud">Executes · Agent Rail / MCP · RWA vaults</span>
+              <span className="text-[12px] font-medium text-cloud">Builds calldata · IXS MCP · RWA vaults</span>
             </span>
           </span>
         </div>
@@ -229,7 +226,7 @@ export default function Landing() {
         </div>
         <div className="mt-6 overflow-x-auto rounded-[20px] border border-line bg-canvas px-6 py-5">
           <div className="flex min-w-[900px] items-center justify-between gap-2 text-[12px] font-semibold text-slate">
-            {["User wallet", "Vaulto web app", "Agent orchestrator", "OpenServ reasoning", "Multi-agent decision", "IXS adapter", "IXS Agent Rail / MCP", "Vault infrastructure", "Wallet signs"].map((n, i, arr) => (
+            {["User wallet", "Vaulto web app", "Agent orchestrator", "OpenServ reasoning", "Multi-agent decision", "IXS adapter", "IXS MCP", "IXS vault contracts", "eth_call simulation · wallet signs in Live"].map((n, i, arr) => (
               <span key={n} className="flex items-center gap-2">
                 <span className="rounded-lg border border-line bg-white px-2.5 py-1.5 whitespace-nowrap">{n}</span>
                 {i < arr.length - 1 && <span className="text-faint">→</span>}
@@ -343,7 +340,7 @@ export default function Landing() {
           ))}
         </div>
         <div className="mt-10 max-w-[880px] text-[12px] leading-[1.6] text-faint">
-          Vaulto is software that proposes transactions to wallets you control. Intelligence by OpenServ Reasoning; vault access through IXS Agent Rail. It does not custody assets or provide investment advice. Yields shown are variable; the treasury on this page is an illustration. Submission mode: simulated on mainnet (no Live deposit executed). © 2026 Vaulto.
+          Vaulto is software that proposes transactions to wallets you control. Intelligence by OpenServ Reasoning; vault calldata from the IXS MCP. It does not custody assets or provide investment advice. Yields shown are variable; the treasury on this page is an illustration. Submission mode: simulated on mainnet (no Live deposit executed). © 2026 Vaulto.
         </div>
       </footer>
     </div>

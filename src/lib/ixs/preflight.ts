@@ -64,7 +64,9 @@ export async function runPreflight(v: RegistryVault, wallet: string, amountUsd?:
   });
 
   const age = v.nav.ageHours;
-  const navOk = age != null && age <= env.navStaleHours;
+  // Stale if older than Vaulto's policy OR the contract's own navStalenessThreshold() (then maxDeposit is 0 anyway).
+  const contractStale = age != null && v.nav.contractThresholdHours != null && age > v.nav.contractThresholdHours;
+  const navOk = age != null && age <= env.navStaleHours && !contractStale;
   checks.push({
     key: "nav-age",
     label: "NAV freshness",
@@ -73,7 +75,7 @@ export async function runPreflight(v: RegistryVault, wallet: string, amountUsd?:
     value: age == null ? "unknown" : `${fmtAge(age)}${v.nav.pricePerShare != null ? ` · ${v.nav.pricePerShare.toFixed(6)} ${v.asset.symbol}/share` : ""}`,
     detail: age == null
       ? "no NAV timestamp available from the IXS subgraph"
-      : `${navOk ? "within" : "older than"} the Vaulto staleness policy of ${env.navStaleHours} h${v.nav.contractThresholdHours != null ? ` (contract navStalenessThreshold() = ${v.nav.contractThresholdHours} h${age > v.nav.contractThresholdHours ? ", exceeded" : ", not exceeded"})` : " (contract exposes no threshold)"}. Last NAV change ${v.nav.updatedAt ? new Date(v.nav.updatedAt * 1000).toISOString() : "?"}${v.nav.block ? ` at block ${v.nav.block}` : ""}${v.nav.lastChangeTx ? ` (tx ${v.nav.lastChangeTx.slice(0, 12)}…)` : ""}. ${navOk ? "" : "Per IXS (24 Sep 2026) a stale NAV drives the deposit limit to 0 until the next refresh: temporarily paused, waiting NAV refresh."}`,
+      : `${age <= env.navStaleHours ? "within" : "older than"} the Vaulto staleness policy of ${env.navStaleHours} h${v.nav.contractThresholdHours != null ? ` (contract navStalenessThreshold() = ${v.nav.contractThresholdHours} h${age > v.nav.contractThresholdHours ? ", exceeded" : ", not exceeded"})` : " (contract exposes no threshold)"}. Last NAV change ${v.nav.updatedAt ? new Date(v.nav.updatedAt * 1000).toISOString() : "?"}${v.nav.block ? ` at block ${v.nav.block}` : ""}${v.nav.lastChangeTx ? ` (tx ${v.nav.lastChangeTx.slice(0, 12)}…)` : ""}. ${navOk ? "" : "Per IXS (24 Sep 2026) a stale NAV drives the deposit limit to 0 until the next refresh: temporarily paused, waiting NAV refresh."}`,
     source: v.nav.source,
   });
 

@@ -323,6 +323,9 @@ export interface Recommendation {
   rejected: RejectedOption[];
   status: RecommendationStatus;
   reasoningSource: "openserv" | "local";
+  /** Who produced the verdicts (SERV or the local fallback) and who wrote the memo/explanation, separately. */
+  decisionSource?: "openserv" | "local";
+  narrativeSource?: "openserv" | "local";
   reasoningModel?: string;
   durationMs: number;
   createdAt: string;
@@ -521,4 +524,6 @@ export interface AnalysisResult {
   recommendation: Recommendation;
   logs: AgentLog[];
   user: UserProfile;
+  /** Evidence recorded while serving this request (SERV input/output, IXS MCP calls, on-chain reads). */
+  evidence?: { id: string; at: string; kind: string; label: string; chainId?: number; blockNumber?: number | null; request?: unknown; response?: unknown; ok: boolean; durationMs?: number }[];
 }

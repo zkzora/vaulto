@@ -6,6 +6,7 @@ import { MIN_DEPOSIT_USDC, modeLabel } from "@/lib/chain/config";
 import { simulateDepositSteps, simulateRedeem } from "@/lib/chain/simulate";
 import { buildDepositSteps, getStrategies } from "@/lib/ixs/client";
 import { buildRedeemRequest } from "@/lib/ixs/mcp";
+import { collectEvidence } from "@/lib/evidence";
 import { runPreflight } from "@/lib/ixs/preflight";
 import { findRegistryVault, getRegistry } from "@/lib/ixs/registry";
 
@@ -34,7 +35,13 @@ export async function POST(req: Request) {
   if (!parsed.success) return bad(parsed.error.issues[0]?.message ?? "invalid body");
   const { address, strategyId } = parsed.data;
   const amount = parsed.data.amount ?? MIN_DEPOSIT_USDC;
+  const input = parsed.data;
   return handle(async () => {
+    const { result, evidence } = await collectEvidence(run);
+    return { ...result, evidence };
+  });
+
+  async function run() {
     const [{ strategies }, registry] = await Promise.all([getStrategies(), getRegistry()]);
     const strategy = strategies.find((s) => s.id === strategyId);
     if (!strategy) throw new Error("unknown strategy");
@@ -43,9 +50,9 @@ export async function POST(req: Request) {
     if (!rv) throw new Error("vault not in the registry");
     const label = modeLabel("simulated", strategy.chainId, rpcKind(strategy.chainId));
 
-    if (parsed.data.action === "redeem") {
+    if (input.action === "redeem") {
       const shareDecimals = strategy.shareDecimals ?? 18;
-      const sharesNum = parsed.data.shares ?? (rv.sharePrice ? amount / rv.sharePrice : amount);
+      const sharesNum = input.shares ?? (rv.sharePrice ? amount / rv.sharePrice : amount);
       const shareUnits = parseUnits(sharesNum.toFixed(Math.min(shareDecimals, 12)), shareDecimals);
       const plan = await buildRedeemRequest(strategy.routeId!, address, shareUnits);
       const st = plan.steps![0];
@@ -60,7 +67,9 @@ export async function POST(req: Request) {
         assetDecimals: strategy.assetDecimals,
         assetSymbol: strategy.asset,
       });
-      return { label, strategyId, action: "redeem" as const, chainId: strategy.chainId, asset: strategy.asset, amount, builtBy: "ixs-mcp" as const, settlement: plan.settlement, mcpDescription: st.description, minRedeemUsd: rv.redeem.minAssetsUsd, feeBps: rv.redeem.feeBps, redeem: sim, steps: [], verdict: sim.ok ? ("allocate" as const) : ("reject" as const), preflight: null };
+      // amount: USDC value of the shares before the fee (gross), so the request and the response agree.
+      const grossUsd = sim.grossAssets ?? (rv.sharePrice ? Number((sharesNum * rv.sharePrice).toFixed(4)) : null);
+      return { label, strategyId, action: "redeem" as const, chainId: strategy.chainId, asset: strategy.asset, amount: grossUsd ?? amount, shares: sharesNum, builtBy: "ixs-mcp" as const, settlement: plan.settlement, mcpDescription: st.description, minRedeemUsd: rv.redeem.minAssetsUsd, feeBps: rv.redeem.feeBps, redeem: sim, steps: [{ index: 0, kind: "requestRedeem", to: st.tx.to, data: st.tx.data, builtBy: "ixs-mcp" }], verdict: sim.ok ? ("allocate" as const) : ("reject" as const), preflight: null };
     }
 
     const preflight = await runPreflight(rv, address, amount);
@@ -91,5 +100,5 @@ export async function POST(req: Request) {
       note: built.note,
       steps: steps.map((s) => ({ index: s.index, kind: s.kind, to: s.to, data: s.data, builtBy: s.builtBy, simulation: sims[s.index] })),
     };
-  });
+  }
 }

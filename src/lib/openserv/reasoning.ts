@@ -6,7 +6,7 @@ import type { AllocationLeg, Memo, Metrics, RejectedOption, TreasurySnapshot, Us
 import type { Assessment, Verdict } from "@/lib/agents/risk";
 import type { Constraints, LegInput } from "@/lib/agents/planner";
 import type { CutoffInfo } from "@/lib/ixs/cutoff";
-import { chatCompletion } from "./inference";
+import { chatCompletion, type ChatMessage } from "./inference";
 import { runOpenServTask } from "./platform";
 
 /**
@@ -32,7 +32,7 @@ Execution defaults to Simulate ("Simulated on <chain> mainnet": the IXS MCP call
 Live redeemable minimum: on a chain in treasury.liveChainIds an ALLOCATE into a vault must be at least its liveDepositMinimum.usd (ixv1: ceil(100 / 0.995 × 1.03) = 104 USDC), so the whole position stays redeemable above the 100 USDC net redeem minimum after the 0.5% fee with a 3% NAV buffer; when the cap is below it, REJECT and cite the formula.
 Respect the liquidity floor, asset exposure limit, minimum vault risk score and the stablecoin runway reserve.
 Framing: SERV decides; deterministic policy guardrails enforce hard limits (liquidity floor, exposure cap, minimum vault score, minimum deposit, Live redeemable minimum, per-transaction Live cap, NAV staleness). Stay inside them so no validator override is needed.
-Never write "deposited", "executed" or "live deposit" for anything that has not happened on-chain: a simulated run is "simulated", an async request is "request submitted, pending operator settlement".
+Never write "deposited", "executed" or "live deposit" for anything that has not happened on-chain: a simulated run is "simulated", an async request is "request submitted, pending operator settlement". Call a vault "deployed" (not "live") and name vaults by their name, not their strategyId.
 Write in plain, confident language for a treasury manager. Be specific with numbers and never invent figures.`;
 
 /* ------------------------------------------------------------------ decision ------------------------------------------------------------------ */
@@ -135,6 +135,29 @@ function extractJson<T>(text: string): T | null {
   }
 }
 
+/**
+ * One OpenServ call that must return JSON. gpt-5.4-mini spends part of the completion budget on reasoning, so the
+ * budget is generous; an unparseable reply or a failed call is retried once with a fresh sample (time permitting).
+ */
+async function servJson<T>(messages: ChatMessage[], opts: { maxTokens: number; temperature?: number }, valid: (j: T | null) => boolean): Promise<{ r: { content: string; model: string }; json: T | null; attempts: number }> {
+  const started = Date.now();
+  let last: { content: string; model: string } | null = null;
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const r = await chatCompletion({ messages, maxTokens: opts.maxTokens, temperature: opts.temperature });
+      last = r;
+      const json = extractJson<T>(r.content);
+      if (valid(json)) return { r, json, attempts: attempt };
+    } catch (e) {
+      lastError = e;
+    }
+    if (Date.now() - started > 70_000) break;
+  }
+  if (last) return { r: last, json: extractJson<T>(last.content), attempts: 2 };
+  throw lastError instanceof Error ? lastError : new Error("OpenServ returned no content");
+}
+
 function localDecision(input: DecisionInput, facts: unknown, note: string): Decision {
   const decisions: VaultDecision[] = [];
   for (const a of input.assessments) {
@@ -161,9 +184,9 @@ export async function decideAllocation(input: DecisionInput): Promise<Decision> 
   const prompt = `DECIDE for every candidate vault. Facts (JSON):\n${JSON.stringify(facts)}\n\nRules: return exactly one decision per candidate strategyId. verdict is "allocate", "defer" or "reject". For "allocate" give amount (asset units) between cap.minAmount (the 100 USDC minimum, or the Live redeemable minimum on a Live chain) and cap.maxAmount; the USD sum of all allocations must not exceed constraints.budgetUsd; you may allocate less if prudence requires it and may split across open vaults by their deposit limits. Use "defer" for limit 0 / stale NAV (waiting NAV refresh) and "reject" for whitelist, pause, announced-not-deployed, risk score or minimum-deposit failures. A candidate that passes pre-flight but has cap null was dropped by the Planner: take its reason from constraints.dropped (for example below the Live redeemable minimum) and reject it. Every reason must cite the concrete fact (numbers, timestamps, chain). Respond with ONLY JSON: {"decisions":[{"strategyId":string,"verdict":"allocate"|"defer"|"reject","amount":number,"reason":string}],"rationale":string (2-3 sentences)}`;
   const started = Date.now();
   try {
-    const r = await chatCompletion({ messages: [{ role: "system", content: VAULTO_SYSTEM_PROMPT }, { role: "user", content: prompt }], temperature: 0.1 });
-    const json = extractJson<{ decisions?: { strategyId: string; verdict: string; amount?: number; reason?: string }[]; rationale?: string }>(r.content);
-    recordEvidence({ kind: "serv", label: `SERV reasoning · decision (${r.model})`, request: { model: r.model, system: VAULTO_SYSTEM_PROMPT, facts }, response: json ?? r.content, ok: Boolean(json?.decisions), durationMs: Date.now() - started });
+    type DecisionJson = { decisions?: { strategyId: string; verdict: string; amount?: number; reason?: string }[]; rationale?: string };
+    const { r, json, attempts } = await servJson<DecisionJson>([{ role: "system", content: VAULTO_SYSTEM_PROMPT }, { role: "user", content: prompt }], { maxTokens: 8000, temperature: 0.1 }, (j) => Boolean(j?.decisions?.length));
+    recordEvidence({ kind: "serv", label: `SERV reasoning · decision (${r.model})${attempts > 1 ? " · 2nd attempt" : ""}`, request: { model: r.model, system: VAULTO_SYSTEM_PROMPT, facts }, response: json ?? r.content, ok: Boolean(json?.decisions), durationMs: Date.now() - started });
     if (!json?.decisions?.length) return localDecision(input, facts, "SERV reasoning returned no parseable decision; deterministic engine used.");
     const known = new Map(input.assessments.map((a) => [a.candidate.strategy.id, a]));
     const decisions: VaultDecision[] = [];
@@ -277,9 +300,13 @@ export function localNarrative(i: NarrativeInput): Narrative {
     headline: legs.length ? `Allocate ${fmtUsd(i.totalUsd)} into IXS vaults and keep a ${after.liquidPct}% liquidity reserve` : "Every candidate vault is deferred or rejected; capital stays liquid",
     summary: `Your treasury has ${fmtUsd(snapshot.idleUsd)} idle (${snapshot.idlePct}%). Based on your ${user.liquidityFloorPct}% liquidity floor and ${user.riskProfile.toLowerCase()} risk policy, Vaulto recommends ${legText}.${deferred.length ? ` Deferred: ${deferred.map((d) => d.option.split(" · ")[0]).join(", ")} (waiting NAV refresh).` : ""}${rejected.length ? ` Rejected: ${rejected.map((r) => r.option.split(" · ")[0]).join(", ")}.` : ""} Liquidity stays at ${after.liquidPct}% and blended yield moves from ${before.blendedApy.toFixed(1)}% to ${after.blendedApy.toFixed(1)}%.`,
     reasons: [
-      { title: "Improves capital efficiency.", body: `${idleText} (≈ ${fmtUsd(snapshot.idleUsd)}) have sat idle for ${snapshot.idleDays} days earning nothing. Deploying ${fmtUsd(i.totalUsd)} adds about ${fmtUsd(i.extraMonthlyUsd)} per month.` },
-      { title: "Maintains required liquidity.", body: `Treasury stays ${after.liquidPct}% liquid, above your ${user.liquidityFloorPct}% floor${user.monthlyBurnUsd > 0 ? `, and two months of burn stay in stablecoins` : ""}.` },
-      { title: "Every vault got a verdict.", body: i.decisions.map((d) => `${vaultOf(i, d.strategyId)?.vaultName ?? d.strategyId}: ${d.verdict}${d.verdict === "allocate" && d.amount ? ` ${d.amount.toLocaleString("en-US")}` : ""} — ${d.reason}`).join(" · ") },
+      snapshot.idleUsd > 0
+        ? { title: "Improves capital efficiency.", body: `${idleText} (≈ ${fmtUsd(snapshot.idleUsd)}) have sat idle for ${snapshot.idleDays} days earning nothing. ${i.totalUsd > 0 ? `Deploying ${fmtUsd(i.totalUsd)} adds about ${fmtUsd(i.extraMonthlyUsd)} per month.` : "Nothing can be deployed right now."}` }
+        : { title: "No idle capital.", body: "The wallet holds no idle USDC or BTC on BNB Chain or Avalanche, so there is nothing to allocate." },
+      snapshot.totalUsd > 0
+        ? { title: "Maintains required liquidity.", body: `Treasury stays ${after.liquidPct}% liquid, ${after.liquidPct >= user.liquidityFloorPct ? "above" : "below"} your ${user.liquidityFloorPct}% floor${user.monthlyBurnUsd > 0 ? `, and two months of burn stay in stablecoins` : ""}.` }
+        : { title: "Nothing to keep liquid.", body: "The treasury is empty, so the liquidity floor does not bind." },
+      { title: "Every vault got a verdict.", body: i.decisions.length ? i.decisions.map((d) => `${vaultOf(i, d.strategyId)?.vaultName ?? d.strategyId}: ${d.verdict}${d.verdict === "allocate" && d.amount ? ` ${d.amount.toLocaleString("en-US")}` : ""} — ${d.reason}`).join(" · ") : "No IXS vault was available to assess." },
     ],
     steps: [
       { agent: "Treasury Scanner + Opportunity Finder", title: "Detected idle capital", body: `${snapshot.idlePct}% of capital is idle: ${idleText}. ${i.assessments.length} candidate vault${i.assessments.length === 1 ? "" : "s"} matched on the IXS Vault API (BNB Chain + Avalanche).` },
@@ -341,15 +368,16 @@ export async function narrate(input: NarrativeInput): Promise<Narrative> {
       output = r.output;
       model = `OpenServ runtime · task #${r.taskId}`;
     } else {
-      const r = await chatCompletion({
-        messages: [
+      const res = await servJson<OpenServJson>(
+        [
           { role: "system", content: VAULTO_SYSTEM_PROMPT },
           { role: "user", content: `${task.description}\n\n${task.body}\n\nEXPECTED OUTPUT: ${task.expectedOutput}` },
         ],
-        maxTokens: 6000,
-      });
-      output = r.content;
-      model = r.model;
+        { maxTokens: 16000 },
+        (j) => Boolean(j?.reasons?.length && j?.steps?.length),
+      );
+      output = res.r.content;
+      model = res.attempts > 1 ? `${res.r.model} · 2nd attempt` : res.r.model;
     }
     const json = extractJson<OpenServJson>(output);
     recordEvidence({ kind: "serv", label: `SERV reasoning · narrative + memo (${model})`, request: { model, facts: task.facts }, response: json ?? output, ok: Boolean(json?.reasons?.length), durationMs: Date.now() - started });

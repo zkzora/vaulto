@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { addressSchema, bad, handle } from "@/lib/api-utils";
+import { collectEvidence } from "@/lib/evidence";
 import { finalize, prepare } from "@/lib/orchestrator";
 import type { PreparedTransaction, Recommendation } from "@/lib/types";
 
@@ -19,7 +20,10 @@ const prepareBody = z.object({
 export async function POST(req: Request) {
   const parsed = prepareBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return bad(parsed.error.issues[0]?.message ?? "invalid body");
-  return handle(async () => ({ prepared: await prepare(parsed.data.address, parsed.data.recommendationId, parsed.data.simulate, parsed.data.recommendation) }));
+  return handle(async () => {
+    const { result, evidence } = await collectEvidence(() => prepare(parsed.data.address, parsed.data.recommendationId, parsed.data.simulate, parsed.data.recommendation));
+    return { prepared: result, evidence };
+  });
 }
 
 const finalizeBody = z.object({

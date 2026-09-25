@@ -106,7 +106,7 @@ export default function HomePage() {
               }
               sub="blended APY"
             />
-            <Stat label="Earned 30d" value={fmtUsd(snapshot.earned30dUsd)} sub="realized yield" />
+            <Stat label="Earned 30d" value={fmtUsd(snapshot.earned30dUsd)} sub={snapshot.positions.some((p) => p.source === "demo") ? "estimate · simulated positions" : "estimate from positions"} />
             <Stat
               label="Health"
               tone={healthTone}
@@ -164,7 +164,7 @@ export default function HomePage() {
                         {s.tag === "primary" && <span className="pill h-[18px] bg-blue px-1.5 text-[10px] tracking-[0.04em] text-white">PRIMARY</span>}
                       </div>
                       <div className="mt-0.5 text-[12px] leading-[1.5] text-muted">
-                        {p ? `${p.amount.toLocaleString("en-US", { maximumFractionDigits: p.asset === "BTC" ? 2 : 0 })} ${p.asset === "USDC" ? "USDC" : p.asset} allocated · ${fmtUsd(p.valueUsd)} · ${s.liquidity.toLowerCase()}` : `${s.description.split(".")[0]}.`}
+                        {p ? `${p.amount.toLocaleString("en-US", { maximumFractionDigits: p.asset === "BTC" ? 2 : 0 })} ${p.asset === "USDC" ? "USDC" : p.asset} ${p.source === "demo" ? "simulated position" : "allocated"} · ${fmtUsd(p.valueUsd)} · ${s.liquidity.toLowerCase()}` : `${s.description.split(".")[0]}.`}
                       </div>
                     </div>
                     <div className="text-right">
@@ -172,7 +172,7 @@ export default function HomePage() {
                       <div className="mt-1 flex justify-end gap-1.5">
                         <Pill tone="green" className="h-5 px-[7px] text-[10px]">Risk {s.riskScore}</Pill>
                         <Pill tone={p ? (s.tag === "primary" ? "blue" : "muted") : "muted"} className="h-5 px-[7px] text-[10px]">
-                          {s.availability === "announced" ? "Announced · not deployable" : p ? `Active${s.tag === "secondary" ? " · Secondary" : ""}` : s.requiresWhitelist ? "Eligibility check" : "Available"}
+                          {s.availability === "announced" ? "Announced · not deployable" : p ? (p.source === "demo" ? "Simulated" : `Active${s.tag === "secondary" ? " · Secondary" : ""}`) : s.requiresWhitelist ? "KYC whitelist" : s.depositLimitUsd === 0 ? "Waiting NAV refresh" : "Accepting deposits"}
                         </Pill>
                       </div>
                     </div>

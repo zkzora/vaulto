@@ -10,7 +10,7 @@ import { api } from "@/lib/client-api";
 import { fmtUsd } from "@/lib/format";
 import type { PreparedTransaction, TxStatus } from "@/lib/types";
 import { useVaultoAccount } from "@/hooks/use-account";
-import { recallRecommendation, rememberRecommendation, useTreasury } from "@/hooks/use-vaulto";
+import { recallRecommendation, rememberActivity, rememberEvidence, rememberRecommendation, useTreasury } from "@/hooks/use-vaulto";
 import { TxnModal } from "./txn-modal";
 import { Toast, type ToastData } from "./toast";
 
@@ -53,7 +53,9 @@ export function TxnProvider({ children }: { children: ReactNode }) {
       setRecId(recommendationId);
       try {
         const held = heldRec?.id === recommendationId ? heldRec : recallRecommendation(account.address);
-        const { prepared } = await api.prepare(account.address, recommendationId, simulate, held?.id === recommendationId ? held : null);
+        const res = await api.prepare(account.address, recommendationId, simulate, held?.id === recommendationId ? held : null);
+        rememberEvidence(res.evidence);
+        const { prepared } = res;
         setPrepared(prepared);
         setSteps(prepared.steps.map((s) => ({ index: s.index, status: "idle" })));
       } catch (e) {
@@ -152,6 +154,7 @@ export function TxnProvider({ children }: { children: ReactNode }) {
     try {
       const held = heldRec?.id === prepared.recommendationId ? heldRec : recallRecommendation(account.address);
       const fin = await api.finalize(account.address, prepared.id, results, { prepared, recommendation: held?.id === prepared.recommendationId ? held : null });
+      rememberActivity(account.address, { transactions: fin.transactions });
       if (fin.recommendation) rememberRecommendation(account.address, fin.recommendation);
       else if (held && held.id === prepared.recommendationId) rememberRecommendation(account.address, { ...held, status: results.some((r) => r.status === "failed") && !results.some((r) => r.status === "confirmed" || r.status === "simulated") ? "approved" : "executed" });
     } catch (e) {

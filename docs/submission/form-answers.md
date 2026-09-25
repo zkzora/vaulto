@@ -28,7 +28,7 @@ Verdicts follow what IXS told participants on 24 Sep 2026: a deposit limit of 0 
 
 The submission is simulated, which the judges confirmed is accepted. Approve and execute runs the IXS MCP calldata through eth_call with a state override against the real vault on BNB mainnet, so anyone can see the expected shares from an empty wallet; nothing is sent. Anvil mainnet-fork runs show the same calldata executing on a fork. Live mode is built and opt-in (exact-amount approvals, 150 USDC cap per transaction, 104 USDC minimum so the position stays redeemable after the 0.5% fee) but was not executed for this submission.
 
-Everything is auditable: the public evidence page shows every IXS MCP call, every on-chain read with its block, the NAV history, SERV's exact input and raw output, the simulations and the fork runs, and exports them as JSON. A snapshot of the public demo run is committed to the repository.
+Everything is auditable: the public evidence page shows the IXS MCP calls, on-chain reads with their blocks, the NAV history, SERV's exact input and raw output, the simulations and the fork runs of the committed public demo run, plus the calls made by the visitor's own browser, and exports them as JSON. The snapshot of the public demo run is committed to the repository.
 
 ## Links
 
@@ -40,7 +40,7 @@ Everything is auditable: the public evidence page shows every IXS MCP call, ever
 
 ## How does the project use SERV / OpenServ?
 
-SERV reasoning, through the OpenServ Inference API, makes every allocation decision. Each analysis makes two calls. The first receives every candidate vault with its pre-flight facts, the planner's caps and the guardrails, and returns one verdict per vault (ALLOCATE with an amount, DEFER or REJECT) with a reason that cites the facts. The second writes the explanation and a seven-section allocation memo. The exact input and raw output of both calls are stored with the recommendation and shown in the app and on the public evidence page. Deterministic guardrails (liquidity floor, exposure cap, minimum vault score, 100 USDC minimum, 104 USDC Live minimum, 150 USDC Live cap, NAV staleness) sit around SERV; a validator override is logged and counted, and the demo runs needed none. If OpenServ is unreachable, a deterministic fallback runs and is labelled "local".
+SERV reasoning, through the OpenServ Inference API, makes every allocation decision. Each analysis makes two calls. The first receives every candidate vault with its pre-flight facts, the planner's caps and the guardrails, and returns one verdict per vault (ALLOCATE with an amount, DEFER or REJECT) with a reason that cites the facts. The second writes the explanation and a seven-section allocation memo. The exact input and raw output of both calls are stored with the recommendation and shown in the app and on the public evidence page. Deterministic guardrails (liquidity floor, exposure cap, minimum vault score, 100 USDC minimum, 104 USDC Live minimum, 150 USDC Live cap, NAV staleness) sit around SERV; a validator override is logged and counted, and the committed snapshot needed none. The verdicts and the memo are attributed separately, so if one OpenServ call fails only that part is labelled "local". If OpenServ is unreachable, a deterministic fallback runs and is labelled as such.
 
 ## How does the project integrate IXS?
 

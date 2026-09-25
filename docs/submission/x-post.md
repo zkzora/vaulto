@@ -31,4 +31,4 @@ Evidence: https://vaulto-five.vercel.app/evidence
 Code: https://github.com/zkzora/vaulto
 Video: VIDEO_URL
 
-Every IXS call, on-chain read with its block, and SERV input/output is public.
+IXS MCP calls, on-chain reads with their blocks, and SERV input/output are public.
