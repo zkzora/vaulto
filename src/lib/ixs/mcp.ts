@@ -8,7 +8,7 @@ import { recordEvidence } from "@/lib/evidence";
  * Every call and its response is written to the evidence log.
  */
 
-const TIMEOUT_MS = 8_000;
+const TIMEOUT_MS = 15_000;
 
 interface JsonRpcResult<T> {
   result?: T;
@@ -104,14 +104,18 @@ export async function vaultGet(vaultId: string): Promise<McpVaultGet | null> {
 
 /** `vault_check_whitelist`: true / false, or null when the MCP could not answer. */
 export async function checkWhitelist(vaultId: string, wallet: string): Promise<boolean | null> {
-  try {
-    const r = await mcpCall("vault_check_whitelist", { vaultId, walletAddress: wallet });
-    if (r.isError) return null;
-    const data = unwrap<{ whitelisted?: boolean; isWhitelisted?: boolean }>(r);
-    return data?.whitelisted ?? data?.isWhitelisted ?? null;
-  } catch {
-    return null;
+  // One retry: the MCP occasionally times out on the licensed BNB vault.
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const r = await mcpCall("vault_check_whitelist", { vaultId, walletAddress: wallet });
+      if (r.isError) return null;
+      const data = unwrap<{ whitelisted?: boolean; isWhitelisted?: boolean }>(r);
+      return data?.whitelisted ?? data?.isWhitelisted ?? null;
+    } catch {
+      // retry once, then give up (the pre-flight falls back to whitelist(wallet) on-chain)
+    }
   }
+  return null;
 }
 
 export interface McpDepositStep {
