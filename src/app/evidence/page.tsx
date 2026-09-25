@@ -35,7 +35,7 @@ function ServCard({ s }: { s: EvidenceSnapshot }) {
         <SnapshotBadge s={s} />
       </div>
       <div className="mt-1 text-[12px] text-muted">
-        {a.treasury} · wallet <span className="mono">{a.wallet}</span> · reasoning <b className="text-ink">{a.reasoningSource === "openserv" ? `OpenServ (${a.reasoningModel ?? "SERV"})` : "local fallback"}</b>
+        {a.treasury} · wallet <span className="mono">{a.wallet}</span> · verdicts <b className="text-ink">{(a.decisionSource ?? a.reasoningSource) === "openserv" ? `SERV · OpenServ (${a.reasoningModel ?? "SERV"})` : "local fallback"}</b> · memo <b className="text-ink">{(a.narrativeSource ?? a.reasoningSource) === "openserv" ? "written by OpenServ" : "local engine"}</b>
         {a.confidence != null ? ` · confidence ${a.confidence}%` : ""} · validator overrides <b className="text-ink">{a.validatorOverrides?.length ?? 0}</b> · captured from <span className="mono">{s.baseUrl}</span>
         {s.file ? <> · <span className="mono">{s.file}</span> in the repo</> : null}
       </div>
