@@ -12,7 +12,9 @@
  *     - sync ERC-4626: shares minted in the deposit transaction;
  *     - async ERC-7540: "Request submitted — pending operator settlement (fork: IXS operator not present)".
  *
- * Everything here runs against the fork only. Labels: "Mainnet fork (Anvil)".
+ * Everything here runs against the fork only. Label: "Mainnet fork (block N)". Progress goes to stderr, the result JSON
+ * to stdout (so `node scripts/fork-demo.mjs > evidence/fork-bnb.json` captures it). With REDEEM=1 the script also
+ * checks the Live redeemable minimum: ceil(minRedeemAssets / (1 - fee) × 1.03), 104 USDC on ixv1.
  *
  * Usage:  node --env-file=.env scripts/fork-demo.mjs
  * Env:    FORK_CHAIN (56 | 43114), FORK_RPC, ANVIL_BIN, ANVIL_PORT, AMOUNT (100), KEEP=1 (leave Anvil running so the
@@ -78,7 +80,20 @@ const vaultAbi = parseAbi([
   "event DepositRequest(address indexed controller, address indexed owner, uint256 indexed requestId, address sender, uint256 assets)",
 ]);
 
-const log = (...a) => console.log("[fork-demo]", ...a);
+const log = (...a) => console.error("[fork-demo]", ...a);
+/** The revert reason (or first line) of a viem / RPC error. */
+const shortError = (e) => {
+  const m = String(e?.shortMessage ?? e?.message ?? e);
+  const reason = m.match(/reverted with the following reason:\s*\n?\s*([^\n]+)/i) ?? m.match(/execution reverted:?\s*([^\n]+)/i);
+  return (reason ? `reverted: ${reason[1].trim()}` : m.split("\n")[0]).slice(0, 240);
+};
+/** Live deposit minimum that keeps a position redeemable above the net minimum (same rule as the app). */
+const redeemableMinimum = (minNet, feeBps) => {
+  if (minNet == null || minNet < 1) return { usd: 100, formula: "no practical redeem minimum on-chain → IXS minimum deposit 100 USDC" };
+  const fee = Number(feeBps ?? 0) / 10_000;
+  const usd = Math.max(100, Math.ceil((minNet / (1 - fee)) * 1.03 - 1e-9));
+  return { usd, formula: `ceil(${minNet} / ${Number((1 - fee).toFixed(4))} × 1.03) = ${usd} USDC` };
+};
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function anvilBin() {
@@ -151,7 +166,8 @@ async function main() {
   }
   const pub = createPublicClient({ chain: C.chain, transport: http(LOCAL) });
   const forkBlock = await pub.getBlockNumber();
-  log(`Mainnet fork (Anvil) ready at ${LOCAL} · ${C.name} forked at block ${forkBlock}`);
+  const forkLabel = `Mainnet fork (block ${forkBlock})`;
+  log(`${forkLabel} ready at ${LOCAL} · ${C.name}`);
   const wallet = createWalletClient({ account: demoAccount, chain: C.chain, transport: http(LOCAL) });
   await rpc("anvil_setBalance", [DEMO_WALLET, "0x8AC7230489E80000"]); // 10 native for gas
   const results = [];
@@ -159,7 +175,7 @@ async function main() {
   try {
     for (const v of items) {
       const VAULT = v.contractAddress;
-      const entry = { label: "Mainnet fork (Anvil)", chainId: FORK_CHAIN, chain: C.name, forkBlock: Number(forkBlock), vault: { name: v.name, symbol: v.symbol, address: VAULT, routeId: v.routeId, requiresWhitelist: v.requiresWhitelist }, demoWallet: DEMO_WALLET };
+      const entry = { label: forkLabel, chainId: FORK_CHAIN, chain: C.name, forkBlock: Number(forkBlock), vault: { name: v.name, symbol: v.symbol, address: VAULT, routeId: v.routeId, requiresWhitelist: v.requiresWhitelist }, demoWallet: DEMO_WALLET };
       results.push(entry);
       // Pre-flight from the contract: asset(), decimals(), maxDeposit(demo), whitelist, pause.
       const ASSET = await pub.readContract({ address: VAULT, abi: vaultAbi, functionName: "asset" });
@@ -268,12 +284,15 @@ async function main() {
         entry.sharesValue = Number(formatUnits(await pub.readContract({ address: VAULT, abi: vaultAbi, functionName: "convertToAssets", args: [shares] }).catch(() => 0n), assetDecimals));
         const dep = decoded.find((d) => d.eventName === "Deposit");
         entry.depositEvent = dep ? { assets: Number(formatUnits(dep.args.assets, assetDecimals)), shares: Number(formatUnits(dep.args.shares, shareDecimals)) } : null;
-        entry.status = `Deposited (sync ERC-4626): ${entry.sharesReceived} ${shareSymbol} ≈ ${entry.sharesValue} ${assetSymbol} minted in the deposit transaction.`;
+        entry.status = `Shares minted on the fork (sync ERC-4626): ${AMOUNT} ${assetSymbol} → ${entry.sharesReceived} ${shareSymbol} (≈ ${entry.sharesValue} ${assetSymbol}) in the deposit transaction. Anvil fork only; no mainnet funds moved.`;
         if (REDEEM && shares > 0n) {
           // Redemption path: requestRedeem (queued) → operator sells RWA and finalizes → USDC paid to the receiver, no claim.
           const minRedeem = await pub.readContract({ address: VAULT, abi: vaultAbi, functionName: "minRedeemAssets" }).catch(() => null);
           const preview = await pub.readContract({ address: VAULT, abi: vaultAbi, functionName: "previewRedeem", args: [shares] }).catch(() => null);
-          const redeemEntry = { shares: Number(formatUnits(shares, shareDecimals)), minRedeemAssets: minRedeem != null ? Number(formatUnits(minRedeem, assetDecimals)) : null, previewNetAssets: preview != null ? Number(formatUnits(preview, assetDecimals)) : null, path: "requestRedeem → queued → operator sells RWA and finalizes → USDC paid to the receiver (no claim step)" };
+          const minNet = minRedeem != null ? Number(formatUnits(minRedeem, assetDecimals)) : null;
+          const previewNet = preview != null ? Number(formatUnits(preview, assetDecimals)) : null;
+          const rmin = redeemableMinimum(minNet, fee);
+          const redeemEntry = { shares: Number(formatUnits(shares, shareDecimals)), minRedeemAssets: minNet, previewNetAssets: previewNet, aboveNetMinimum: previewNet != null && minNet != null ? previewNet >= minNet : null, liveDepositMinimum: { ...rmin, depositMeetsIt: Number(AMOUNT) >= rmin.usd }, path: "requestRedeem → queued → operator sells RWA and finalizes → USDC paid to the receiver (no claim step)" };
           entry.redeem = redeemEntry;
           try {
             const rplan = await mcp("vault_build_request_redeem", { vaultId: v.routeId, ownerAddress: DEMO_WALLET, shareAmount: shares.toString() });
@@ -288,7 +307,7 @@ async function main() {
             redeemEntry.status = receipt.status === "success" ? "Redemption requested → awaiting RWA sale & operator finalization → paid (fork: IXS operator not present, stays queued)" : "requestRedeem reverted on the fork";
             log(`${v.symbol}: requestRedeem ${receipt.status} · fork tx ${hash} · ${redeemEntry.status}`);
           } catch (e) {
-            redeemEntry.status = `requestRedeem not sent: ${e.message}`;
+            redeemEntry.status = `requestRedeem not sent: ${shortError(e)}${redeemEntry.aboveNetMinimum === false ? ` (previewRedeem ${previewNet} ${assetSymbol} net is below minRedeemAssets ${minNet} ${assetSymbol}: why Live deposits into this vault need at least ${rmin.usd} ${assetSymbol})` : ""}`;
             log(`${v.symbol}: ${redeemEntry.status}`);
           }
         }
@@ -306,7 +325,7 @@ async function main() {
       }
       log(`${v.symbol}: ${entry.verdict} — ${entry.status}`);
     }
-    console.log(JSON.stringify({ label: "Mainnet fork (Anvil)", chainId: FORK_CHAIN, chain: C.name, forkBlock: Number(forkBlock), amount: `${AMOUNT} USDC`, demoWallet: DEMO_WALLET, vaults: results }, null, 2));
+    console.log(JSON.stringify({ label: forkLabel, chainId: FORK_CHAIN, chain: C.name, forkBlock: Number(forkBlock), ranAt: new Date().toISOString(), amount: `${AMOUNT} USDC`, amountUsdc: Number(AMOUNT), redeem: REDEEM, demoWallet: DEMO_WALLET, note: "Anvil fork of mainnet: IXS vault contracts and IXS MCP calldata are real; the demo wallet is Anvil test account #0 funded on the fork; nothing touches mainnet.", vaults: results }, null, 2));
     if (KEEP) {
       log(`KEEP=1: Anvil stays up at ${LOCAL}. Point Vaulto at it with ${FORK_CHAIN === 56 ? "RPC_URL" : "AVAX_RPC_URL"}=${LOCAL} (topbar shows "Mainnet fork"). Ctrl+C to stop.`);
       await new Promise(() => {});

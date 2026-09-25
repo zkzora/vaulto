@@ -1,0 +1,79 @@
+{
+  "label": "Mainnet fork (block 123868127)",
+  "chainId": 56,
+  "chain": "BNB Chain",
+  "forkBlock": 123868127,
+  "ranAt": "2026-09-25T02:22:18.599Z",
+  "amount": "100 USDC",
+  "amountUsdc": 100,
+  "redeem": true,
+  "demoWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "note": "Anvil fork of mainnet: IXS vault contracts and IXS MCP calldata are real; the demo wallet is Anvil test account #0 funded on the fork; nothing touches mainnet.",
+  "vaults": [
+    {
+      "label": "Mainnet fork (block 123868127)",
+      "chainId": 56,
+      "chain": "BNB Chain",
+      "forkBlock": 123868127,
+      "vault": {
+        "name": "IX High Yield Bond (USDC)",
+        "symbol": "ix7540v1",
+        "address": "0xD84129f506d1030Dd6b46Fe4A600d1E1c3b0802E",
+        "routeId": "56-0xd84129f506d1030dd6b46fe4a600d1e1c3b0802e",
+        "requiresWhitelist": true
+      },
+      "demoWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "asset": {
+        "address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+        "symbol": "USDC",
+        "decimals": 18
+      },
+      "shares": {
+        "symbol": "ix7540v1",
+        "decimals": 18
+      },
+      "redeemFeeBps": 50,
+      "preflight": {
+        "depositLimit": "0 USDC",
+        "whitelistEnabled": true,
+        "whitelisted": false,
+        "paused": false
+      },
+      "verdict": "REJECT",
+      "status": "Demo wallet is not whitelisted (KYC vault); nothing built."
+    },
+    {
+      "label": "Mainnet fork (block 123868127)",
+      "chainId": 56,
+      "chain": "BNB Chain",
+      "forkBlock": 123868127,
+      "vault": {
+        "name": "IX High Yield Bond (USDC)",
+        "symbol": "ixv1",
+        "address": "0xc975a3EeF2e49F8eDdEf585340C43f15300fCB82",
+        "routeId": "56-0xc975a3eef2e49f8eddef585340c43f15300fcb82",
+        "requiresWhitelist": false
+      },
+      "demoWallet": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "asset": {
+        "address": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+        "symbol": "USDC",
+        "decimals": 18
+      },
+      "shares": {
+        "symbol": "ixv1",
+        "decimals": 18
+      },
+      "redeemFeeBps": 50,
+      "preflight": {
+        "depositLimit": "0 USDC",
+        "whitelistEnabled": false,
+        "whitelisted": true,
+        "paused": false
+      },
+      "verdict": "DEFER",
+      "status": "Deposit limit 0 USDC below 100 USDC: temporarily paused — waiting NAV refresh (per IXS, 24 Sep 2026). Nothing built."
+    }
+  ],
+  "source": "scripts/fork-demo.mjs output"
+}
