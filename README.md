@@ -1,115 +1,159 @@
 # Vaulto — AI treasury allocation agent for IXS RWA vaults
 
-Vaulto scans a DAO / Web3 company treasury, finds idle capital and routes it into the **IX High Yield Bond (USDC) vaults on BNB Chain and Avalanche mainnet** through the IXS Agent Rail. Every allocation, deferral and rejection is decided by **SERV reasoning (OpenServ)** from pre-flight facts read from the IXS MCP, the vault contracts and the IXS subgraphs; the user approves; nothing moves without the wallet's signature.
+Vaulto scans a DAO or Web3 company treasury, finds idle capital and routes it into the **IX High Yield Bond (USDC) vaults on BNB Chain and Avalanche mainnet** through the IXS MCP. Every allocation, deferral and rejection is decided by **SERV reasoning (OpenServ)** from pre-flight facts read from the IXS MCP, the vault contracts and the IXS subgraphs. **SERV decides; deterministic policy guardrails enforce hard limits.** Nothing moves without the wallet's signature.
 
 Built for the OpenServ SERV Hackathon Edition 01, **RWA Vaults powered by IXS Finance** track.
 
-## What runs where
-
-| Layer | Implementation |
+| | |
 |---|---|
-| Frontend | Next.js 16 (App Router) · React 19 · TypeScript · Tailwind 4 |
-| Wallet | RainbowKit + wagmi + viem, browser wallets via EIP-6963, BNB Chain (56) + Avalanche C-Chain (43114) |
-| Reasoning | OpenServ Inference API (`OPENSERV_API_KEY`) — six agents: Treasury Scanner, Opportunity Finder, Risk Guardian, Allocation Planner, Execution, Monitoring |
-| Vaults | IXS production Vault API (`api-v2.ixs.finance`) + IXS MCP (`vault_get`, `vault_check_whitelist`, `vault_build_request_deposit`) + IXS Goldsky subgraphs (NAV timestamps, minimum deposit, request lifecycle) |
-| Execution | **Simulated on <chain> mainnet** (eth_call + state override) · **Live** (wallet-signed, hard cap per tx) · **Mainnet fork** (Anvil) — always against the real IXS contracts |
-| Data | PostgreSQL via Prisma, or a JSON file store when `DATABASE_URL` is empty |
+| Live demo | https://vaulto-five.vercel.app (Launch Vaulto → Continue with demo treasury) |
+| Evidence | https://vaulto-five.vercel.app/evidence · JSON: https://vaulto-five.vercel.app/api/evidence |
+| Committed evidence | [`evidence/`](evidence) (snapshot of the public demo run + mainnet-fork runs) |
+| Video (≤ 2 min) | _link added after upload_ |
+| Source | https://github.com/zkzora/vaulto |
 
-No mock tokens, no mock vaults, no cloned contracts: the only addresses in the execution path are the IXS vaults listed by the IXS Vault API and the USDC they hold (read from `asset()`).
+## Submission mode: simulated on BNB mainnet
 
-## Quick start
+The hackathon judges confirmed on 24 Sep 2026 that simulated execution is accepted (mainnet preferable) and that mock tokens or mock vaults are not. Vaulto therefore runs against the **real IXS vaults on mainnet** and simulates the deposit itself:
 
-```bash
-cd web
-cp .env.example .env        # add OPENSERV_API_KEY
-npm install
-npm run dev
-```
+- **Simulated on BNB mainnet** (the default): the approve + deposit calldata built by the IXS MCP runs through `eth_call` with a **state override** (the wallet's USDC balance and allowance) against the real vault. The result is the expected shares, cross-checked with `previewDeposit`, the gas estimate and the block, or the decoded revert reason. It works from any wallet, funded or empty. Nothing is sent.
+- **Mainnet fork (block N)**: `scripts/fork-demo.mjs` forks BNB Chain or Avalanche with Anvil, funds a test wallet on the fork only, sends the IXS MCP calldata and reads the result back.
+- **Live (opt-in, ready, not executed in this submission)**: a viewer can enable Live for a wallet in Settings. The wallet then signs an exact-amount approve and the deposit, with a hard cap of 150 USDC per transaction and a minimum of 104 USDC into ixv1 (see guardrails). No Live deposit was executed for this submission.
 
-Open `http://localhost:3000` → **Launch Vaulto** → connect a browser wallet, or **Continue with demo treasury** (Acme DAO, labelled "Simulated treasury"). The public evidence page is at `/evidence`.
+A simulated step never gets a fake hash, and an async request is shown as "Request submitted — pending operator settlement" until the IXS operator settles it.
 
-## Pre-flight per vault, verdict per vault
+## What SERV does
 
-On every analysis, each IXS vault gets a pre-flight (`src/lib/ixs/preflight.ts`) with its source and block number:
+Two OpenServ Inference calls per analysis (`src/lib/openserv/reasoning.ts`):
+
+1. **Decision.** SERV receives every candidate vault with its pre-flight facts, the Planner's caps and the guardrails, and returns **one verdict per vault**: `ALLOCATE` (with an amount inside the cap), `DEFER` ("temporarily paused — waiting NAV refresh") or `REJECT`, each with a reason that cites the facts.
+2. **Narrative and memo.** SERV writes the explanation and a seven-section allocation memo (treasury condition, policy, proposed allocation, deferred, rejected, risks, execution).
+
+The exact input and the raw output of both calls are stored on the recommendation and shown on the Strategy page and on `/evidence`. A deterministic validator overrides a SERV allocation only if it breaks a guardrail; overrides are logged and counted (`validatorOverrides`, 0 in the demo runs). If OpenServ is unreachable, the deterministic engine takes over and everything is labelled "local".
+
+## Guardrails (deterministic)
+
+| Guardrail | Value | Enforced by |
+|---|---|---|
+| Liquidity floor | 30% of the treasury stays liquid (policy, editable) | Planner caps |
+| Single-asset exposure | 70% max (policy) | Risk Guardian |
+| Minimum vault risk score | 80 (policy) | Risk Guardian |
+| Minimum deposit | 100 USDC per request (confirmed by IXS) | pre-flight, Planner |
+| Live redeemable minimum | **104 USDC into ixv1** = ceil(100 / 0.995 × 1.03): the whole position must stay redeemable above the 100 USDC net `minRedeemAssets()` after the 0.5% `feeBps()` redeem fee, with a 3% NAV buffer | pre-flight, Planner, validator, Execution Agent |
+| Live cap | 150 USDC per transaction on the demo deployment (`MAX_LIVE_TX_USDC`) | Planner, Execution Agent |
+| NAV staleness | 72 h Vaulto policy, plus the contract's `navStalenessThreshold()` (48 h on ixv1) through `maxDeposit()` | pre-flight → DEFER |
+
+Why 104 USDC: a 100 USDC deposit buys 91.65 ixv1, and redeeming all of it returns 99.5 USDC net, below the 100 USDC minimum, so `requestRedeem` reverts with `below min redeem`. Both facts are in the evidence (fork run at block 123779792 and the eth_call redeem simulation). The shares of a 104 USDC deposit (95.32 ixv1) redeem for 103.48 USDC net.
+
+## IXS integration
+
+- **IXS Vault API** (`https://api-v2.ixs.finance/vaults`): vault addresses, route ids, status, whitelist flag, subgraph URLs. No address is hardcoded except a fallback skeleton used when the API is down.
+- **IXS MCP** (`https://api-v2.ixs.finance/mcp`): `vault_get` (settlement kind and pricing), `vault_check_whitelist`, `vault_build_request_deposit` (approve exact + deposit / requestDeposit calldata), `vault_build_request_redeem`.
+- **Vault contracts**, read through Multicall3 with block numbers: `asset()`, `decimals()`, `maxDeposit(wallet)`, `totalAssets()`, `convertToAssets()`, `paused()`, `whitelistEnabled()`, `feeBps()`, `priceUpdatedAt()`, `navStalenessThreshold()`, `minRedeemAssets()`, `previewDeposit()`, `previewRedeem()`.
+- **IXS Goldsky subgraphs**: NAV history with transaction hashes (receipts verified on-chain), deposit and redeem request lifecycle, observed settlement lag.
+
+### Vaults and status (read 25 Sep 2026)
+
+| Vault | Chain | Type | Status on 25 Sep 2026 | Vaulto verdict |
+|---|---|---|---|---|
+| `ixv1` 0xc975a3Ee…fCB82 | BNB Chain | open, sync ERC-4626 | NAV refreshed about every 48 h; between refreshes older than the 48 h contract threshold, `maxDeposit` is 0 | ALLOCATE when the NAV is fresh, DEFER while `maxDeposit` is 0 |
+| `ix7540v1` 0xD84129f5…0802E | BNB Chain | licensed, async ERC-7540, KYC | wallet not whitelisted | REJECT |
+| `IXHYB` 0xaD01573b…A8bD9 | Avalanche | open, async ERC-7540 | `maxDeposit` 0, NAV from 14 Sep 2026 | DEFER (waiting NAV refresh) |
+| `IXHYB` 0x864E9C19…B41 | Avalanche | licensed, async ERC-7540, KYC | wallet not whitelisted | REJECT |
+| BTC Real Yield | — | announced by IXS | no vault on the IXS Vault API | REJECT |
+
+Per IXS (answers to participants, 24 Sep 2026): daily cutoff 17:00 SGT (09:00 UTC) on Singapore business days, settlement about one business day later; a deposit limit of 0 is the NAV-staleness effect, not a closed vault; minimum deposit 100 USDC; redemption has no claim step (requested → awaiting RWA sale & operator finalization → paid). Singapore public holidays in the cutoff calculator are assumed, not confirmed by IXS.
+
+## Pre-flight per vault
 
 | Check | Source | Fails → |
 |---|---|---|
-| Vault status | IXS Vault API `status`, `paused()` on-chain | REJECT |
+| Vault status | IXS Vault API `status`, `paused()` | REJECT |
 | Eligibility | IXS MCP `vault_check_whitelist`, `whitelistEnabled()` | REJECT |
-| NAV freshness | subgraph `priceUpdatedAt` / `NAV_UPDATED` events (receipt verified on-chain) vs `NAV_STALE_HOURS` (72) | DEFER |
-| Deposit limit | `maxDeposit(wallet)` on-chain | DEFER (limit 0 = NAV-staleness effect, per IXS 24 Sep 2026) |
+| NAV freshness | `priceUpdatedAt()` vs 72 h policy and `navStalenessThreshold()` | DEFER |
+| Deposit limit | `maxDeposit(wallet)` | DEFER (limit 0 = NAV staleness, per IXS) |
 | IXS MCP builds the request | `vault_build_request_deposit` probe | REJECT when the vault is otherwise open |
-| Minimum deposit 100 USDC | subgraph `minDepositAssets` / vault revert "below min deposit"; confirmed by IXS | REJECT |
-| Cutoff / settlement | IXS statement 24 Sep 2026 + subgraph `depositRequests` | informational |
-
-**SERV decides; deterministic policy guardrails enforce hard limits.** SERV reasoning receives every candidate with these facts and the Planner's caps and returns **one verdict per vault**: `ALLOCATE` (amount within the cap and deposit limit, may split across open vaults), `DEFER` ("temporarily paused — waiting NAV refresh") or `REJECT`, each with an explicit reason. The guardrails (liquidity floor, exposure cap, minimum vault score, minimum deposit 100 USDC, per-transaction Live cap `MAX_LIVE_TX_USDC`, NAV staleness) are deterministic: the Planner caps every leg, and a SERV allocation to a vault whose pre-flight failed is overridden, logged and counted (`validatorOverrides` on the recommendation, 0 in a clean demo run). The exact SERV input and raw output are shown on the Strategy page and on `/evidence`.
-
-## Execution modes (honest labels everywhere)
-
-| Mode | When | What **Approve & execute** does |
-|---|---|---|
-| **Simulated on BNB / Avalanche mainnet** | wallet holds < 100 USDC on that chain (default, simulated treasury) | The approve + deposit calldata built by the IXS MCP runs through `eth_call` on mainnet with a **state override** (USDC balance + allowance of the wallet). Expected shares (decoded and cross-checked with `previewDeposit`), gas estimate, price per share, or the decoded revert reason. Works from any wallet, funded or not. Nothing is sent. |
-| **Live mainnet · <chain>** | wallet holds ≥ 100 USDC on the vault's chain and pre-flight passes | Same calldata signed by the wallet: `approve` for the exact amount, then `deposit` (sync ERC-4626, shares minted in the tx) or `requestDeposit` (async ERC-7540 → "Request submitted — pending operator settlement"). Hard cap per transaction `MAX_LIVE_TX_USDC` (150 USDC on the demo deployment, shown as a guardrail in Settings, the Strategy page and the signing modal). Confirmed transactions land on `/evidence` as "Live mainnet" entries with hash, block, gas and the shares now held. |
-| **Mainnet fork** | `RPC_URL` / `AVAX_RPC_URL` point at a local Anvil | Same flows against a fork; topbar says "Mainnet fork". |
-
-A simulated step never gets a fake hash, and an async request is never called "deposited" until the operator settles it.
-
-## Cutoff-aware, redemption path, watcher
-
-- Per IXS (answer to participants, 24 Sep 2026): daily cutoff **17:00 SGT (09:00 UTC)** on Singapore business days; requests are processed at the next cutoff; settlement ≈ 1 business day. `src/lib/ixs/cutoff.ts` computes the next cutoff and the settlement estimate; Singapore public holidays are marked **assumed, not confirmed by IXS**. The sync BNB vault (`ixv1`) settles in the deposit transaction.
-- Redemption (`ixv1`, verified on-chain and through the IXS MCP): `requestRedeem` puts the shares in a queue (MCP settlement `queued`), the operator sells the underlying RWA and finalizes, USDC is paid straight to the receiver, no claim step: **requested → awaiting RWA sale & operator finalization → paid**. Fee 0.5% (`feeBps()`), minimum `minRedeemAssets()` = 100 USDC net, observed lag median ≈ 3 h over the 7 finalized requests on the subgraph (range minutes to 13 days; 2 requests still pending). Redeeming exactly the shares of a 100 USDC deposit (91.65 ixv1 → 99.5 USDC net) reverts with `below min redeem`; ≥ 92.2 ixv1 (≈ 100.5 USDC net) passes. "Simulate redeem" on the IXS Strategies page runs the MCP calldata through eth_call with a share-balance override.
-- NAV timestamps come from `priceUpdatedAt()` on the contracts (history and tx hashes from the subgraph); the contracts also expose `navStalenessThreshold()` (48 h on `ixv1`, 30 days on the ERC-7540 vaults), shown next to Vaulto's 72 h policy.
-- NAV / deposit-limit watcher (`src/lib/ixs/watch.ts`): every scan compares the registry with the previous observation; a limit moving from 0 to > 0 or a NAV refresh is logged by the Monitoring Agent, shown in the Risk Center and toasted in the app. Vaults with limit 0 are listed as "waiting NAV refresh".
-- Direct contract builds (fallback when the MCP fails for a non-safety reason) are only allowed for the IXS-approved Avalanche proxy `0xaD01573b459805E3954398796203d830B57A8bD9`, and never when the pre-flight did not pass.
-
-## Live deposit walkthrough (100 USDC into ixv1)
-
-1. Connect the wallet on BNB Chain holding USDC. With the default policy (30% liquidity floor) the Planner keeps ~31% liquid, so hold **≥ 150 USDC** for a ≈ 100 USDC leg (or set the floor to 0% in Settings and hold ≥ 101 USDC). The topbar switches to **Live mainnet · BNB** automatically.
-2. **Run analysis**: pre-flight on every vault, SERV verdicts, memo.
-3. **Approve & execute (Live)** → **Simulate first** runs the calldata through eth_call from the real wallet state (no balance override needed) → **Approve & execute (Live)** asks the wallet to sign `approve` (exact amount, ≤ 150 USDC) and then `deposit`. Nothing is sent without the signature.
-4. Activity shows the BscScan hashes; `/evidence` shows "Live mainnet" entries with block, gas and the ixv1 shares now held.
-
-## Mainnet fork script (for the video)
-
-```bash
-npm run fork:demo                    # BNB Chain fork, every IXS vault on the chain
-FORK_CHAIN=43114 npm run fork:demo   # Avalanche fork (vaults with limit 0 are reported as DEFER, nothing built)
-KEEP=1 npm run fork:demo             # leave Anvil running, then RPC_URL=http://127.0.0.1:8545
-```
-
-`scripts/fork-demo.mjs` (`REDEEM=1 AMOUNT=101` also sends a `requestRedeem` after the deposit and reports "Redemption requested → awaiting RWA sale & operator finalization → paid") reads `asset()`/`decimals()`/`maxDeposit()` from each vault, defers limit-0 vaults, funds the demo wallet from a large USDC holder, asks the IXS MCP for approve + deposit calldata, sends both and reports shares (sync) or "Request submitted — pending operator settlement (fork: IXS operator not present)" (async). Sample output: `docs/fork-demo-sample.json`. Requires Foundry (`anvil`).
+| Minimum deposit | 100 USDC (IXS) | REJECT |
+| Live redeemable minimum | `minRedeemAssets()` + `feeBps()` | REJECT in Live mode, informational in Simulate |
+| Cutoff / settlement | IXS statement + subgraph `depositRequests` | informational |
 
 ## Evidence
 
-`/evidence` (public) and `GET /api/evidence` (JSON export): IXS statements Vaulto relies on (dated), every vault with deposit limit, price per share, NAV timestamp, last NAV change transaction (explorer link, receipt verified) and read block; the next cutoff; the watcher state; the mainnet-fork run; and the call log (IXS MCP requests/responses, Vault API and subgraph reads, on-chain reads with block numbers, eth_call simulations, SERV reasoning input/output).
+`/evidence` shows, and `GET /api/evidence` exports: the dated IXS and judge statements; every vault with deposit limit, price per share, NAV timestamp, last NAV change transaction and read block (live); the committed snapshot of the latest public demo run (SERV verdicts with input and output, pre-flight per vault, memo, deposit and redeem simulations); the mainnet-fork runs; and the call log of the answering server instance on top of the snapshot's call log, so the page is never empty on a fresh serverless instance.
+
+Committed files in [`evidence/`](evidence):
+
+- `snapshot-2026-09-25.json`: public demo run captured from https://vaulto-five.vercel.app with `npm run evidence:snapshot`.
+- `fork-bnb-block123779792-100usdc.json`: 100 USDC → 91.65 ixv1 on a BNB mainnet fork (approve + deposit fork transactions).
+- `fork-bnb-block123785153-101usdc-redeem.json`: 101 USDC deposit, then `requestRedeem` queued on the fork.
+- `fork-bnb-block123868127.json`, `fork-avalanche-block96093431.json`: 25 Sep 2026 forks, both open vaults at limit 0 → DEFER, licensed vaults → REJECT.
 
 ## Revenue model
 
-A routing fee in basis points per year on the AUM Vaulto routes into IXS vaults (25 bps by default), taken from vault yield; no fee on idle capital or on deferred / rejected allocations. Targets: DAO treasuries, crypto startups and small funds that want RWA yield with policy guardrails and an audit trail, without an ops desk watching cutoffs, NAV updates and deposit limits.
+A routing fee of **25 bps per year on the AUM Vaulto routes into IXS vaults**, taken from vault yield. No fee on idle capital and none on deferred or rejected allocations. Target users: DAO treasuries, crypto startups and small funds that want RWA yield with policy guardrails and an audit trail, without an ops desk watching cutoffs, NAV updates and deposit limits.
+
+## Run it locally
+
+```bash
+git clone https://github.com/zkzora/vaulto && cd vaulto
+cp .env.example .env        # add OPENSERV_API_KEY (serv_…)
+npm install
+npm run dev                 # http://localhost:3000
+```
+
+Open **Launch Vaulto → Continue with demo treasury** (Acme DAO, labelled "Simulated treasury"), then **Run analysis**.
+
+Mainnet fork (requires Foundry's `anvil`):
+
+```bash
+npm run fork:demo                                # BNB Chain fork, every IXS vault on the chain
+AMOUNT=104 REDEEM=1 npm run fork:demo            # deposit, then requestRedeem of the minted shares
+FORK_CHAIN=43114 npm run fork:demo               # Avalanche fork
+KEEP=1 npm run fork:demo                         # leave Anvil running, then RPC_URL=http://127.0.0.1:8545 npm run dev
+```
+
+The script prints its result as JSON on stdout (progress on stderr). A vault with a deposit limit of 0 is reported as DEFER and nothing is built.
+
+Evidence snapshot of a deployment:
+
+```bash
+BASE_URL=https://vaulto-five.vercel.app npm run evidence:snapshot   # writes evidence/snapshot-YYYY-MM-DD.json
+```
+
+### Configuration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `OPENSERV_API_KEY` | — | OpenServ Inference API key (SERV reasoning) |
+| `OPENSERV_MODEL` | `gpt-5.4-mini` | model on the OpenServ gateway |
+| `RPC_URL`, `AVAX_RPC_URL` | public RPCs that honour state overrides | point at Anvil for a fork |
+| `IXS_API_BASE_URL`, `IXS_MCP_URL` | IXS production | Vault API and MCP |
+| `MAX_LIVE_TX_USDC` | 25000 (150 on the demo deployment) | Live cap per transaction |
+| `LIVE_MODE` | `opt-in` | `off` disables Live on a deployment |
+| `NAV_STALE_HOURS` | 72 | Vaulto NAV staleness policy |
+| `DATABASE_URL` | empty (JSON store) | PostgreSQL via Prisma |
 
 ## API
 
 | Method | Route | Purpose |
 |---|---|---|
-| GET | `/api/treasury?address=` | Snapshot (on-chain per chain + simulated treasury), execution mode, watcher, next cutoff, open recommendation |
-| GET | `/api/vaults` | Catalog from the registry (API addresses + contract + subgraph reads) |
-| GET | `/api/ixs/mainnet` | Read-only view of all IXS production vaults |
+| GET | `/api/treasury?address=` | Snapshot (on-chain per chain + simulated treasury), execution mode, watcher, next cutoff |
+| GET | `/api/vaults` | Catalog from the registry (API addresses + contract and subgraph reads) |
 | POST | `/api/analyze` | Full pipeline → verdicts, allocation, memo, trace |
-| POST | `/api/simulate` | Pre-flight + IXS MCP calldata + eth_call simulation for one vault (any wallet) |
-| POST / PUT | `/api/execute` | Prepare (calldata + simulation, or unsigned txs in Live mode) / finalize |
+| POST | `/api/simulate` | Pre-flight + IXS MCP calldata + eth_call simulation of a deposit or redeem, from any wallet |
+| POST / PUT | `/api/execute` | Prepare (calldata + simulation, or unsigned transactions in Live mode) / finalize |
 | GET | `/api/evidence` | Evidence export |
-| GET/POST/PATCH | `/api/recommendation`, `/api/risk`, `/api/portfolio`, `/api/activity`, `/api/settings` | Reports, logs, policy |
+| GET / PATCH | `/api/settings` | Policy, simulated treasury, Live opt-in; `?ping=1` checks OpenServ |
 
-## Scripts
+## Architecture
 
-- `npm run dev` / `npm run build` / `npm run lint`
-- `npm run fork:demo` — Anvil mainnet-fork walkthrough
-- `npm run agent` — run Vaulto as an OpenServ platform agent (platform reasoning mode)
-- `npm run db:push` — Prisma schema to PostgreSQL
+Next.js 16 (App Router) · React 19 · TypeScript · Tailwind 4 · RainbowKit + wagmi + viem (BNB Chain 56, Avalanche 43114) · OpenServ Inference API · IXS Vault API + MCP + Goldsky subgraphs · PostgreSQL via Prisma or a JSON store.
 
-## Security model
+Six agents: Treasury Scanner, Opportunity Finder, Risk Guardian (pre-flight facts), Allocation Planner (caps), Execution Agent (IXS MCP calldata, simulation or unsigned transactions), Monitoring Agent (NAV and deposit-limit watcher). SERV reasoning makes the decisions between the Risk Guardian and the Planner's validation.
 
-- Vaulto holds no keys and never signs. The IXS MCP builds calldata; the wallet signs in Live mode; simulations are read-only `eth_call`s.
-- Approvals are for the exact deposit amount; Live transactions are capped.
-- Every proposal shows amount, destination, expected outcome, risk score, liquidity after, fees, cutoff and the execution mode before approval.
-- Reasoning source (OpenServ vs local), confidence, verdicts, simulation results and transaction hashes are logged in Activity and on `/evidence`.
+## Security model and known limits
+
+- Vaulto holds no keys and never signs. The IXS MCP builds calldata, simulations are read-only `eth_call`s, and in Live mode the wallet signs every transaction.
+- Approvals are for the exact deposit amount; Live transactions are capped and never below the redeemable minimum.
+- On Vercel the JSON store and the call log live in memory per serverless instance; the execute flow is stateless and `/evidence` falls back to the committed snapshot. Set `DATABASE_URL` for persistence.
+- The IXS MCP tool `vault_request_status` currently fails upstream with a schema error; request status is read from the IXS subgraph instead.
