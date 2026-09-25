@@ -29,7 +29,7 @@ Two OpenServ Inference calls per analysis (`src/lib/openserv/reasoning.ts`):
 1. **Decision.** SERV receives every candidate vault with its pre-flight facts, the Planner's caps and the guardrails, and returns **one verdict per vault**: `ALLOCATE` (with an amount inside the cap), `DEFER` ("temporarily paused — waiting NAV refresh") or `REJECT`, each with a reason that cites the facts.
 2. **Narrative and memo.** SERV writes the explanation and a seven-section allocation memo (treasury condition, policy, proposed allocation, deferred, rejected, risks, execution).
 
-The exact input and the raw output of both calls are stored on the recommendation and shown on the Strategy page and on `/evidence`. A deterministic validator overrides a SERV allocation only if it breaks a guardrail; overrides are logged and counted (`validatorOverrides`, 0 in the demo runs). If OpenServ is unreachable, the deterministic engine takes over and everything is labelled "local".
+The exact input and the raw output of both calls are stored on the recommendation and shown on the Strategy page and on `/evidence`. A deterministic validator overrides a SERV allocation only if it breaks a guardrail; overrides are logged and counted (`validatorOverrides`, 0 in the committed snapshot). The verdicts and the memo are attributed separately: if one OpenServ call fails, only that part is labelled "local engine".
 
 ## Guardrails (deterministic)
 
@@ -43,12 +43,12 @@ The exact input and the raw output of both calls are stored on the recommendatio
 | Live cap | 150 USDC per transaction on the demo deployment (`MAX_LIVE_TX_USDC`) | Planner, Execution Agent |
 | NAV staleness | 72 h Vaulto policy, plus the contract's `navStalenessThreshold()` (48 h on ixv1) through `maxDeposit()` | pre-flight → DEFER |
 
-Why 104 USDC: a 100 USDC deposit buys 91.65 ixv1, and redeeming all of it returns 99.5 USDC net, below the 100 USDC minimum, so `requestRedeem` reverts with `below min redeem`. Both facts are in the evidence (fork run at block 123779792 and the eth_call redeem simulation). The shares of a 104 USDC deposit (95.32 ixv1) redeem for 103.48 USDC net.
+Why 104 USDC: the fork run at block 123779792 shows a 100 USDC deposit minting 91.65 ixv1, and the eth_call redeem simulation in the evidence snapshot shows that redeeming 91.65 ixv1 returns 99.5 USDC net, below the 100 USDC minimum, so `requestRedeem` reverts with `below min redeem`. The shares of a 104 USDC deposit (95.32 ixv1) redeem for 103.48 USDC net.
 
 ## IXS integration
 
 - **IXS Vault API** (`https://api-v2.ixs.finance/vaults`): vault addresses, route ids, status, whitelist flag, subgraph URLs. No address is hardcoded except a fallback skeleton used when the API is down.
-- **IXS MCP** (`https://api-v2.ixs.finance/mcp`): `vault_get` (settlement kind and pricing), `vault_check_whitelist`, `vault_build_request_deposit` (approve exact + deposit / requestDeposit calldata), `vault_build_request_redeem`.
+- **IXS MCP** (`https://api-v2.ixs.finance/mcp`, JSON-RPC over POST): `vault_get` (settlement kind and pricing), `vault_check_whitelist`, `vault_build_request_deposit` (approve exact + deposit / requestDeposit calldata), `vault_build_request_redeem`. If `vault_get` ever disagrees with the vault's subgraph family on the settlement kind, the family wins and the conflict is recorded.
 - **Vault contracts**, read through Multicall3 with block numbers: `asset()`, `decimals()`, `maxDeposit(wallet)`, `totalAssets()`, `convertToAssets()`, `paused()`, `whitelistEnabled()`, `feeBps()`, `priceUpdatedAt()`, `navStalenessThreshold()`, `minRedeemAssets()`, `previewDeposit()`, `previewRedeem()`.
 - **IXS Goldsky subgraphs**: NAV history with transaction hashes (receipts verified on-chain), deposit and redeem request lifecycle, observed settlement lag.
 
@@ -79,7 +79,7 @@ Per IXS (answers to participants, 24 Sep 2026): daily cutoff 17:00 SGT (09:00 UT
 
 ## Evidence
 
-`/evidence` shows, and `GET /api/evidence` exports: the dated IXS and judge statements; every vault with deposit limit, price per share, NAV timestamp, last NAV change transaction and read block (live); the committed snapshot of the latest public demo run (SERV verdicts with input and output, pre-flight per vault, memo, deposit and redeem simulations); the mainnet-fork runs; and the call log of the answering server instance on top of the snapshot's call log, so the page is never empty on a fresh serverless instance.
+`/evidence` shows, and `GET /api/evidence` exports: the dated IXS and judge statements; every vault with deposit limit, price per share, NAV timestamp, last NAV change transaction and read block (live); the committed snapshot of the latest public demo run (SERV verdicts with input and output, pre-flight per vault, memo, deposit and redeem simulations, and the call log of that run); the mainnet-fork runs; and a call log that stacks the answering server instance's entries, the entries returned to your own browser's analyze and simulate requests, and the snapshot's entries, so the page is never empty on a fresh serverless instance. The analyze, simulate and execute responses carry the evidence recorded while serving them.
 
 Committed files in [`evidence/`](evidence):
 
@@ -101,7 +101,7 @@ npm install
 npm run dev                 # http://localhost:3000
 ```
 
-Open **Launch Vaulto → Continue with demo treasury** (Acme DAO, labelled "Simulated treasury"), then **Run analysis**.
+Open **Launch Vaulto → Continue with demo treasury** (Acme DAO, labelled "Simulated treasury": 12.4 BTC and 942,520 USDC, all idle, no pre-existing vault position), then **Run analysis**. A real wallet works too: every IXS vault still gets a verdict, even with nothing idle.
 
 Mainnet fork (requires Foundry's `anvil`):
 
