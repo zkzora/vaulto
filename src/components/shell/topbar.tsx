@@ -89,11 +89,13 @@ export function Topbar() {
             return (
               <button
                 onClick={() => {
-                  if (connected) {
+                  // In the simulated treasury the Vaulto menu comes first, even when a wallet is connected (it offers
+                  // "Use connected wallet"); the RainbowKit modals only serve the wallet mode.
+                  if (account.isDemo) setOpen((v) => !v);
+                  else if (connected) {
                     if (chain?.unsupported) openChainModal();
                     else openAccountModal();
-                  } else if (account.isDemo) setOpen((v) => !v);
-                  else openConnectModal();
+                  } else openConnectModal();
                 }}
                 className="inline-flex h-9 items-center gap-2 rounded-[10px] border border-line px-3 text-[13px] font-semibold text-ink hover:bg-canvas"
               >
