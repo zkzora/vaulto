@@ -29,8 +29,8 @@ Attribution: say "IXS stated" only for what IXS said (cutoff 17:00 SGT on Singap
 - REJECT when the wallet is not whitelisted, the vault is paused, the product is announced but not deployed (e.g. BTC Real Yield), the risk score is below policy, or the idle balance is below the minimum deposit. Give the concrete reason.
 Never skip a candidate silently: every candidate gets exactly one verdict and reason. When several checks fail, the most severe one sets the verdict (REJECT beats DEFER, e.g. nothing idle to allocate is a REJECT even if the limit is also 0), and the reason names every failing check.
 Treasury totals are in US dollars ($), not USDC: the treasury also holds BTC. Use "USDC" only for USDC amounts.
-If treasury.replay is set, the facts are the mainnet state at that past block (Replay mode, for demonstration): say so in the memo Execution section, quoting treasury.replay.label, and never describe that state as today's.
-Settlement facts: sync ERC-4626 vaults mint shares in the deposit transaction; async ERC-7540 vaults process requests at the daily cutoff 17:00 SGT (09:00 UTC) on Singapore business days (stated by IXS); Vaulto estimates settlement about one business day later. Redemptions: request → awaiting RWA sale & operator finalization → paid (no claim step), 0.5% redemption fee.
+If treasury.replay is set, the facts are the mainnet state at that past block (Replay mode, for demonstration): say so in the memo Execution section, quoting treasury.replay.label, and never describe that state as today's. In Replay the IXS MCP is not used (it builds against the current state only): the approve and deposit calldata are encoded directly against the vault ABI (IXS stated that direct contract builds are allowed); never say the IXS MCP built or supplied the Replay calldata.
+Settlement facts: sync ERC-4626 vaults mint shares in the deposit transaction; async ERC-7540 vaults process requests at the daily cutoff 17:00 SGT (09:00 UTC) on Singapore business days (stated by IXS: requests submitted at any time are processed at the next cutoff; never write that settlement happens at the cutoff); Vaulto estimates settlement about one business day later. Redemptions: request → awaiting RWA sale & operator finalization → paid (no claim step), 0.5% redemption fee.
 Execution defaults to Simulate ("Simulated on <chain> mainnet": the IXS MCP calldata runs through eth_call + state override against the real vault; nothing is sent). Live mode is an opt-in capability (wallet-signed, exact approvals, capped per transaction) that applies only to chains listed in treasury.liveChainIds; the decision logic is identical in both modes.
 Concentration: one ALLOCATE may not exceed guardrails.maxVaultTvlSharePct (25%) of the vault's TVL (totalAssets before the deposit). The Planner's cap.maxAmount is already min(policy cap, 25% of TVL); never allocate above it. When the cap is bound by concentration (cap.note says so), say so and give the resulting share of the vault's TVL. If that cap is below the 100 USDC minimum, the vault is in constraints.dropped with verdict "defer": DEFER it with the capacity reason.
 Live redeemable minimum: on a chain in treasury.liveChainIds an ALLOCATE into a vault must be at least its liveDepositMinimum.usd (ixv1: ceil(100 / 0.995 × 1.03) = 104 USDC), so the whole position stays redeemable above the 100 USDC net redeem minimum after the 0.5% fee with a 3% NAV buffer; when the cap is below it, REJECT and cite the formula.
@@ -91,7 +91,7 @@ function decisionFacts(i: DecisionInput) {
       liveChainIds: i.snapshot.liveChainIds,
       liveOptIn: i.snapshot.liveOptIn,
       liveCapableChainIds: i.snapshot.liveCapableChainIds,
-      replay: i.snapshot.replay ? { block: i.snapshot.replay.block, at: i.snapshot.replay.iso, avalancheBlock: i.snapshot.replay.avaxBlock, label: i.snapshot.replay.label, note: "Replay: every vault fact is the mainnet state at this past block, for demonstration; deposits are simulated at that block and nothing is sent" } : null,
+      replay: i.snapshot.replay ? { block: i.snapshot.replay.block, at: i.snapshot.replay.iso, avalancheBlock: i.snapshot.replay.avaxBlock, label: i.snapshot.replay.label, note: "Replay: every vault fact is the mainnet state at this past block, for demonstration; deposits are simulated at that block with calldata encoded directly against the vault ABI (the IXS MCP is not used in Replay) and nothing is sent" } : null,
       assets: i.snapshot.assets.map((a) => ({ symbol: a.symbol, valueUsd: a.valueUsd, idleAmount: a.idleAmount, idleUsd: a.idleUsd, deployedIn: a.deployedIn })),
       positions: i.snapshot.positions.map((p) => ({ vault: p.vaultName, asset: p.asset, valueUsd: p.valueUsd, apy: p.apy })),
       maxExposure: i.snapshot.maxExposure,
@@ -116,8 +116,8 @@ function decisionFacts(i: DecisionInput) {
         liveOnThisChain: i.snapshot.liveChainIds.includes(s.chainId),
         liveDepositMinimum: s.terms?.minLiveDepositUsd != null ? { usd: s.terms.minLiveDepositUsd, formula: s.terms.minLiveDepositFormula, reason: s.terms.minLiveDepositReason } : null,
         policyFacts: a.facts,
-        cap: cap ? { minAmount: cap.minAmount, maxAmount: cap.maxAmount, maxUsd: cap.maxUsd, depositLimitUsd: cap.depositLimitUsd, vaultTvlUsd: cap.tvlUsd, concentrationCapUsd: cap.concentrationCapUsd, minNote: cap.minNote, note: cap.capNote } : null,
-        vaultTvlUsd: s.tvlUsd ?? null,
+        cap: cap ? { minAmount: cap.minAmount, maxAmount: cap.maxAmount, maxUsd: cap.maxUsd, depositLimitUsd: cap.depositLimitUsd, vaultTvlUsd: cents(cap.tvlUsd), concentrationCapUsd: cents(cap.concentrationCapUsd), minNote: cap.minNote, note: cap.capNote } : null,
+        vaultTvlUsd: cents(s.tvlUsd),
       };
     }),
     constraints: i.constraints
@@ -128,6 +128,11 @@ function decisionFacts(i: DecisionInput) {
     nextCutoff: { utc: i.cutoff.nextCutoffUtc, sgt: i.cutoff.nextCutoffSgt, hoursUntil: i.cutoff.hoursUntilCutoff, estimatedSettlementSgt: i.cutoff.estimatedSettlementSgt, source: i.cutoff.source },
     fallbackSizing: i.fallback,
   };
+}
+
+// TVL figures are shown to SERV rounded to the cent, so its reasons do not quote raw floats (655.8727047729288).
+function cents(n: number | null | undefined): number | null {
+  return n == null ? null : Math.round(n * 100) / 100;
 }
 
 function extractJson<T>(text: string): T | null {
@@ -297,7 +302,7 @@ export function localMemo(i: NarrativeInput): Memo {
       { heading: "Deferred (waiting NAV refresh)", body: i.deferred.length ? i.deferred.map((d) => `${d.option}: ${d.reason}`).join(" · ") : "None." },
       { heading: "Rejected", body: i.rejected.length ? i.rejected.map((r) => `${r.option}: ${r.reason}`).join(" · ") : "None." },
       { heading: "Risks", body: "RWA credit risk: the vault holds U.S. Treasuries and high-yield corporate bonds through a licensed structure; returns depend on their performance and are not guaranteed. Redemptions are queued for the operator (request → awaiting RWA sale & operator finalization → paid, no claim step) with a 0.5% redemption fee read from feeBps(); NAV is updated periodically off-chain, so entry and exit prices can drift between updates. Smart-contract and counterparty risk apply." },
-      { heading: "Execution", body: `${snapshot.replay ? `${snapshot.replay.label}: every fact above is the mainnet state at that block, read through an archive RPC; simulations run at that block and nothing is sent. ` : ""}${legs.length ? `${legs.length} deposit${legs.length > 1 ? "s" : ""}: approve exact amount + ${asyncLegs.length ? "requestDeposit" : "deposit"} built by the IXS MCP. ` : ""}${asyncLegs.length ? `Async vaults: send before the next cutoff ${i.cutoff.nextCutoffSgt} (in ${i.cutoff.hoursUntilCutoff} h) to be processed then; estimated settlement ${i.cutoff.estimatedSettlementSgt} (${i.cutoff.holidayAssumption}). ` : ""}${snapshot.executionMode === "live" ? `Live (opt-in): the wallet signs on the vault's chain, exact-amount approvals, capped at ${env.maxLiveTxUsdc.toLocaleString("en-US")} USDC per transaction.` : `Simulated on mainnet: eth_call + state override against the real vault; nothing is sent. Live mode is an opt-in capability (wallet-signed, capped at ${env.maxLiveTxUsdc.toLocaleString("en-US")} USDC per transaction) and is not used in this run.`}` },
+      { heading: "Execution", body: `${snapshot.replay ? `${snapshot.replay.label}: every fact above is the mainnet state at that block, read through an archive RPC; simulations run at that block and nothing is sent. ` : ""}${legs.length ? `${legs.length} deposit${legs.length > 1 ? "s" : ""}: approve exact amount + ${asyncLegs.length ? "requestDeposit" : "deposit"} ${snapshot.replay ? "encoded directly against the vault ABI (the IXS MCP builds against the current state only)" : "built by the IXS MCP"}. ` : ""}${asyncLegs.length ? `Async vaults: send before the next cutoff ${i.cutoff.nextCutoffSgt} (in ${i.cutoff.hoursUntilCutoff} h) to be processed then; estimated settlement ${i.cutoff.estimatedSettlementSgt} (${i.cutoff.holidayAssumption}). ` : ""}${snapshot.executionMode === "live" ? `Live (opt-in): the wallet signs on the vault's chain, exact-amount approvals, capped at ${env.maxLiveTxUsdc.toLocaleString("en-US")} USDC per transaction.` : `Simulated on mainnet: eth_call + state override against the real vault; nothing is sent. Live mode is an opt-in capability (wallet-signed, capped at ${env.maxLiveTxUsdc.toLocaleString("en-US")} USDC per transaction) and is not used in this run.`}` },
     ],
   };
 }
@@ -348,7 +353,7 @@ interface OpenServJson {
 function buildTask(input: NarrativeInput) {
   const facts = {
     policy: { riskProfile: input.user.riskProfile, liquidityFloorPct: input.user.liquidityFloorPct, maxAssetExposurePct: input.user.maxAssetExposurePct, minVaultRiskScore: input.user.minVaultRiskScore, monthlyBurnUsd: input.user.monthlyBurnUsd, treasuryGoal: input.user.treasuryGoal },
-    treasury: { replay: input.snapshot.replay ? { block: input.snapshot.replay.block, at: input.snapshot.replay.iso, label: input.snapshot.replay.label } : null, totalUsd: input.snapshot.totalUsd, idleUsd: input.snapshot.idleUsd, idlePct: input.snapshot.idlePct, idleDays: input.snapshot.idleDays, executionMode: input.snapshot.executionMode, assets: input.snapshot.assets.map((a) => ({ symbol: a.symbol, valueUsd: a.valueUsd, idleAmount: a.idleAmount, deployedIn: a.deployedIn })), positions: input.snapshot.positions, maxExposure: input.snapshot.maxExposure },
+    treasury: { replay: input.snapshot.replay ? { block: input.snapshot.replay.block, at: input.snapshot.replay.iso, label: input.snapshot.replay.label, calldata: "encoded directly against the vault ABI; the IXS MCP is not used in Replay" } : null, totalUsd: input.snapshot.totalUsd, idleUsd: input.snapshot.idleUsd, idlePct: input.snapshot.idlePct, idleDays: input.snapshot.idleDays, executionMode: input.snapshot.executionMode, assets: input.snapshot.assets.map((a) => ({ symbol: a.symbol, valueUsd: a.valueUsd, idleAmount: a.idleAmount, deployedIn: a.deployedIn })), positions: input.snapshot.positions, maxExposure: input.snapshot.maxExposure },
     candidates: input.assessments.map((a) => ({ strategyId: a.candidate.strategy.id, vault: a.candidate.strategy.vaultName, chain: a.candidate.strategy.chainName, asset: a.candidate.asset, yieldTtmPct: a.candidate.strategy.apy, riskScore: a.candidate.strategy.riskScore, settlement: a.candidate.strategy.settlement, preflight: a.preflight ? a.preflight.checks.map((c) => ({ label: c.label, ok: c.ok, severity: c.severity, value: c.value })) : "no vault deployed" })),
     decisions: input.decisions,
     plan: { rationale: input.decisionRationale, concentration: input.concentration ?? [], legs: input.legs.map((l) => ({ vault: l.vaultName, chain: l.chainName, amount: l.amount, asset: l.asset, amountUsd: l.amountUsd, apy: l.apy, settlement: vaultOf(input, l.strategyId)?.settlement })), before: input.before, after: input.after, extraMonthlyUsd: input.extraMonthlyUsd, totalUsd: input.totalUsd },
