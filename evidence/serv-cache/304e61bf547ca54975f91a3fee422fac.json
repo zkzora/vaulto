@@ -1,0 +1,55 @@
+{
+  "key": "304e61bf547ca54975f91a3fee422fac",
+  "stage": "decision",
+  "promptVersion": "7ca26a5f141f",
+  "model": "gpt-5.4-mini-2026-03-17",
+  "createdAt": "2026-09-27T06:59:17.167Z",
+  "output": {
+    "decisions": [
+      {
+        "strategyId": "ixhyb-bnb",
+        "verdict": "allocate",
+        "amount": 163.96,
+        "reason": "Allocate 163.96 USDC on BNB Chain. The vault is active, open, deployed, and passes the 100 USDC minimum; the only binding cap is the 25% concentration guardrail at 163.96 USDC (vault TVL 655.87 USDC), which is within the planner budget and below the treasury’s 1373295 USDC allocation budget."
+      },
+      {
+        "strategyId": "ixhyb-avax",
+        "verdict": "defer",
+        "amount": 0,
+        "reason": "Defer because the vault is temporarily paused by policy: maxDeposit is 0 USDC at Avalanche block 96060880 and NAV is stale at 10.4 days old (last update 2026-09-14T06:17:51.000Z), so it is waiting NAV refresh."
+      },
+      {
+        "strategyId": "ixhyb-bnb-licensed",
+        "verdict": "reject",
+        "amount": 0,
+        "reason": "Reject because the vault is not whitelisted (whitelist(wallet) false at BNB block 123779792), maxDeposit is 0 USDC, and NAV is stale at 6.4 days old (last update 2026-09-18T06:19:49.000Z)."
+      },
+      {
+        "strategyId": "ixhyb-avax-licensed",
+        "verdict": "reject",
+        "amount": 0,
+        "reason": "Reject because the vault is not whitelisted (whitelist(wallet) false at Avalanche block 96060880), maxDeposit is 0 USDC, and NAV is stale at 10.4 days old (last update 2026-09-14T06:17:09.000Z)."
+      },
+      {
+        "strategyId": "ixs-btc-real-yield",
+        "verdict": "reject",
+        "amount": 0,
+        "reason": "Reject because this BTC Real Yield vault is announced but not deployed on the IXS Vault API, so there is no live vault to allocate to."
+      }
+    ],
+    "rationale": "Only the BNB USDC vault is allocatable under the current facts, and it is capped at 163.96 USDC by the 25% vault-TVL concentration guardrail. The Avalanche USDC vault is deferred because its deposit limit is 0 USDC with stale NAV, while both licensed vaults are rejected for non-whitelist access and zero deposit limits; the BTC vault is rejected because it is not deployed."
+  },
+  "usage": {
+    "promptTokens": 7486,
+    "cachedTokens": 0,
+    "completionTokens": 510,
+    "reasoningTokens": 0,
+    "attempts": 1,
+    "costUsd": 0.010546,
+    "pricing": "gpt-5.4-mini: input 100, cached input 10, output 600 US cents per 1M tokens (OpenServ /v1/models)"
+  },
+  "view": {
+    "address": "0x7a3f5c1e9b2d4a6f8c0e1d3b5a7c9e2f4b6d9c21",
+    "replayBlock": 123779792
+  }
+}
