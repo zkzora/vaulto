@@ -1,7 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/client-api";
+import { api, type ReplayResponse } from "@/lib/client-api";
+import { REPLAY_DEFAULT_BLOCK } from "@/lib/chain/config";
 import type { AgentLog, AnalysisResult, Recommendation, RecommendationStatus, TransactionRecord, UserPatch } from "@/lib/types";
 import { useVaultoAccount } from "./use-account";
 
@@ -191,11 +192,13 @@ export function useSetReplay() {
     mutationFn: (block: number | null) => api.setReplay(address!, block),
     // Drop reads still in flight for the old view (a slow Current scan must not land after the switch).
     onMutate: () => qc.cancelQueries(),
-    // The switch counts as done once the replay info and the treasury are re-read for the new view (the toggle shows
-    // a loading note until then); everything else refreshes in the background.
-    onSuccess: async () => {
-      await Promise.all([qc.invalidateQueries({ queryKey: ["replay"] }), qc.invalidateQueries({ queryKey: ["treasury"] })]);
-      void qc.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "replay" && q.queryKey[0] !== "treasury" });
+    // The PATCH answers with the resolved replay context: show it at once, then the switch counts as done once the
+    // treasury is re-read for the new view (the toggle shows a loading note until then). The rest refreshes in the
+    // background, including the list of replay blocks.
+    onSuccess: async (res) => {
+      qc.setQueryData<ReplayResponse>(["replay"], (old) => ({ defaultBlock: old?.defaultBlock ?? REPLAY_DEFAULT_BLOCK, options: old?.options ?? [], active: res.system.replay ?? null }));
+      await qc.invalidateQueries({ queryKey: ["treasury"] });
+      void qc.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "treasury" });
     },
   });
 }
