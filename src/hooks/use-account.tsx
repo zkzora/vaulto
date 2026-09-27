@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useAccount, useDisconnect } from "wagmi";
 import { DEMO_ADDRESS } from "@/lib/demo";
 
@@ -90,7 +90,14 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     () => false,
   );
   // Wait for wagmi to finish reconnecting a wallet before deciding which treasury to show (or redirecting to /connect).
-  const ready = mounted && status !== "reconnecting" && status !== "connecting";
+  // wagmi starts reconnecting after the first render: when the user chose a wallet before, give it up to 3 s.
+  const [graceOver, setGraceOver] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setGraceOver(true), 3000);
+    return () => clearTimeout(t);
+  }, []);
+  const waitingForWallet = Boolean(walletIntent) && !address && !graceOver;
+  const ready = mounted && status !== "reconnecting" && status !== "connecting" && !waitingForWallet;
 
   const enterDemo = useCallback(() => {
     walletIntentStore.set(false);
