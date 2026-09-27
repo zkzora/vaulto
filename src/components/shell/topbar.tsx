@@ -52,11 +52,15 @@ export function Topbar() {
         <VaultoLogo height={22} />
       </Link>
       <div className="flex items-center gap-2.5">
-        {(account.isDemo || data?.user.demoMode) && (
-          <Link href="/app/settings" title="The Acme DAO treasury is simulated (fake BTC + USDC holdings) on top of the real on-chain balances. Vault addresses, calldata and simulations are real.">
+        {snapshot?.treasurySource ? (
+          <Link href="/app/settings" title={snapshot.treasurySource.kind === "wallet" ? "Treasury = the balances of this wallet (read at the replay block in Replay)." : "The Acme DAO treasury is simulated (fake BTC + USDC holdings). Vault addresses, calldata and simulations are real."}>
+            <Pill tone={snapshot.treasurySource.kind === "wallet" ? "muted" : "amber"}>{snapshot.treasurySource.label}</Pill>
+          </Link>
+        ) : (account.isDemo || data?.user.demoMode) ? (
+          <Link href="/app/settings">
             <Pill tone="amber">Simulated treasury</Pill>
           </Link>
-        )}
+        ) : null}
         {data && (
           <Link
             href="/app/settings"
@@ -101,20 +105,36 @@ export function Topbar() {
         </ConnectButton.Custom>
         {open && account.isDemo && (
           <div className="absolute right-6 top-14 z-40 w-64 rounded-xl border border-line bg-white p-3 shadow-panel rise">
-            <div className="text-[12px] text-muted">Using the simulated treasury address. Connect a wallet to scan a real treasury on {CHAIN_NAME} and Avalanche.</div>
-            <ConnectButton.Custom>
-              {({ openConnectModal }) => (
-                <button
-                  className="btn btn-primary mt-3 w-full"
-                  onClick={() => {
-                    setOpen(false);
-                    openConnectModal();
-                  }}
-                >
-                  Connect wallet
-                </button>
-              )}
-            </ConnectButton.Custom>
+            <div className="text-[12px] text-muted">
+              Using the simulated treasury (Acme DAO).{" "}
+              {account.walletConnected ? `Wallet ${shortAddress(account.walletAddress ?? "", 4)} is connected but not used.` : `Connect a wallet to scan a real treasury on ${CHAIN_NAME} and Avalanche.`}
+            </div>
+            {account.walletConnected ? (
+              <button
+                className="btn btn-primary mt-3 w-full"
+                onClick={() => {
+                  setOpen(false);
+                  account.chooseWallet();
+                }}
+              >
+                Use connected wallet
+              </button>
+            ) : (
+              <ConnectButton.Custom>
+                {({ openConnectModal }) => (
+                  <button
+                    className="btn btn-primary mt-3 w-full"
+                    onClick={() => {
+                      setOpen(false);
+                      account.chooseWallet();
+                      openConnectModal();
+                    }}
+                  >
+                    Connect wallet
+                  </button>
+                )}
+              </ConnectButton.Custom>
+            )}
             <button
               className="btn btn-ghost mt-1 w-full"
               onClick={() => {

@@ -94,6 +94,11 @@ export function useTreasury() {
         const cached = recallRecommendation(address!, data.snapshot.replay?.block ?? null);
         if (cached && cached.context?.demoMode === data.snapshot.demoMode && (cached.context?.replayBlock ?? null) === (data.snapshot.replay?.block ?? null)) data.recommendation = cached;
       }
+      // Never "act now" when SERV deferred or rejected every vault in the latest analysis of this view.
+      const rec = data.recommendation;
+      if (rec?.decisions?.length && !rec.decisions.some((d) => d.verdict === "allocate")) {
+        data.snapshot = { ...data.snapshot, opportunityScore: 0, opportunityLabel: "nothing to allocate · every vault deferred or rejected" };
+      }
       return data;
     },
     enabled: Boolean(address),

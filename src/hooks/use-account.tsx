@@ -6,6 +6,8 @@ import { DEMO_ADDRESS } from "@/lib/demo";
 
 const KEY = "vaulto:demo-address";
 const EVENT = "vaulto:demo-change";
+/** Set when the user explicitly chose a wallet (connect page, "Use connected wallet"); cleared when they pick the demo. */
+const WALLET_KEY = "vaulto:wallet-intent";
 
 /** Tiny external store around localStorage so React can subscribe without effects. */
 const demoStore = {
@@ -35,6 +37,25 @@ const demoStore = {
   },
 };
 
+const walletIntentStore = {
+  get(): string | null {
+    try {
+      return localStorage.getItem(WALLET_KEY);
+    } catch {
+      return null;
+    }
+  },
+  set(on: boolean) {
+    try {
+      if (on) localStorage.setItem(WALLET_KEY, "1");
+      else localStorage.removeItem(WALLET_KEY);
+    } catch {
+      // ignore
+    }
+    window.dispatchEvent(new Event(EVENT));
+  },
+};
+
 const subscribeNoop = () => () => {};
 
 interface VaultoAccount {
@@ -46,6 +67,11 @@ interface VaultoAccount {
   connector?: string;
   enterDemo: () => void;
   leaveDemo: () => void;
+  /** Explicit choice of the connected wallet as the treasury (leaves the simulated treasury). */
+  chooseWallet: () => void;
+  /** A browser wallet is connected (it may be unused while the simulated treasury is chosen). */
+  walletConnected: boolean;
+  walletAddress: string | null;
   signOut: () => void;
 }
 
@@ -55,32 +81,48 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const { address, chainId, connector, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
   const demo = useSyncExternalStore(demoStore.subscribe, demoStore.get, () => null);
+  const walletIntent = useSyncExternalStore(demoStore.subscribe, walletIntentStore.get, () => null);
   const ready = useSyncExternalStore(
     subscribeNoop,
     () => true,
     () => false,
   );
 
-  const enterDemo = useCallback(() => demoStore.set(DEMO_ADDRESS), []);
+  const enterDemo = useCallback(() => {
+    walletIntentStore.set(false);
+    demoStore.set(DEMO_ADDRESS);
+  }, []);
   const leaveDemo = useCallback(() => demoStore.set(null), []);
+  const chooseWallet = useCallback(() => {
+    walletIntentStore.set(true);
+    demoStore.set(null);
+  }, []);
   const signOut = useCallback(() => {
     demoStore.set(null);
+    walletIntentStore.set(false);
     if (isConnected) disconnect();
   }, [disconnect, isConnected]);
 
+  // The simulated treasury wins over a wallet that merely (auto-)reconnected: the wallet is used only when there is no
+  // demo choice, or when the user explicitly chose it (walletIntent).
+  const wallet = address ? address.toLowerCase() : null;
+  const demoChosen = Boolean(demo) && !(walletIntent && wallet);
   const value = useMemo<VaultoAccount>(
     () => ({
-      address: address ? address.toLowerCase() : demo,
-      isWallet: Boolean(address),
-      isDemo: !address && Boolean(demo),
+      address: demoChosen ? demo : wallet,
+      isWallet: !demoChosen && Boolean(wallet),
+      isDemo: demoChosen,
       ready,
       chainId,
       connector: connector?.name,
       enterDemo,
       leaveDemo,
+      chooseWallet,
+      walletConnected: Boolean(wallet),
+      walletAddress: wallet,
       signOut,
     }),
-    [address, demo, ready, chainId, connector?.name, enterDemo, leaveDemo, signOut],
+    [demoChosen, demo, wallet, ready, chainId, connector?.name, enterDemo, leaveDemo, chooseWallet, signOut],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

@@ -132,6 +132,10 @@ export interface TreasurySnapshot {
   liveOptIn: boolean;
   /** Replay mode: the vault and wallet state are read at this past block (null = current state). */
   replay?: ReplayInfo | null;
+  /** Where the treasury figures come from: the simulated Acme DAO treasury, a wallet (at the replay block), or both. */
+  treasurySource?: { kind: "simulated" | "wallet" | "simulated+wallet"; label: string };
+  /** Idle capital in assets that have an IXS vault open for deposits (the only capital Vaulto could allocate). */
+  allocatableIdleUsd?: number;
 }
 
 export interface VaultStrategy {
