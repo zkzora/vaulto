@@ -89,9 +89,13 @@ export async function scan(address: string): Promise<ScanResult> {
   store.saveTreasurySnapshot(address, snapshot.assets).catch(() => undefined);
 
   // NAV / deposit-limit watcher: log every change the Monitoring Agent sees.
-  // The watcher only observes today's state, never a replayed block.
-  const events = replay ? [] : watchRegistry(await getRegistry({ current: true }));
-  for (const e of events) {
+  // The watcher only observes today's state, never a replayed block. In Replay it still observes today's state
+  // (the topbar shows it as "Today: …"), but its changes are logged to the activity feed only outside Replay.
+  const events = await getRegistry({ current: true }).then(watchRegistry, (e) => {
+    if (!replay) throw e;
+    return [] as ReturnType<typeof watchRegistry>;
+  });
+  for (const e of replay ? [] : events) {
     await log({ walletAddress: normalizeAddress(address), agentName: "Monitoring Agent", action: "watch", reasoning: e.message, status: e.kind === "limit" && /reopened/.test(e.message) ? "success" : "info", source: "IXS" });
   }
   return { user, snapshot, strategies, liveOk, watch: watchStatus(), cutoff: nextCutoff() };

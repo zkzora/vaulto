@@ -82,17 +82,19 @@ export function buildRiskReport(snapshot: TreasurySnapshot, user: UserProfile, r
   });
 
   const alerts: RiskReport["alerts"] = [];
+  // The watcher always describes today's state; in Replay the vault may have been open at the replayed block.
+  const today = snapshot.replay ? "Today: " : "";
   for (const w of watch?.waiting ?? []) {
     alerts.push({
       id: `nav-${w.vault}-${w.chainName}`,
       kind: "info",
-      title: `${w.chainName} vault temporarily paused — waiting NAV refresh`,
+      title: `${today}${w.chainName} vault temporarily paused — waiting NAV refresh`,
       body: `Deposit limit is 0 while the NAV is stale (last update ${w.navUpdatedAt ? new Date(w.navUpdatedAt * 1000).toISOString().slice(0, 16).replace("T", " ") + " UTC" : "unknown"}${w.navAgeHours != null ? `, ${(w.navAgeHours / 24).toFixed(1)} days ago` : ""}). IXS stated (24 Sep 2026) that a 0 limit relates to NAV staleness; Vaulto policy defers the vault, watches the limit and NAV on every scan and flags the vault the moment it reopens.`,
       cta: "analyze",
     });
   }
   for (const e of (watch?.events ?? []).slice(0, 3)) {
-    alerts.push({ id: e.id, kind: e.kind === "limit" ? "action" : "info", title: e.kind === "limit" ? "Deposit limit changed" : "NAV refreshed", body: e.message, cta: "analyze" });
+    alerts.push({ id: e.id, kind: e.kind === "limit" ? "action" : "info", title: `${today}${e.kind === "limit" ? "Deposit limit changed" : "NAV refreshed"}`, body: e.message, cta: "analyze" });
   }
   if (rec && rec.status === "proposed") {
     alerts.push({
