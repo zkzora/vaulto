@@ -34,9 +34,15 @@ export default function ConnectPage() {
   const hasAnyProvider = useSyncExternalStore(noop, detectProvider, () => false);
   const ready = useSyncExternalStore(noop, () => true, () => false);
 
+  // Only an explicit wallet choice on this page enters the app with the wallet (a wallet that auto-reconnected does not).
+  const [walletChosen, setWalletChosen] = useState(false);
   useEffect(() => {
-    if (isConnected) router.replace("/app");
-  }, [isConnected, router]);
+    if (isConnected && walletChosen) {
+      account.chooseWallet();
+      router.replace("/app");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected, walletChosen, router]);
 
   // /connect?demo=1 → jump straight into the demo treasury (handy for judges and screenshots)
   useEffect(() => {
@@ -59,6 +65,7 @@ export default function ConnectPage() {
     setError(null);
     try {
       setBusy(connector.uid);
+      setWalletChosen(true);
       await connectAsync({ connector });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Connection failed";
@@ -89,8 +96,27 @@ export default function ConnectPage() {
     disabled: false,
   }));
 
+  const connectedWallet = isConnected && account.walletAddress
+    ? [
+        {
+          key: "connected",
+          title: `Continue with connected wallet ${account.walletAddress.slice(0, 6)}…${account.walletAddress.slice(-4)}`,
+          sub: "Use this wallet's own balances as the treasury",
+          badge: "Connected",
+          onClick: () => {
+            account.chooseWallet();
+            router.push("/app");
+          },
+          icon: <span className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-blue font-display text-[14px] font-bold text-white">W</span>,
+          primary: true,
+          disabled: false,
+        },
+      ]
+    : [];
+
   const options = [
-    ...walletOptions,
+    ...connectedWallet,
+    ...(isConnected ? [] : walletOptions),
     ...(ready && !walletList.length
       ? [
           {

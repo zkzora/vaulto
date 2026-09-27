@@ -1,4 +1,4 @@
-import { LIVE_MODE_MIN_USDC, NATIVE_PRICE_KEY, NATIVE_SYMBOL, type ReplayInfo } from "@/lib/chain/config";
+import { LIVE_MODE_MIN_USDC, MIN_DEPOSIT_USDC, NATIVE_PRICE_KEY, NATIVE_SYMBOL, type ReplayInfo } from "@/lib/chain/config";
 import { ASSET_META, DEMO_ADDRESS, DEMO_HOLDINGS } from "@/lib/demo";
 import { round, vaultLabel } from "@/lib/format";
 import type {
@@ -183,7 +183,20 @@ export function scanTreasury(input: ScanInput): TreasurySnapshot {
   const liveChainIds = liveOptIn ? liveCapableChainIds : [];
   const executionMode: TreasurySnapshot["executionMode"] = liveChainIds.length ? "live" : "simulated";
   const bestApy = strategies.filter((s) => s.apy != null && s.status === "active").reduce((m, s) => Math.max(m, s.apy ?? 0), 0);
-  const opportunityScore = totalUsd > 0 ? computeOpportunity({ idlePct, idleDays, bestApy }) : 0;
+  // Opportunity only counts idle capital an IXS vault could take now (or at the replay block): an asset with an open,
+  // deployed, non-KYC vault whose deposit limit is not 0, and at least the 100 USDC minimum of it. Otherwise 0.
+  const openAssets = new Set(strategies.filter((s) => s.executable && s.status === "active" && s.availability !== "announced" && !s.requiresWhitelist && s.depositLimitUsd !== 0).map((s) => s.asset));
+  const allocatableIdleUsd = Math.round(assets.filter((a) => a.idle && openAssets.has(a.symbol)).reduce((s, a) => s + a.idleUsd, 0));
+  const nothingToAllocate = allocatableIdleUsd < MIN_DEPOSIT_USDC;
+  const opportunityScore = nothingToAllocate ? 0 : totalUsd > 0 ? computeOpportunity({ idlePct, idleDays, bestApy }) : 0;
+  const isDemoAddress = user.walletAddress.toLowerCase() === DEMO_ADDRESS;
+  const shortWallet = `${user.walletAddress.slice(0, 6)}…${user.walletAddress.slice(-4)}`;
+  const atBlock = input.replay ? ` @ block ${input.replay.block}` : "";
+  const treasurySource: TreasurySnapshot["treasurySource"] = isDemoAddress
+    ? { kind: "simulated", label: "Simulated treasury (Acme DAO)" }
+    : user.demoMode
+      ? { kind: "simulated+wallet", label: `Simulated treasury + wallet ${shortWallet}${atBlock}` }
+      : { kind: "wallet", label: `Wallet ${shortWallet}${atBlock}` };
 
   return {
     walletAddress: user.walletAddress,
@@ -201,7 +214,13 @@ export function scanTreasury(input: ScanInput): TreasurySnapshot {
     earned30dUsd,
     healthScore,
     opportunityScore,
-    opportunityLabel: opportunityLabel(opportunityScore),
+    opportunityLabel: nothingToAllocate
+      ? openAssets.size
+        ? `nothing to allocate · under ${MIN_DEPOSIT_USDC} USDC idle in an open vault's asset`
+        : "nothing to allocate · no IXS vault accepts deposits"
+      : opportunityLabel(opportunityScore),
+    treasurySource,
+    allocatableIdleUsd,
     runwayMonths: user.monthlyBurnUsd > 0 ? round(idleUsd / user.monthlyBurnUsd, 1) : 0,
     assets,
     positions,

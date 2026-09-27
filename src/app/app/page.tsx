@@ -41,7 +41,7 @@ export default function HomePage() {
             {greeting()}, {user.daoName}
           </div>
           <div className="mt-1 text-[14px] text-muted">
-            {fmtDate(snapshot.scannedAt)} · Risk preference: <b className="text-ink">{user.riskProfile}</b>
+            {fmtDate(snapshot.scannedAt)} · Treasury: <b className="text-ink">{snapshot.treasurySource?.label ?? (snapshot.demoMode ? "Simulated treasury" : "Wallet")}</b> · Risk preference: <b className="text-ink">{user.riskProfile}</b>
             {snapshot.onchain.rpcOk ? (
               <span> · {CHAIN_NAME} block {snapshot.onchain.blockNumber?.toLocaleString()}{snapshot.onchain.byChain?.[43114]?.rpcOk ? ` · Avalanche block ${snapshot.onchain.byChain[43114].blockNumber?.toLocaleString()}` : ""}</span>
             ) : (
