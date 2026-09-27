@@ -72,21 +72,25 @@ interface VaultoAccount {
   /** A browser wallet is connected (it may be unused while the simulated treasury is chosen). */
   walletConnected: boolean;
   walletAddress: string | null;
+  /** The user chose the connected wallet explicitly at some point (kept across reloads). */
+  walletChosen: boolean;
   signOut: () => void;
 }
 
 const Ctx = createContext<VaultoAccount | null>(null);
 
 export function AccountProvider({ children }: { children: ReactNode }) {
-  const { address, chainId, connector, isConnected } = useAccount();
+  const { address, chainId, connector, isConnected, status } = useAccount();
   const { disconnect } = useDisconnect();
   const demo = useSyncExternalStore(demoStore.subscribe, demoStore.get, () => null);
   const walletIntent = useSyncExternalStore(demoStore.subscribe, walletIntentStore.get, () => null);
-  const ready = useSyncExternalStore(
+  const mounted = useSyncExternalStore(
     subscribeNoop,
     () => true,
     () => false,
   );
+  // Wait for wagmi to finish reconnecting a wallet before deciding which treasury to show (or redirecting to /connect).
+  const ready = mounted && status !== "reconnecting" && status !== "connecting";
 
   const enterDemo = useCallback(() => {
     walletIntentStore.set(false);
@@ -120,9 +124,10 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       chooseWallet,
       walletConnected: Boolean(wallet),
       walletAddress: wallet,
+      walletChosen: Boolean(walletIntent),
       signOut,
     }),
-    [demoChosen, demo, wallet, ready, chainId, connector?.name, enterDemo, leaveDemo, chooseWallet, signOut],
+    [demoChosen, demo, wallet, walletIntent, ready, chainId, connector?.name, enterDemo, leaveDemo, chooseWallet, signOut],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

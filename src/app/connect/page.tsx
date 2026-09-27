@@ -37,7 +37,7 @@ export default function ConnectPage() {
   // Only an explicit wallet choice on this page enters the app with the wallet (a wallet that auto-reconnected does not).
   const [walletChosen, setWalletChosen] = useState(false);
   useEffect(() => {
-    if (isConnected && walletChosen) {
+    if (isConnected && (walletChosen || (account.walletChosen && !account.isDemo))) {
       account.chooseWallet();
       router.replace("/app");
     }
