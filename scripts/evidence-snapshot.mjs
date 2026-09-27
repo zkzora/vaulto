@@ -120,7 +120,7 @@ async function main() {
     deployment: e.deployment,
     submission: e.submission,
     note: REPLAY_BLOCK
-      ? `${analyze.json.snapshot?.replay?.label ?? `Replay @ block ${REPLAY_BLOCK}`}: every vault and wallet read in this run is the BNB mainnet state at that past block (Avalanche at its block closest in time), read through an archive RPC. Deposits are simulated at that block with calldata encoded directly against the vault ABI (the IXS MCP builds against the current state only). Nothing is sent.`
+      ? `${analyze.json.snapshot?.replay?.label ?? `Replay @ block ${REPLAY_BLOCK}`}: every vault read in this run is the BNB mainnet state at that past block (Avalanche at its block closest in time), read through an archive RPC; the simulated treasury (Acme DAO) keeps its balances. Deposits are simulated at that block with calldata encoded directly against the vault ABI (the IXS MCP builds against the current state only). Nothing is sent.`
       : allocate.length
       ? undefined
       : "At capture time no IXS vault accepted deposits: both open vaults returned maxDeposit 0 (NAV older than the contract's staleness threshold, the NAV-staleness effect IXS described on 24 Sep 2026), so SERV deferred them and nothing was built. Simulations and fork runs from when the NAV was fresh are listed below.",
