@@ -130,7 +130,7 @@ export interface TreasurySnapshot {
   liveCapableChainIds: number[];
   /** Live opt-in for this wallet in this browser (cookie). */
   liveOptIn: boolean;
-  /** Replay mode: the vault and wallet state are read at this past block (null = current state). */
+  /** Replay mode: vault state (and, in wallet mode, the wallet balances) is read at this past block (null = current state). */
   replay?: ReplayInfo | null;
   /** Where the treasury figures come from: the simulated Acme DAO treasury, a wallet (at the replay block), or both. */
   treasurySource?: { kind: "simulated" | "wallet" | "simulated+wallet"; label: string };

@@ -66,7 +66,7 @@ export function Topbar() {
             href="/app/settings"
             title={
               snapshot?.replay
-                ? `${snapshot.replay.label}: vault and wallet state read at that past block; deposits are simulated there and nothing is sent.`
+                ? `${snapshot.replay.label}: ${snapshot.treasurySource?.kind === "simulated" ? "vault state" : "vault and wallet state"} read at that past block; deposits are simulated there and nothing is sent.`
                 : liveChains.length
                 ? `Live mode (opt-in) on ${liveChains.map((c) => chainInfo(c).name).join(", ")}: deposits there are real, signed by your wallet and capped per transaction.`
                 : rpcKind === "fork"
