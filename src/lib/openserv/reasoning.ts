@@ -2,12 +2,14 @@ import { chainInfo } from "@/lib/chain/config";
 import { env, openservConfigured } from "@/lib/env";
 import { recordEvidence } from "@/lib/evidence";
 import { fmtAmount, fmtUsd } from "@/lib/format";
-import type { AllocationLeg, Memo, Metrics, RejectedOption, TreasurySnapshot, UserProfile } from "@/lib/types";
+import type { AllocationLeg, Memo, Metrics, RejectedOption, ServRunInfo, TreasurySnapshot, UserProfile } from "@/lib/types";
 import type { Assessment, Verdict } from "@/lib/agents/risk";
 import type { Constraints, LegInput } from "@/lib/agents/planner";
 import type { CutoffInfo } from "@/lib/ixs/cutoff";
-import { chatCompletion, type ChatMessage } from "./inference";
+import { chatCompletion, ServCallError, type ChatMessage, type ChatUsage } from "./inference";
 import { runOpenServTask } from "./platform";
+import { priceUsage } from "./pricing";
+import { cacheGet, cachePut, sig, stableHash, type ServCacheEntry } from "./serv-cache";
 
 /**
  * SERV reasoning (OpenServ). Two calls per analysis:
@@ -15,7 +17,9 @@ import { runOpenServTask } from "./platform";
  *     (ALLOCATE with an amount within the Planner's caps, DEFER, or REJECT) with an explicit reason, plus a rationale.
  *  2. narrate — writes the explanation and the investment-committee memo from the validated plan.
  * Both calls, their exact inputs and raw outputs are kept in the evidence log and on the recommendation (trace).
- * When OpenServ is unavailable the deterministic engine takes over and everything is labelled "local".
+ * SERV output is cached per input hash (see serv-cache.ts): identical inputs reuse the stored SERV output, labelled
+ * "cached from <timestamp>"; a failed SERV call shows the stored output for the same inputs ("SERV unavailable —
+ * showing last SERV output") or, when there is none, the deterministic engine, labelled "local fallback". Never silent.
  */
 
 export const VAULTO_SYSTEM_PROMPT = `You are Vaulto, an AI treasury allocation agent running on OpenServ (SERV reasoning).
@@ -38,6 +42,98 @@ Respect the liquidity floor, asset exposure limit, minimum vault risk score and 
 Framing: SERV decides; deterministic policy guardrails enforce hard limits (liquidity floor, exposure cap, minimum vault score, minimum deposit, vault concentration of at most 25% of TVL per leg, Live redeemable minimum, per-transaction Live cap, NAV staleness). Stay inside them so no validator override is needed.
 Never write "deposited", "executed" or "live deposit" for anything that has not happened on-chain: a simulated run is "simulated", an async request is "request submitted, pending operator settlement". Call a vault "deployed" (not "live") and name vaults by their name, not their strategyId.
 Write in plain, confident language for a treasury manager. Be specific with numbers and never invent figures.`;
+
+/* ------------------------------------------------------------------ cache keys ------------------------------------------------------------------ */
+
+/** Bump when a prompt template changes in a way the hashed constants below do not capture. */
+const PROMPT_REVISION = "2026-09-27.2";
+
+const DECISION_RULES = `Rules: return exactly one decision per candidate strategyId. verdict is "allocate", "defer" or "reject". For "allocate" give amount (asset units) between cap.minAmount (the 100 USDC minimum, or the Live redeemable minimum on a Live chain) and cap.maxAmount; the USD sum of all allocations must not exceed constraints.budgetUsd; you may allocate less if prudence requires it and may split across open vaults by their deposit limits. Use "defer" for limit 0 / stale NAV (waiting NAV refresh) and "reject" for whitelist, pause, announced-not-deployed, risk score or minimum-deposit failures. A candidate that passes pre-flight but has cap null was dropped by the Planner: take its verdict and reason from constraints.dropped ("defer" for capacity under the concentration guardrail, "reject" for the Live redeemable minimum). Every reason must cite the concrete fact (numbers, timestamps, chain). Respond with ONLY JSON: {"decisions":[{"strategyId":string,"verdict":"allocate"|"defer"|"reject","amount":number,"reason":string}],"rationale":string (2-3 sentences)}`;
+
+let promptVersionMemo: string | null = null;
+/** Hash of the system prompt, the rule templates and the model: a prompt change never reuses an old output. */
+export function promptVersion(): string {
+  return (promptVersionMemo ??= stableHash({ rev: PROMPT_REVISION, system: VAULTO_SYSTEM_PROMPT, decision: DECISION_RULES, narrative: NARRATIVE_RULES, expected: NARRATIVE_EXPECTED, model: env.openservModel }).slice(0, 12));
+}
+
+/**
+ * Inputs SERV decides on, without time- or price-derived figures (NAV age, idle days, USD totals, cutoff): vault
+ * state as read on-chain plus the pre-flight outcome of every check, treasury balances, policy, guardrails, block.
+ */
+function baseKey(snapshot: TreasurySnapshot, user: UserProfile, assessments: Assessment[]) {
+  return {
+    v: promptVersion(),
+    wallet: snapshot.walletAddress.toLowerCase(),
+    block: snapshot.replay?.block ?? "current",
+    treasury: {
+      source: snapshot.treasurySource?.kind ?? null,
+      executionMode: snapshot.executionMode,
+      liveChainIds: snapshot.liveChainIds,
+      liveOptIn: snapshot.liveOptIn,
+      assets: snapshot.assets.map((a) => ({ symbol: a.symbol, idle: sig(a.idleAmount), deployed: sig(a.deployedAmount), deployedIn: a.deployedIn ?? null })),
+      positions: snapshot.positions.map((p) => ({ id: p.strategyId, amount: sig(p.amount) })),
+    },
+    policy: { riskProfile: user.riskProfile, liquidityFloorPct: user.liquidityFloorPct, maxAssetExposurePct: user.maxAssetExposurePct, minVaultRiskScore: user.minVaultRiskScore, monthlyBurnUsd: user.monthlyBurnUsd, treasuryGoal: user.treasuryGoal },
+    guardrails: { liveMode: env.liveMode, maxLiveTxUsdc: env.maxLiveTxUsdc, maxVaultTvlSharePct: env.maxVaultTvlSharePct, navStaleHours: env.navStaleHours },
+    vaults: assessments.map((a) => {
+      const st = a.candidate.strategy;
+      const p = a.preflight;
+      return {
+        id: st.id,
+        deployed: a.candidate.available,
+        verdictHint: a.verdictHint,
+        riskScore: st.riskScore,
+        apy: st.apy ?? null,
+        tvl: sig(st.tvlUsd),
+        preflight: p
+          ? { limit: p.depositLimitUnlimited ? "unlimited" : sig(p.depositLimitUsd), navUpdatedAt: p.navUpdatedAt, whitelisted: p.whitelisted, mcpAccepts: p.mcpAccepts, minDepositUsd: p.minDepositUsd, checks: p.checks.map((c) => `${c.key}:${c.ok ? 1 : 0}`) }
+          : null,
+      };
+    }),
+  };
+}
+
+function decisionKey(i: DecisionInput): string {
+  return stableHash({
+    stage: "decision",
+    ...baseKey(i.snapshot, i.user, i.assessments),
+    caps: (i.constraints?.caps ?? []).map((c) => ({ id: c.strategyId, min: sig(c.minAmount, 3), max: sig(c.maxAmount, 3) })),
+    dropped: (i.constraints?.dropped ?? []).map((d) => ({ id: d.strategyId, verdict: d.verdict })),
+  });
+}
+
+function narrativeKey(i: NarrativeInput): string {
+  return stableHash({
+    stage: "narrative",
+    ...baseKey(i.snapshot, i.user, i.assessments),
+    decisions: i.decisions.map((d) => ({ id: d.strategyId, verdict: d.verdict, amount: sig(d.amount ?? null) })),
+    legs: i.legs.map((l) => ({ id: l.strategyId, amount: sig(l.amount) })),
+    concentration: (i.concentration ?? []).map((c) => ({ id: c.strategyId, share: c.shareOfTvlPct, after: c.shareAfterDepositPct, capped: c.capped })),
+    // the verdict texts SERV wrote are narrative input: a fresh decision gets a fresh memo
+    reasons: stableHash({ reasons: i.decisions.map((d) => d.reason), rationale: i.decisionRationale ?? "" }),
+  });
+}
+
+const viewOf = (snapshot: TreasurySnapshot) => ({ address: snapshot.walletAddress.toLowerCase(), replayBlock: snapshot.replay?.block ?? null });
+
+/** One-line reason for a failed SERV call, e.g. "OpenServ credits exhausted (402)". */
+export function servErrorText(e: unknown): string {
+  if (e instanceof ServCallError) {
+    if (e.kind === "billing") return "OpenServ credits exhausted (402 insufficient credits)";
+    if (e.kind === "auth") return `OpenServ rejected the API key (${e.status})`;
+    if (e.kind === "timeout") return e.message;
+    if (e.kind === "empty") return "OpenServ returned no content";
+    return e.message.slice(0, 160);
+  }
+  return e instanceof Error ? e.message.slice(0, 160) : String(e);
+}
+
+function runInfo(stage: ServRunInfo["stage"], status: ServRunInfo["status"], key: string, extra: Partial<ServRunInfo> = {}): ServRunInfo {
+  return { stage, status, key, promptVersion: promptVersion(), at: new Date().toISOString(), spentUsd: 0, ...extra };
+}
+
+const cachedRun = (stage: ServRunInfo["stage"], status: "cached" | "stale", entry: ServCacheEntry, extra: Partial<ServRunInfo> = {}) =>
+  runInfo(stage, status, entry.key, { at: entry.createdAt, model: entry.model, usage: entry.usage, ...extra });
 
 /* ------------------------------------------------------------------ decision ------------------------------------------------------------------ */
 
@@ -69,6 +165,8 @@ export interface Decision {
   model?: string;
   input: unknown;
   output: unknown;
+  /** fresh / cached / stale / local, the input hash and the OpenServ cost. */
+  serv?: ServRunInfo;
 }
 
 function decisionFacts(i: DecisionInput) {
@@ -150,26 +248,32 @@ function extractJson<T>(text: string): T | null {
  * One OpenServ call that must return JSON. gpt-5.4-mini spends part of the completion budget on reasoning, so the
  * budget is generous; an unparseable reply or a failed call is retried once with a fresh sample (time permitting).
  */
-async function servJson<T>(messages: ChatMessage[], opts: { maxTokens: number; temperature?: number }, valid: (j: T | null) => boolean): Promise<{ r: { content: string; model: string }; json: T | null; attempts: number }> {
+async function servJson<T>(messages: ChatMessage[], opts: { maxTokens: number; temperature?: number }, valid: (j: T | null) => boolean): Promise<{ r: { content: string; model: string }; json: T | null; attempts: number; usages: ChatUsage[] }> {
   const started = Date.now();
   let last: { content: string; model: string } | null = null;
   let lastError: unknown = null;
+  let attempts = 0;
+  const usages: ChatUsage[] = [];
   for (let attempt = 1; attempt <= 2; attempt++) {
+    attempts = attempt;
     try {
       const r = await chatCompletion({ messages, maxTokens: opts.maxTokens, temperature: opts.temperature });
+      if (r.usage) usages.push(r.usage);
       last = r;
       const json = extractJson<T>(r.content);
-      if (valid(json)) return { r, json, attempts: attempt };
+      if (valid(json)) return { r, json, attempts, usages };
     } catch (e) {
       lastError = e;
+      // no credits or a rejected key: a second attempt cannot succeed and would only add latency
+      if (e instanceof ServCallError && e.permanent) break;
     }
     if (Date.now() - started > 70_000) break;
   }
-  if (last) return { r: last, json: extractJson<T>(last.content), attempts: 2 };
+  if (last) return { r: last, json: extractJson<T>(last.content), attempts, usages };
   throw lastError instanceof Error ? lastError : new Error("OpenServ returned no content");
 }
 
-function localDecision(input: DecisionInput, facts: unknown, note: string): Decision {
+function localDecision(input: DecisionInput, facts: unknown, note: string, serv?: ServRunInfo): Decision {
   const decisions: VaultDecision[] = [];
   for (const a of input.assessments) {
     const id = a.candidate.strategy.id;
@@ -182,45 +286,79 @@ function localDecision(input: DecisionInput, facts: unknown, note: string): Deci
       decisions.push({ strategyId: id, verdict: dropped ? dropped.verdict : "defer", reason: dropped ? `${dropped.reason}.` : "Passes pre-flight but no budget remains above the liquidity floor and runway reserve." });
     }
   }
-  return { legs: input.fallback, decisions, rationale: note, source: "local", input: facts, output: { decisions, note } };
+  return { legs: input.fallback, decisions, rationale: note, source: "local", input: facts, output: { decisions, note }, serv };
+}
+
+type DecisionJson = { decisions?: { strategyId: string; verdict: string; amount?: number; reason?: string }[]; rationale?: string };
+
+/** Map SERV's decision JSON onto the candidates (unknown ids dropped, skipped candidates filled and labelled). */
+function decisionFromJson(input: DecisionInput, json: DecisionJson | null, model: string, facts: unknown): Decision | null {
+  if (!json?.decisions?.length) return null;
+  const known = new Map(input.assessments.map((a) => [a.candidate.strategy.id, a]));
+  const decisions: VaultDecision[] = [];
+  for (const d of json.decisions) {
+    const a = known.get(d.strategyId);
+    if (!a) continue;
+    const verdict: Verdict = d.verdict === "allocate" || d.verdict === "defer" || d.verdict === "reject" ? d.verdict : a.verdictHint;
+    decisions.push({ strategyId: d.strategyId, verdict, amount: verdict === "allocate" && typeof d.amount === "number" && d.amount > 0 ? d.amount : undefined, reason: (d.reason ?? "").trim() || "No reason given by SERV; validator applied the pre-flight facts." });
+  }
+  // Every candidate gets a verdict: fill the ones SERV skipped from the deterministic facts and say so.
+  for (const a of input.assessments) {
+    const id = a.candidate.strategy.id;
+    if (decisions.some((d) => d.strategyId === id)) continue;
+    const fb = input.fallbackDecisions.find((d) => d.strategyId === id);
+    decisions.push({ strategyId: id, verdict: fb?.verdict ?? "defer", reason: `${fb?.reason ?? "Not addressed by SERV"} (validator: candidate missing from the SERV output)` });
+  }
+  const legs = decisions.filter((d) => d.verdict === "allocate" && d.amount).map((d) => ({ strategyId: d.strategyId, amount: d.amount! }));
+  return { legs, decisions, rationale: json.rationale ?? "", source: "openserv", model, input: facts, output: json };
 }
 
 /**
  * SERV reasoning, step 1 — one verdict per candidate vault (ALLOCATE / DEFER / REJECT) with a reason, and the
  * allocation amounts within the Planner's caps. Falls back to the deterministic engine when OpenServ is unavailable.
  */
-export async function decideAllocation(input: DecisionInput): Promise<Decision> {
+export async function decideAllocation(input: DecisionInput, opts: { fresh?: boolean } = {}): Promise<Decision> {
   const facts = decisionFacts(input);
-  if (!openservConfigured() || env.openservReasoningMode === "platform") return localDecision(input, facts, "Deterministic decision (SERV reasoning unavailable).");
-  const prompt = `DECIDE for every candidate vault. Facts (JSON):\n${JSON.stringify(facts)}\n\nRules: return exactly one decision per candidate strategyId. verdict is "allocate", "defer" or "reject". For "allocate" give amount (asset units) between cap.minAmount (the 100 USDC minimum, or the Live redeemable minimum on a Live chain) and cap.maxAmount; the USD sum of all allocations must not exceed constraints.budgetUsd; you may allocate less if prudence requires it and may split across open vaults by their deposit limits. Use "defer" for limit 0 / stale NAV (waiting NAV refresh) and "reject" for whitelist, pause, announced-not-deployed, risk score or minimum-deposit failures. A candidate that passes pre-flight but has cap null was dropped by the Planner: take its verdict and reason from constraints.dropped ("defer" for capacity under the concentration guardrail, "reject" for the Live redeemable minimum). Every reason must cite the concrete fact (numbers, timestamps, chain). Respond with ONLY JSON: {"decisions":[{"strategyId":string,"verdict":"allocate"|"defer"|"reject","amount":number,"reason":string}],"rationale":string (2-3 sentences)}`;
-  const started = Date.now();
-  try {
-    type DecisionJson = { decisions?: { strategyId: string; verdict: string; amount?: number; reason?: string }[]; rationale?: string };
-    const { r, json, attempts } = await servJson<DecisionJson>([{ role: "system", content: VAULTO_SYSTEM_PROMPT }, { role: "user", content: prompt }], { maxTokens: 8000, temperature: 0.1 }, (j) => Boolean(j?.decisions?.length));
-    recordEvidence({ kind: "serv", label: `SERV reasoning · decision (${r.model})${attempts > 1 ? " · 2nd attempt" : ""}`, request: { model: r.model, system: VAULTO_SYSTEM_PROMPT, facts }, response: json ?? r.content, ok: Boolean(json?.decisions), durationMs: Date.now() - started });
-    if (!json?.decisions?.length) return localDecision(input, facts, "SERV reasoning returned no parseable decision; deterministic engine used.");
-    const known = new Map(input.assessments.map((a) => [a.candidate.strategy.id, a]));
-    const decisions: VaultDecision[] = [];
-    for (const d of json.decisions) {
-      const a = known.get(d.strategyId);
-      if (!a) continue;
-      const verdict: Verdict = d.verdict === "allocate" || d.verdict === "defer" || d.verdict === "reject" ? d.verdict : a.verdictHint;
-      decisions.push({ strategyId: d.strategyId, verdict, amount: verdict === "allocate" && typeof d.amount === "number" && d.amount > 0 ? d.amount : undefined, reason: (d.reason ?? "").trim() || "No reason given by SERV; validator applied the pre-flight facts." });
-    }
-    // Every candidate gets a verdict: fill the ones SERV skipped from the deterministic facts and say so.
-    for (const a of input.assessments) {
-      const id = a.candidate.strategy.id;
-      if (decisions.some((d) => d.strategyId === id)) continue;
-      const fb = input.fallbackDecisions.find((d) => d.strategyId === id);
-      decisions.push({ strategyId: id, verdict: fb?.verdict ?? "defer", reason: `${fb?.reason ?? "Not addressed by SERV"} (validator: candidate missing from the SERV output)` });
-    }
-    const legs = decisions.filter((d) => d.verdict === "allocate" && d.amount).map((d) => ({ strategyId: d.strategyId, amount: d.amount! }));
-    return { legs, decisions, rationale: json.rationale ?? "", source: "openserv", model: r.model, input: facts, output: json };
-  } catch (e) {
-    console.warn("[openserv] decision fell back to local engine:", e instanceof Error ? e.message : e);
-    recordEvidence({ kind: "serv", label: "SERV reasoning · decision", request: { facts }, response: { error: e instanceof Error ? e.message : String(e) }, ok: false, durationMs: Date.now() - started });
-    return localDecision(input, facts, `Deterministic decision (SERV reasoning error: ${e instanceof Error ? e.message : "unknown"}).`);
+  const key = decisionKey(input);
+  if (!openservConfigured() || env.openservReasoningMode === "platform") {
+    const why = openservConfigured() ? "platform mode: verdicts by the local engine" : "OPENSERV_API_KEY not set";
+    return localDecision(input, facts, `Deterministic decision (SERV reasoning unavailable: ${why}).`, runInfo("decision", "local", key, { error: why }));
   }
+  const cached = cacheGet(key);
+  // Identical inputs: reuse the stored SERV output (guardrails and the validator still run on the current state).
+  if (cached && !opts.fresh) {
+    const d = decisionFromJson(input, cached.output as DecisionJson, cached.model, facts);
+    if (d) {
+      recordEvidence({ kind: "serv", label: `SERV reasoning · decision (cached from ${cached.createdAt})`, request: { cacheKey: key, promptVersion: cached.promptVersion, model: cached.model, facts }, response: cached.output, ok: true, durationMs: 0 });
+      return { ...d, serv: cachedRun("decision", "cached", cached) };
+    }
+  }
+  const prompt = `DECIDE for every candidate vault. Facts (JSON):\n${JSON.stringify(facts)}\n\n${DECISION_RULES}`;
+  const started = Date.now();
+  let failure = "SERV reasoning returned no parseable decision";
+  let spentUsd = 0;
+  try {
+    const { r, json, attempts, usages } = await servJson<DecisionJson>([{ role: "system", content: VAULTO_SYSTEM_PROMPT }, { role: "user", content: prompt }], { maxTokens: 8000, temperature: 0.1 }, (j) => Boolean(j?.decisions?.length));
+    const usage = await priceUsage(r.model, usages, attempts);
+    spentUsd = usage.costUsd;
+    recordEvidence({ kind: "serv", label: `SERV reasoning · decision (${r.model})${attempts > 1 ? " · 2nd attempt" : ""} · ${usage.promptTokens} in / ${usage.completionTokens} out tokens ≈ ${usage.costUsd.toFixed(4)}`, request: { cacheKey: key, promptVersion: promptVersion(), model: r.model, system: VAULTO_SYSTEM_PROMPT, facts }, response: json ?? r.content, ok: Boolean(json?.decisions), durationMs: Date.now() - started });
+    const d = decisionFromJson(input, json, r.model, facts);
+    if (d) {
+      const entry: ServCacheEntry = { key, stage: "decision", promptVersion: promptVersion(), model: r.model, createdAt: new Date().toISOString(), output: json, usage, view: viewOf(input.snapshot) };
+      cachePut(entry);
+      return { ...d, serv: runInfo("decision", "fresh", key, { at: entry.createdAt, model: r.model, usage, spentUsd }) };
+    }
+  } catch (e) {
+    failure = servErrorText(e);
+    console.warn("[openserv] decision: SERV call failed:", failure);
+    recordEvidence({ kind: "serv", label: "SERV reasoning · decision", request: { cacheKey: key, facts }, response: { error: e instanceof Error ? e.message : String(e) }, ok: false, durationMs: Date.now() - started });
+  }
+  // SERV failed. Never fall back silently: show the stored SERV output for these inputs, else the labelled local engine.
+  if (cached) {
+    const d = decisionFromJson(input, cached.output as DecisionJson, cached.model, facts);
+    if (d) return { ...d, serv: cachedRun("decision", "stale", cached, { error: failure, spentUsd }) };
+  }
+  return localDecision(input, facts, `Local fallback: deterministic decision (SERV unavailable: ${failure}).`, runInfo("decision", "local", key, { error: failure, spentUsd }));
 }
 
 /* ------------------------------------------------------------------ narrative + memo ------------------------------------------------------------------ */
@@ -263,6 +401,7 @@ export interface Narrative {
   model?: string;
   input?: unknown;
   output?: unknown;
+  serv?: ServRunInfo;
 }
 
 const vaultOf = (i: NarrativeInput, id: string) => i.assessments.find((a) => a.candidate.strategy.id === id)?.candidate.strategy;
@@ -366,45 +505,85 @@ function buildTask(input: NarrativeInput) {
   };
   const legList = input.legs.map((l) => `${fmtAmount(l.amount, l.asset)} (≈ ${fmtUsd(l.amountUsd)}) into ${l.vaultName} at ${l.apy}% TTM`).join("; ") || "none";
   const description = `Write the Vaulto allocation explanation and the investment-committee memo for the treasury manager. The verdicts have been decided by SERV reasoning and validated by the Allocation Planner (${input.legs.length} leg(s): ${legList}; total ${fmtUsd(input.totalUsd)}; liquidity ${input.before.liquidPct}% → ${input.after.liquidPct}%; blended yield ${input.before.blendedApy.toFixed(1)}% → ${input.after.blendedApy.toFixed(1)}%; health ${input.before.healthScore} → ${input.after.healthScore}; extra income ≈ ${fmtUsd(input.extraMonthlyUsd)} per month). Use only the numbers in the facts. Do not call tools. Reply with ONLY the JSON object described in the expected output.`;
-  const body = `${VAULTO_SYSTEM_PROMPT}\n\nPIPELINE FACTS (JSON):\n${JSON.stringify(facts)}\n\nRULES: the headline and summary MUST mention every allocated leg with its amount, vault and chain (with no legs, say that nothing is allocated and why, and never list 0 amounts); mention every deferred vault as "temporarily paused — waiting NAV refresh" with its facts and every rejected vault with its reason; never write "deposited", "executed" or "live deposit" for anything that has not happened on-chain (a simulated run is "simulated"; an async request is "request submitted, pending operator settlement"); the Policy section MUST state the Live redeemable minimum given in guardrails.liveRedeemableMinimum (formula and why) and that Live mode is opt-in; the Proposed allocation section MUST state each leg's share of its vault's TVL from plan.concentration and whether the concentration guardrail capped it; the Risks section MUST mention vault concentration when plan.concentration is not empty; never invent figures; steps follow the pipeline order Treasury Scanner → Risk Guardian (pre-flight) → Allocation Planner (caps) → SERV reasoning (verdicts).`;
-  const expectedOutput = `A single JSON object: {"title": string (≤6 words, a proposal name; never claim it is approved or executed), "headline": string (one sentence naming every leg, amount, vault and chain; with no legs, one sentence on why nothing is allocated), "summary": string (2-3 sentences), "reasons": [{"title": string ending with a period, "body": string}] (exactly 3: capital efficiency, liquidity, verdicts), "steps": [{"agent": string, "title": string, "body": string}] (exactly 4), "memo": {"title": string, "sections": [{"heading": string, "body": string}]} with exactly these headings in order: "Treasury condition", "Policy", "Proposed allocation", "Deferred (waiting NAV refresh)", "Rejected", "Risks" (RWA credit risk, daily redemption cycle, 0.5% redemption fee, NAV drift between updates, smart-contract and counterparty risk), "Execution" (mode: Simulate by default, Live only when opted in; cutoff and settlement estimate for async legs; that Live mode requires the wallet's signature and is capped per transaction by the guardrail), "confidence": number 0-100}. No prose outside the JSON.`;
-  return { description, body, expectedOutput, facts };
+  const body = `${VAULTO_SYSTEM_PROMPT}\n\nPIPELINE FACTS (JSON):\n${JSON.stringify(facts)}\n\n${NARRATIVE_RULES}`;
+  return { description, body, expectedOutput: NARRATIVE_EXPECTED, facts };
 }
+
+const NARRATIVE_RULES = `RULES: the headline and summary MUST mention every allocated leg with its amount, vault and chain (with no legs, say that nothing is allocated and why, and never list 0 amounts); mention every deferred vault as "temporarily paused — waiting NAV refresh" with its facts and every rejected vault with its reason; never write "deposited", "executed" or "live deposit" for anything that has not happened on-chain (a simulated run is "simulated"; an async request is "request submitted, pending operator settlement"); the Policy section MUST state the Live redeemable minimum given in guardrails.liveRedeemableMinimum (formula and why) and that Live mode is opt-in; the Proposed allocation section MUST state each leg's share of its vault's TVL from plan.concentration and whether the concentration guardrail capped it; the Risks section MUST mention vault concentration when plan.concentration is not empty; never invent figures; steps follow the pipeline order Treasury Scanner → Risk Guardian (pre-flight) → Allocation Planner (caps) → SERV reasoning (verdicts).`;
+
+const NARRATIVE_EXPECTED = `A single JSON object: {"title": string (≤6 words, a proposal name; never claim it is approved or executed), "headline": string (one sentence naming every leg, amount, vault and chain; with no legs, one sentence on why nothing is allocated), "summary": string (2-3 sentences), "reasons": [{"title": string ending with a period, "body": string}] (exactly 3: capital efficiency, liquidity, verdicts), "steps": [{"agent": string, "title": string, "body": string}] (exactly 4), "memo": {"title": string, "sections": [{"heading": string, "body": string}]} with exactly these headings in order: "Treasury condition", "Policy", "Proposed allocation", "Deferred (waiting NAV refresh)", "Rejected", "Risks" (RWA credit risk, daily redemption cycle, 0.5% redemption fee, NAV drift between updates, smart-contract and counterparty risk), "Execution" (mode: Simulate by default, Live only when opted in; cutoff and settlement estimate for async legs; that Live mode requires the wallet's signature and is capped per transaction by the guardrail), "confidence": number 0-100}. No prose outside the JSON.`;
 
 /**
  * SERV reasoning, step 2 — writes the explanation and the memo a treasury manager reads, from the validated plan.
  * Inference mode calls the OpenServ Inference API; platform mode creates a workspace task.
  */
-export async function narrate(input: NarrativeInput): Promise<Narrative> {
+export async function narrate(input: NarrativeInput, opts: { fresh?: boolean; unavailable?: string } = {}): Promise<Narrative> {
   const fallback = localNarrative(input);
-  if (!openservConfigured()) return fallback;
+  const key = narrativeKey(input);
+  if (!openservConfigured()) return { ...fallback, serv: runInfo("narrative", "local", key, { error: "OPENSERV_API_KEY not set" }) };
   const task = buildTask(input);
+  const cached = cacheGet(key);
+  if (cached && !opts.fresh) {
+    const n = narrativeFromJson(input, cached.output as OpenServJson, cached.model, task.facts);
+    if (n) {
+      recordEvidence({ kind: "serv", label: `SERV reasoning · narrative + memo (cached from ${cached.createdAt})`, request: { cacheKey: key, promptVersion: cached.promptVersion, model: cached.model, facts: task.facts }, response: cached.output, ok: true, durationMs: 0 });
+      return { ...n, serv: cachedRun("narrative", "cached", cached) };
+    }
+  }
   const started = Date.now();
-  try {
-    let output: string;
-    let model: string;
-    if (env.openservReasoningMode === "platform") {
-      const r = await runOpenServTask(task);
-      output = r.output;
-      model = `OpenServ runtime · task #${r.taskId}`;
-    } else {
-      const res = await servJson<OpenServJson>(
-        [
-          { role: "system", content: VAULTO_SYSTEM_PROMPT },
-          { role: "user", content: `${task.description}\n\n${task.body}\n\nEXPECTED OUTPUT: ${task.expectedOutput}` },
-        ],
-        { maxTokens: 16000 },
-        (j) => Boolean(j?.reasons?.length && j?.steps?.length),
-      );
-      output = res.r.content;
-      model = res.attempts > 1 ? `${res.r.model} · 2nd attempt` : res.r.model;
+  let failure = opts.unavailable ?? "SERV returned no parseable narrative";
+  let spentUsd = 0;
+  // The decision call just failed (no credits, timeout…): do not spend another call on the memo.
+  if (!opts.unavailable) {
+    try {
+      let output: string;
+      let model: string;
+      let usage: ServRunInfo["usage"];
+      if (env.openservReasoningMode === "platform") {
+        const r = await runOpenServTask(task);
+        output = r.output;
+        model = `OpenServ runtime · task #${r.taskId}`;
+      } else {
+        const res = await servJson<OpenServJson>(
+          [
+            { role: "system", content: VAULTO_SYSTEM_PROMPT },
+            { role: "user", content: `${task.description}\n\n${task.body}\n\nEXPECTED OUTPUT: ${task.expectedOutput}` },
+          ],
+          { maxTokens: 16000 },
+          (j) => Boolean(j?.reasons?.length && j?.steps?.length),
+        );
+        output = res.r.content;
+        model = res.attempts > 1 ? `${res.r.model} · 2nd attempt` : res.r.model;
+        usage = await priceUsage(res.r.model, res.usages, res.attempts);
+        spentUsd = usage.costUsd;
+      }
+      const json = extractJson<OpenServJson>(output);
+      recordEvidence({ kind: "serv", label: `SERV reasoning · narrative + memo (${model})${usage ? ` · ${usage.promptTokens} in / ${usage.completionTokens} out tokens ≈ ${usage.costUsd.toFixed(4)}` : ""}`, request: { cacheKey: key, promptVersion: promptVersion(), model, facts: task.facts }, response: json ?? output, ok: Boolean(json?.reasons?.length), durationMs: Date.now() - started });
+      const n = narrativeFromJson(input, json, model, task.facts);
+      if (n) {
+        const entry: ServCacheEntry = { key, stage: "narrative", promptVersion: promptVersion(), model, createdAt: new Date().toISOString(), output: json, usage, view: viewOf(input.snapshot) };
+        cachePut(entry);
+        return { ...n, serv: runInfo("narrative", "fresh", key, { at: entry.createdAt, model, usage, spentUsd }) };
+      }
+      console.warn("[openserv] unparseable reasoning output");
+    } catch (e) {
+      failure = servErrorText(e);
+      console.warn("[openserv] narrative: SERV call failed:", failure);
+      recordEvidence({ kind: "serv", label: "SERV reasoning · narrative + memo", request: { cacheKey: key, facts: task.facts }, response: { error: e instanceof Error ? e.message : String(e) }, ok: false, durationMs: Date.now() - started });
     }
-    const json = extractJson<OpenServJson>(output);
-    recordEvidence({ kind: "serv", label: `SERV reasoning · narrative + memo (${model})`, request: { model, facts: task.facts }, response: json ?? output, ok: Boolean(json?.reasons?.length), durationMs: Date.now() - started });
-    if (!json || !json.reasons?.length || !json.steps?.length) {
-      console.warn("[openserv] unparseable reasoning output; using local narrative");
-      return fallback;
-    }
+  }
+  if (cached) {
+    const n = narrativeFromJson(input, cached.output as OpenServJson, cached.model, task.facts);
+    if (n) return { ...n, serv: cachedRun("narrative", "stale", cached, { error: failure, spentUsd }) };
+  }
+  return { ...fallback, serv: runInfo("narrative", "local", key, { error: failure, spentUsd }) };
+}
+
+/** SERV's narrative JSON plus Vaulto's deterministic post-checks (re-applied when a cached output is reused). */
+function narrativeFromJson(input: NarrativeInput, json: OpenServJson | null, model: string, facts: unknown): Narrative | null {
+  if (!json || !json.reasons?.length || !json.steps?.length) return null;
+  const fallback = localNarrative(input);
+  {
     const memo: Memo = json.memo?.sections?.length ? { title: json.memo.title ?? fallback.memo.title, sections: json.memo.sections.slice(0, 8) } : fallback.memo;
     // The Policy section must carry the Live redeemable minimum; if SERV left it out, append it, labelled as such.
     const liveMin = liveMinimumText(input);
@@ -432,13 +611,9 @@ export async function narrate(input: NarrativeInput): Promise<Narrative> {
       confidence: Math.round(Math.min(99, Math.max(50, json.confidence ?? fallback.confidence))),
       source: "openserv",
       model,
-      input: task.facts,
+      input: facts,
       output: json,
     };
-  } catch (e) {
-    console.warn("[openserv] falling back to local reasoning:", e instanceof Error ? e.message : e);
-    recordEvidence({ kind: "serv", label: "SERV reasoning · narrative + memo", request: { facts: task.facts }, response: { error: e instanceof Error ? e.message : String(e) }, ok: false, durationMs: Date.now() - started });
-    return fallback;
   }
 }
 

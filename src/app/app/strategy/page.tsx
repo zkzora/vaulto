@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { AnalysisProgress } from "@/components/dashboard/recommendation-card";
+import { ServStatusBar, servStageLabel } from "@/components/dashboard/serv-status";
 import { useTxn } from "@/components/txn/txn-provider";
 import { useAnalyze, useRecommendationStatus, useTreasury } from "@/hooks/use-vaulto";
 import { chainInfo, modeLabel } from "@/lib/chain/config";
@@ -84,6 +85,7 @@ export default function StrategyPage() {
           </button>
         </div>
       )}
+      <ServStatusBar rec={rec} />
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="text-[13px] font-semibold text-muted">
@@ -314,7 +316,7 @@ export default function StrategyPage() {
 
           {rec.memo && (
             <Card>
-              <CardTitle action={<Pill tone={(rec.narrativeSource ?? rec.reasoningSource) === "openserv" ? "green" : "muted"}>{(rec.narrativeSource ?? rec.reasoningSource) === "openserv" ? "written by OpenServ" : "local engine (OpenServ narrative unavailable)"}</Pill>}>Allocation memo</CardTitle>
+              <CardTitle action={<Pill tone={(rec.narrativeSource ?? rec.reasoningSource) === "openserv" ? (rec.serv?.narrative.status === "stale" ? "amber" : "green") : "muted"}>{(rec.narrativeSource ?? rec.reasoningSource) === "openserv" ? (rec.serv?.narrative.status === "cached" || rec.serv?.narrative.status === "stale" ? `written by OpenServ · ${servStageLabel(rec.serv.narrative, "")}` : "written by OpenServ") : "local fallback (SERV unavailable)"}</Pill>}>Allocation memo</CardTitle>
               <div className="mt-1 text-[12px] text-muted">{rec.memo.title}</div>
               <div className="mt-3 grid gap-3">
                 {rec.memo.sections.map((sec) => (

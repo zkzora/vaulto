@@ -16,6 +16,7 @@ import type {
   UserProfile,
   VaultPreflight,
   VaultStrategy,
+  ServStatus,
 } from "./types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -149,6 +150,7 @@ export interface EvidenceSnapshot {
     decisionSource?: string;
     narrativeSource?: string;
     reasoningModel?: string;
+    serv?: ServStatus | null;
     confidence?: number;
     title?: string;
     headline?: string;
@@ -232,7 +234,7 @@ export const api = {
   treasury: (address: string) => request<TreasuryResponse>(`/api/treasury?address=${address}`),
   vaults: () => request<{ strategies: VaultStrategy[]; liveOk: boolean; liveVaults: LiveVault[]; registry: { source: "api" | "fallback"; apiOk: boolean; fetchedAt: string; onchainOk: boolean } }>("/api/vaults"),
   mainnet: () => request<{ vaults: MainnetVault[]; ok: boolean }>("/api/ixs/mainnet"),
-  analyze: (address: string) => request<AnalysisResult>("/api/analyze", { method: "POST", body: JSON.stringify({ address }) }),
+  analyze: (address: string, opts: { fresh?: boolean } = {}) => request<AnalysisResult>("/api/analyze", { method: "POST", body: JSON.stringify({ address, fresh: opts.fresh }) }),
   recommendation: (address: string) => request<{ recommendation: Recommendation | null }>(`/api/recommendation?address=${address}`),
   setRecommendationStatus: (address: string, id: string, status: RecommendationStatus) =>
     request<{ recommendation: Recommendation | null }>("/api/recommendation", { method: "PATCH", body: JSON.stringify({ address, id, status }) }),

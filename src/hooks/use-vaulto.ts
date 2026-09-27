@@ -152,7 +152,7 @@ export function useAnalyze() {
   const { address } = useVaultoAccount();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.analyze(address!),
+    mutationFn: (vars?: { fresh?: boolean }) => api.analyze(address!, { fresh: vars?.fresh }),
     onSuccess: (result) => {
       rememberRecommendation(address!, result.recommendation);
       rememberActivity(address!, { logs: result.logs });
@@ -189,6 +189,8 @@ export function useSetReplay() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (block: number | null) => api.setReplay(address!, block),
+    // Returning the refetch keeps the mutation pending until the replay info and the treasury are re-read for the
+    // new state, so the toggle can show the switch at once and a spinner until the page matches it.
     onSuccess: () => qc.invalidateQueries(),
   });
 }

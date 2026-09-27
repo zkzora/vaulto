@@ -11,10 +11,29 @@ export interface ChatMessage {
   content: string;
 }
 
+export interface ChatUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  prompt_tokens_details?: { cached_tokens?: number };
+  completion_tokens_details?: { reasoning_tokens?: number };
+}
+
 export interface ChatResult {
   content: string;
   model: string;
-  usage?: { prompt_tokens?: number; completion_tokens?: number };
+  usage?: ChatUsage;
+}
+
+/** An OpenServ call that failed: billing (402 insufficient credits), auth, timeout or another HTTP error. */
+export class ServCallError extends Error {
+  constructor(message: string, readonly kind: "billing" | "auth" | "timeout" | "http" | "empty", readonly status?: number) {
+    super(message);
+    this.name = "ServCallError";
+  }
+  /** Retrying cannot help (no credits, bad key). */
+  get permanent() {
+    return this.kind === "billing" || this.kind === "auth";
+  }
 }
 
 export async function chatCompletion(params: { messages: ChatMessage[]; model?: string; temperature?: number; timeoutMs?: number; maxTokens?: number }): Promise<ChatResult> {
@@ -36,11 +55,14 @@ export async function chatCompletion(params: { messages: ChatMessage[]; model?: 
       cache: "no-store",
     });
     const text = await res.text();
-    if (!res.ok) throw new Error(`OpenServ inference ${res.status}: ${text.slice(0, 200)}`);
-    const json = JSON.parse(text) as { model?: string; choices?: { message?: { content?: string } }[]; usage?: ChatResult["usage"] };
+    if (!res.ok) throw new ServCallError(`OpenServ inference ${res.status}: ${text.slice(0, 200)}`, res.status === 402 ? "billing" : res.status === 401 || res.status === 403 ? "auth" : "http", res.status);
+    const json = JSON.parse(text) as { model?: string; choices?: { message?: { content?: string } }[]; usage?: ChatUsage };
     const content = json.choices?.[0]?.message?.content ?? "";
-    if (!content) throw new Error("OpenServ inference returned no content");
+    if (!content) throw new ServCallError("OpenServ inference returned no content", "empty");
     return { content, model: json.model ?? params.model ?? env.openservModel, usage: json.usage };
+  } catch (e) {
+    if (e instanceof Error && e.name === "AbortError") throw new ServCallError(`OpenServ inference timed out after ${Math.round((params.timeoutMs ?? env.openservTimeoutMs) / 1000)} s`, "timeout");
+    throw e;
   } finally {
     clearTimeout(t);
   }
