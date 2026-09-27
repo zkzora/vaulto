@@ -13,23 +13,40 @@ const navAbi = parseAbi(["function priceUpdatedAt() view returns (uint256)", "fu
 const IXV1 = IXS_KNOWN_VAULTS[0].address;
 const cache = new Map<number, Promise<ReplayInfo>>();
 
-/** Avalanche block at or just before `ts` (binary search on the archive RPC). */
+/**
+ * Replay contexts already read from the archive RPCs (BNB block time, ixv1 priceUpdatedAt / navStalenessThreshold at
+ * that block, Avalanche block closest in time). Resolving a block costs up to ~25 sequential RPC calls, paid by every
+ * cold serverless function; the default demo block needs none.
+ */
+const KNOWN: Record<number, Omit<ReplayInfo, "label">> = {
+  123779792: { block: 123779792, timestamp: 1790263178, iso: "2026-09-24T15:19:38.000Z", avaxBlock: 96060880, avaxTimestamp: 1790263178, navAgeHours: 38.1, navThresholdHours: 48, navFresh: true },
+};
+
+/** Avalanche block at or just before `ts`: interpolation search on block timestamps (bisection every third step). */
 async function avaxBlockAt(ts: number): Promise<{ block: number; timestamp: number }> {
   const c = archiveClient(43114);
+  const at = async (n: bigint) => ({ n, t: Number((await c.getBlock({ blockNumber: n })).timestamp) });
   const head = await c.getBlock();
-  let hi = head.number;
-  let lo = hi > 6_000_000n ? hi - 6_000_000n : 0n;
-  while (hi - lo > 1n) {
-    const mid = (lo + hi) / 2n;
-    const b = await c.getBlock({ blockNumber: mid });
-    if (Number(b.timestamp) <= ts) lo = mid;
-    else hi = mid;
+  let hi = { n: head.number, t: Number(head.timestamp) };
+  if (ts >= hi.t) return { block: Number(hi.n), timestamp: hi.t };
+  let lo = await at(hi.n > 6_000_000n ? hi.n - 6_000_000n : 0n);
+  if (lo.t > ts) return { block: Number(lo.n), timestamp: lo.t };
+  for (let step = 0; step < 60 && hi.n - lo.n > 1n; step++) {
+    let mid: bigint;
+    if (step % 3 !== 2 && hi.t > lo.t) {
+      const est = lo.n + BigInt(Math.floor((Number(hi.n - lo.n) * (ts - lo.t)) / (hi.t - lo.t)));
+      mid = est <= lo.n ? lo.n + 1n : est >= hi.n ? hi.n - 1n : est;
+    } else mid = (lo.n + hi.n) / 2n;
+    const m = await at(mid);
+    if (m.t <= ts) lo = m;
+    else hi = m;
   }
-  const b = await c.getBlock({ blockNumber: lo });
-  return { block: Number(lo), timestamp: Number(b.timestamp) };
+  return { block: Number(lo.n), timestamp: lo.t };
 }
 
 export function resolveReplay(block: number): Promise<ReplayInfo> {
+  const known = KNOWN[block];
+  if (known) return Promise.resolve({ ...known, label: replayLabel(block, known.navFresh, known.navAgeHours) });
   let p = cache.get(block);
   if (!p) {
     p = (async () => {
@@ -39,14 +56,14 @@ export function resolveReplay(block: number): Promise<ReplayInfo> {
       });
       const ts = Number(b.timestamp);
       const at = pinnedClient(56, BigInt(block));
-      const [pu, th] = await Promise.all([
+      const [pu, th, avax] = await Promise.all([
         at.readContract({ address: IXV1, abi: navAbi, functionName: "priceUpdatedAt" }).catch(() => null),
         at.readContract({ address: IXV1, abi: navAbi, functionName: "navStalenessThreshold" }).catch(() => null),
+        avaxBlockAt(ts).catch(() => null),
       ]);
       const navAgeHours = pu != null && pu > 0n ? Math.round(((ts - Number(pu)) / 3600) * 10) / 10 : null;
       const navThresholdHours = th != null ? Math.round((Number(th) / 3600) * 10) / 10 : null;
       const navFresh = navAgeHours != null && navThresholdHours != null && navAgeHours >= 0 && navAgeHours <= navThresholdHours;
-      const avax = await avaxBlockAt(ts).catch(() => null);
       return { block, timestamp: ts, iso: new Date(ts * 1000).toISOString(), avaxBlock: avax?.block ?? null, avaxTimestamp: avax?.timestamp ?? null, navAgeHours, navThresholdHours, navFresh, label: replayLabel(block, navFresh, navAgeHours) };
     })();
     p.catch(() => cache.delete(block));
