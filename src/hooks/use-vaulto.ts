@@ -189,9 +189,14 @@ export function useSetReplay() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (block: number | null) => api.setReplay(address!, block),
-    // Returning the refetch keeps the mutation pending until the replay info and the treasury are re-read for the
-    // new state, so the toggle can show the switch at once and a spinner until the page matches it.
-    onSuccess: () => qc.invalidateQueries(),
+    // Drop reads still in flight for the old view (a slow Current scan must not land after the switch).
+    onMutate: () => qc.cancelQueries(),
+    // The switch counts as done once the replay info and the treasury are re-read for the new view (the toggle shows
+    // a loading note until then); everything else refreshes in the background.
+    onSuccess: async () => {
+      await Promise.all([qc.invalidateQueries({ queryKey: ["replay"] }), qc.invalidateQueries({ queryKey: ["treasury"] })]);
+      void qc.invalidateQueries({ predicate: (q) => q.queryKey[0] !== "replay" && q.queryKey[0] !== "treasury" });
+    },
   });
 }
 
