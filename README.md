@@ -30,7 +30,9 @@ Two OpenServ Inference calls per analysis (`src/lib/openserv/reasoning.ts`):
 1. **Decision.** SERV receives every candidate vault with its pre-flight facts, the Planner's caps and the guardrails, and returns **one verdict per vault**: `ALLOCATE` (with an amount inside the cap), `DEFER` ("temporarily paused — waiting NAV refresh") or `REJECT`, each with a reason that cites the facts.
 2. **Narrative and memo.** SERV writes the explanation and a seven-section allocation memo (treasury condition, policy, proposed allocation, deferred, rejected, risks, execution).
 
-The exact input and the raw output of both calls are stored on the recommendation and shown on the Strategy page and on `/evidence`. A deterministic validator overrides a SERV allocation only if it breaks a guardrail; overrides are logged and counted (`validatorOverrides`, 0 in the committed snapshot). The verdicts and the memo are attributed separately: if one OpenServ call fails, only that part is labelled "local engine".
+The exact input and the raw output of both calls are stored on the recommendation and shown on the Strategy page and on `/evidence`. A deterministic validator overrides a SERV allocation only if it breaks a guardrail; overrides are logged and counted (`validatorOverrides`, 0 in the committed snapshot). The verdicts and the memo are attributed separately.
+
+**SERV output cache and cost.** Each SERV output is stored under a hash of its inputs: vault state as read on-chain (deposit limit, NAV timestamp, TVL, whitelist, the pre-flight outcome per check), treasury balances, policy, guardrails, block (replay block or current) and the prompt version. An identical request reuses the stored output and is labelled "SERV output (cached from <timestamp>)"; guardrails, the validator and the simulation still run on the current state. "Re-run SERV" always calls OpenServ again. Seeds for the demo views are committed in `evidence/serv-cache/` (`npm run serv-cache:seed`), so a cold serverless instance serves them too. If a SERV call fails (402 credits, 401, timeout, unparseable output), the page says "SERV unavailable — showing last SERV output from <timestamp>" for identical inputs, or "Local fallback — SERV unavailable (<reason>)" when there is none; it never falls back silently. Every SERV call is priced from its token usage and the OpenServ `/v1/models` pricing (gpt-5.4-mini: $1.00 / 1M input, $6.00 / 1M output tokens): one analysis costs about $0.022–0.025 (≈7.3k input + 0.5k output tokens for the verdicts, ≈5.8k + 1.3k for the memo), a cached one $0. The OpenServ Inference API has no balance endpoint; the remaining credit is shown in the OpenServ console.
 
 ## Guardrails (deterministic)
 
@@ -63,6 +65,8 @@ Why 104 USDC: the fork run at block 123779792 shows a 100 USDC deposit minting 9
 | `IXHYB` 0xaD01573b…A8bD9 | Avalanche | open, async ERC-7540 | `maxDeposit` 0, NAV from 14 Sep 2026 | DEFER (waiting NAV refresh) |
 | `IXHYB` 0x864E9C19…B41 | Avalanche | licensed, async ERC-7540, KYC | wallet not whitelisted | REJECT |
 | BTC Real Yield | — | announced by IXS | no vault on the IXS Vault API | REJECT |
+
+On 27 Sep 2026 at 13:50:52 UTC IXS refreshed the `ixv1` NAV (`priceUpdatedAt`); `maxDeposit` became unlimited again (TVL 650.90 USDC), so the current state allocates too until the NAV is 48 h old (about 29 Sep 2026 13:50 UTC). See `evidence/snapshot-2026-09-27.json`.
 
 ### What IXS stated, and what is Vaulto policy
 
@@ -122,11 +126,13 @@ From the IXS subgraph (66 ixv1 NAV updates, 8 Jun – 23 Sep 2026): mean gap 39.
 
 Committed files in [`evidence/`](evidence):
 
-- `snapshot-2026-09-25.json`: public demo run on the current state, captured from https://vaulto-five.vercel.app with `npm run evidence:snapshot`.
+- `snapshot-2026-09-27.json`: public demo run on the current state right after the 27 Sep 2026 ixv1 NAV refresh, captured from https://vaulto-five.vercel.app with `npm run evidence:snapshot`: SERV ALLOCATE 162.72 USDC (25% of the 650.90 USDC TVL) → 150.2743 ixv1 by `eth_call` at BNB block 124,346,771; 104 USDC with IXS MCP calldata → 96.0455 ixv1; 0 validator overrides.
+- `snapshot-2026-09-25.json`: the same run on 25 Sep 2026, while both open vaults were at limit 0 (every vault DEFER or REJECT).
 - `replay-block123779792.json`: the same run in Replay at block 123,779,792 (`REPLAY_BLOCK=123779792 npm run evidence:snapshot`).
 - `fork-bnb-block123779792-100usdc.json`: 100 USDC → 91.65 ixv1 on a BNB mainnet fork (approve + deposit fork transactions).
 - `fork-bnb-block123785153-101usdc-redeem.json`: 101 USDC deposit, then `requestRedeem` queued on the fork.
 - `fork-bnb-block123868127.json`, `fork-avalanche-block96093431.json`: 25 Sep 2026 forks, both open vaults at limit 0 → DEFER, licensed vaults → REJECT.
+- `serv-cache/<hash>.json`: stored SERV outputs (raw JSON, model, token usage and cost) for the demo views, reused for identical inputs.
 
 ## Revenue model
 
@@ -195,5 +201,5 @@ Six agents: Treasury Scanner, Opportunity Finder, Risk Guardian (pre-flight fact
 
 - Vaulto holds no keys and never signs. The IXS MCP builds calldata, simulations are read-only `eth_call`s, and in Live mode the wallet signs every transaction.
 - Approvals are for the exact deposit amount; Live transactions are capped and never below the redeemable minimum.
-- On Vercel the JSON store and the call log live in memory per serverless instance; the execute flow is stateless and `/evidence` falls back to the committed snapshot. Set `DATABASE_URL` for persistence.
+- On Vercel the JSON store and the call log live in memory per serverless instance, and every API route is its own function; the execute flow is stateless, the simulated treasury's simulated deposits travel in an httpOnly cookie per treasury and view (Current or the Replay block; cleared by "Reset demo state"), the SERV cache is per instance plus the committed seeds, and `/evidence` falls back to the committed snapshot. Set `DATABASE_URL` for persistence.
 - The IXS MCP tool `vault_request_status` currently fails upstream with a schema error; request status is read from the IXS subgraph instead.
