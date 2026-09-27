@@ -81,6 +81,8 @@ export const MIN_DEPOSIT_USDC = 100;
 export const LIVE_MODE_MIN_USDC = 100;
 /** Cookie carrying the per-browser Live opt-in (comma-separated wallet addresses): stateless across serverless instances. */
 export const LIVE_OPT_IN_COOKIE = "vaulto_live";
+/** Concentration guardrail: one leg may not exceed this share of the vault's TVL (totalAssets before the deposit). */
+export const MAX_VAULT_TVL_SHARE_PCT_DEFAULT = 25;
 /** Buffer over the net redeem minimum, so a Live position stays redeemable if the NAV drifts down between updates. */
 export const REDEEM_NAV_BUFFER_PCT = 3;
 

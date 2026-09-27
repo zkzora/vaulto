@@ -151,7 +151,7 @@ export async function analyze(address: string): Promise<AnalysisResult> {
   );
 
   const verdict = assessCandidates(candidates, snapshot, user, preflights);
-  const constraints = planConstraints(snapshot, verdict.approved, user, { maxLiveTxUsd: env.maxLiveTxUsdc });
+  const constraints = planConstraints(snapshot, verdict.approved, user, { maxLiveTxUsd: env.maxLiveTxUsdc, maxVaultTvlSharePct: env.maxVaultTvlSharePct });
   logs.push(
     await log({
       walletAddress: wallet,
@@ -178,8 +178,12 @@ export async function analyze(address: string): Promise<AnalysisResult> {
       const cap = constraints?.caps.find((c) => c.strategyId === d.strategyId);
       const dropped = constraints?.dropped.find((x) => x.strategyId === d.strategyId);
       if (!cap) {
-        validatorNotes.push(`${d.strategyId}: SERV proposed an allocation but the Planner has no cap for it${dropped ? ` (${dropped.reason})` : " (no budget above the liquidity floor)"}; validator applied ${dropped ? "reject" : "defer"}`);
-        return { ...d, verdict: dropped ? ("reject" as const) : ("defer" as const), amount: undefined, reason: `${dropped?.reason ?? "No budget remains above the liquidity floor and runway reserve"} (validator override of a SERV allocation)` };
+        validatorNotes.push(`${d.strategyId}: SERV proposed an allocation but the Planner has no cap for it${dropped ? ` (${dropped.reason})` : " (no budget above the liquidity floor)"}; validator applied ${dropped?.verdict ?? "defer"}`);
+        return { ...d, verdict: dropped?.verdict ?? ("defer" as const), amount: undefined, reason: `${dropped?.reason ?? "No budget remains above the liquidity floor and runway reserve"} (validator override of a SERV allocation)` };
+      }
+      if (d.amount != null && d.amount > cap.maxAmount * 1.005) {
+        validatorNotes.push(`${d.strategyId}: SERV amount ${d.amount} is above the Planner cap ${cap.maxAmount} (${cap.capNote ?? "policy cap"}); validator clamped it to the cap`);
+        return { ...d, amount: cap.maxAmount, reason: `${d.reason} Clamped to the ${cap.maxAmount.toLocaleString("en-US")} ${cap.asset} cap (${cap.capNote ?? "policy cap"}; validator override).` };
       }
       if (d.amount != null && d.amount * cap.priceUsd < cap.minUsd) {
         validatorNotes.push(`${d.strategyId}: SERV amount ${d.amount} is below the ${cap.minNote}; validator applied reject`);
@@ -215,9 +219,20 @@ export async function analyze(address: string): Promise<AnalysisResult> {
     }),
   );
 
+  // Concentration of each leg in its vault (TVL = totalAssets before the deposit), for the memo and the risk panel.
+  const concentration = (plan?.legs ?? []).flatMap((l) => {
+    const s = strategies.find((x) => x.id === l.strategyId);
+    const cap = constraints?.caps.find((c) => c.strategyId === l.strategyId);
+    const tvl = cap?.tvlUsd ?? (s?.tvlUsd != null ? s.tvlUsd * (snapshot.prices[l.asset] ?? 1) : null);
+    if (tvl == null || tvl <= 0) return [];
+    const r1 = (x: number) => Math.round(x * 10) / 10;
+    return [{ strategyId: l.strategyId, vault: l.vaultName, symbol: s?.shareSymbol ?? l.vaultName, tvlUsd: Math.round(tvl * 100) / 100, amountUsd: Math.round(l.amount * (snapshot.prices[l.asset] ?? 1) * 100) / 100, shareOfTvlPct: r1((l.amount / tvl) * 100), shareAfterDepositPct: r1((l.amount / (tvl + l.amount)) * 100), maxSharePct: env.maxVaultTvlSharePct, capped: cap?.concentrationCapUsd != null && Math.abs(cap.maxUsd - cap.concentrationCapUsd) < 0.02 }];
+  });
+
   const narrative = await narrate({
     user,
     snapshot,
+    concentration,
     assessments: verdict.assessments,
     decisions,
     legs: plan?.legs ?? [],
@@ -275,6 +290,7 @@ export async function analyze(address: string): Promise<AnalysisResult> {
     context: { demoMode: snapshot.demoMode, totalUsd: snapshot.totalUsd, replayBlock: snapshot.replay?.block ?? null },
     preflights,
     validatorOverrides: validatorNotes,
+    concentration,
     guardrails: {
       liquidityFloorPct: user.liquidityFloorPct,
       maxAssetExposurePct: user.maxAssetExposurePct,
@@ -284,6 +300,7 @@ export async function analyze(address: string): Promise<AnalysisResult> {
       navStaleHours: env.navStaleHours,
       liveMode: env.liveMode,
       liveOptIn: snapshot.liveOptIn,
+      maxVaultTvlSharePct: env.maxVaultTvlSharePct,
       liveDepositMinimums: strategies
         .filter((s) => s.executable && s.terms?.minLiveDepositUsd != null)
         .map((s) => ({ strategyId: s.id, vault: s.vaultName, symbol: s.shareSymbol ?? s.vaultName, usd: s.terms!.minLiveDepositUsd!, formula: s.terms!.minLiveDepositFormula ?? "", reason: s.terms!.minLiveDepositReason ?? "" })),

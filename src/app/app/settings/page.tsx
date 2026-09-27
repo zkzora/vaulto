@@ -200,7 +200,7 @@ export default function SettingsPage() {
                 ],
                 [
                   "Guardrails (deterministic)",
-                  `SERV decides; these hard limits are enforced around it: liquidity floor ${u.liquidityFloorPct}% · exposure cap ${u.maxAssetExposurePct}% · min vault score ${u.minVaultRiskScore} · min deposit ${system.minDepositUsdc} USDC · Live deposit minimum ${liveMinText}${liveMinWhy ? ` (${liveMinWhy})` : ""} · Live hard cap ${system.maxLiveTxUsdc.toLocaleString("en-US")} USDC per transaction · NAV stale after ${system.navStaleHours} h`,
+                  `SERV decides; these hard limits are enforced around it: liquidity floor ${u.liquidityFloorPct}% · exposure cap ${u.maxAssetExposurePct}% · min vault score ${u.minVaultRiskScore} · min deposit ${system.minDepositUsdc} USDC · concentration ≤ ${system.maxVaultTvlSharePct}% of a vault's TVL per leg (below 100 USDC → DEFER for capacity) · Live deposit minimum ${liveMinText}${liveMinWhy ? ` (${liveMinWhy})` : ""} · Live hard cap ${system.maxLiveTxUsdc.toLocaleString("en-US")} USDC per transaction · NAV stale after ${system.navStaleHours} h`,
                   "green",
                   "Enforced",
                 ],
