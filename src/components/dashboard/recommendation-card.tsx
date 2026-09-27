@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { ServStatusBar } from "@/components/dashboard/serv-status";
 import { useTxn } from "@/components/txn/txn-provider";
 import { useAnalyze, useRecommendationStatus } from "@/hooks/use-vaulto";
 import { fmtUsd } from "@/lib/format";
@@ -77,6 +78,7 @@ export function RecommendationCard({ rec, snapshot }: { rec: Recommendation | nu
             ? `${fmtUsd(snapshot.idleUsd)} (${snapshot.idlePct}%) of the treasury is idle. Run an analysis and OpenServ will reason about the best IXS RWA strategy under your policy.`
             : "The treasury is fully deployed within policy. Vaulto keeps monitoring and will draft a recommendation when conditions change."}
         </div>
+        {rec?.status === "dismissed" && !rec.legs.length && <ServStatusBar rec={rec} className="mt-3" />}
         {analyze.isError && <div className="mt-3 rounded-lg bg-amber-tint px-3 py-2 text-[12px] text-amber">{analyze.error.message}</div>}
         <div className="mt-auto flex flex-wrap gap-2 pt-5">
           <button className="btn btn-primary" onClick={() => analyze.mutate()}>
@@ -102,6 +104,7 @@ export function RecommendationCard({ rec, snapshot }: { rec: Recommendation | nu
           <Pill tone="blue" className="h-6 px-2.5 text-[12px]">{rec.confidence}% confidence</Pill>
         </div>
       </div>
+      <ServStatusBar rec={rec} className="mt-3" />
       <div className="mt-3 grid gap-2.5">
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-faint">Vaulto found</div>

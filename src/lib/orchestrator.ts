@@ -23,6 +23,7 @@ import { buildPlan, localLegs, planConstraints } from "@/lib/agents/planner";
 import { prepareTransaction } from "@/lib/agents/execution";
 import { buildPortfolioReport, buildRiskReport } from "@/lib/agents/monitoring";
 import { decideAllocation, narrate, type VaultDecision } from "@/lib/openserv/reasoning";
+import { addCookieDemoMoves, cookieDemoMoves } from "@/lib/demo-moves";
 import type {
   AgentLog,
   AnalysisResult,
@@ -37,6 +38,9 @@ import type {
   UserProfile,
   VaultPreflight,
   VaultStrategy,
+  DemoMove,
+  ServRunInfo,
+  ServStatus,
 } from "@/lib/types";
 
 /**
@@ -85,7 +89,13 @@ export async function scan(address: string): Promise<ScanResult> {
     liveOptedIn(address),
     getReplay(),
   ]);
-  const snapshot = scanTreasury({ user, onchain, prices, strategies, demoState, liveOptIn, replay });
+  // Simulated deposits of this view: the browser's cookie (survives serverless functions) plus this instance's store.
+  const view = replay?.block ?? null;
+  const cookieMoves = await cookieDemoMoves(address, view);
+  const storeMoves = demoState.moves.filter((m) => (m.replayBlock ?? null) === view);
+  const same = (a: DemoMove, b: DemoMove) => a.strategyId === b.strategyId && Math.abs(a.amount - b.amount) < 1e-6 && Math.abs(new Date(a.at).getTime() - new Date(b.at).getTime()) < 1500;
+  const moves = [...cookieMoves, ...storeMoves.filter((m) => !cookieMoves.some((c) => same(c, m)))];
+  const snapshot = scanTreasury({ user, onchain, prices, strategies, demoState: { moves }, liveOptIn, replay });
   store.saveTreasurySnapshot(address, snapshot.assets).catch(() => undefined);
 
   // NAV / deposit-limit watcher: log every change the Monitoring Agent sees.
@@ -105,7 +115,8 @@ function emptyMetrics(snapshot: TreasurySnapshot) {
   return { liquidPct: snapshot.liquidPct, blendedApy: snapshot.blendedApy, healthScore: snapshot.healthScore, idlePct: snapshot.idlePct, allocatedPct: snapshot.allocatedPct, perStrategyPct: {} };
 }
 
-export async function analyze(address: string): Promise<AnalysisResult> {
+/** opts.fresh: call SERV even when a stored SERV output exists for identical inputs ("Re-run SERV"). */
+export async function analyze(address: string, opts: { fresh?: boolean } = {}): Promise<AnalysisResult> {
   const started = Date.now();
   const store = await getStore();
   const wallet = normalizeAddress(address);
@@ -169,7 +180,8 @@ export async function analyze(address: string): Promise<AnalysisResult> {
 
   // SERV reasoning decides per vault; the Planner validates amounts against caps and pre-flight.
   const fallback = constraints ? localLegs(constraints) : [];
-  const decision = await decideAllocation({ user, snapshot, assessments: verdict.assessments, constraints, policyChecks: verdict.policyChecks, fallback, fallbackDecisions: verdict.fallbackDecisions, cutoff });
+  const decision = await decideAllocation({ user, snapshot, assessments: verdict.assessments, constraints, policyChecks: verdict.policyChecks, fallback, fallbackDecisions: verdict.fallbackDecisions, cutoff }, { fresh: opts.fresh });
+  const servNote = (s?: ServRunInfo) => (!s ? "" : s.status === "cached" ? ` (SERV output cached from ${s.at})` : s.status === "stale" ? ` (SERV unavailable: ${s.error}; showing the last SERV output from ${s.at})` : s.status === "local" ? ` (local fallback: SERV unavailable, ${s.error})` : "");
   const approvedIds = new Set(verdict.approved.map((c) => c.strategy.id));
   const validatorNotes: string[] = [];
   const decisions: VaultDecision[] = decision.decisions.map((d) => {
@@ -217,7 +229,7 @@ export async function analyze(address: string): Promise<AnalysisResult> {
       walletAddress: wallet,
       agentName: "Allocation Planner Agent",
       action: "plan",
-      reasoning: `${decisionSource === "openserv" ? `SERV reasoning (${decision.model ?? "OpenServ"})` : "Deterministic engine"} verdicts: ${decisions.map((d) => `${strategies.find((s) => s.id === d.strategyId)?.vaultName ?? d.strategyId} → ${d.verdict.toUpperCase()}${d.verdict === "allocate" && d.amount ? ` ${d.amount.toLocaleString("en-US")}` : ""}`).join("; ")}. ${plan ? `Plan: ${plan.legs.map((l) => `${fmtAmount(l.amount, l.asset)} → ${l.vaultName}`).join(", ")} within a ${fmtUsd(constraints!.budgetUsd)} budget.` : "No allocation now."}${decision.rationale ? ` Rationale: ${decision.rationale}` : ""}${validatorNotes.length ? ` Validator: ${validatorNotes.join("; ")}.` : ""}`,
+      reasoning: `${decisionSource === "openserv" ? `SERV reasoning (${decision.model ?? "OpenServ"})${servNote(decision.serv)}` : `Deterministic engine${servNote(decision.serv)}`} verdicts: ${decisions.map((d) => `${strategies.find((s) => s.id === d.strategyId)?.vaultName ?? d.strategyId} → ${d.verdict.toUpperCase()}${d.verdict === "allocate" && d.amount ? ` ${d.amount.toLocaleString("en-US")}` : ""}`).join("; ")}. ${plan ? `Plan: ${plan.legs.map((l) => `${fmtAmount(l.amount, l.asset)} → ${l.vaultName}`).join(", ")} within a ${fmtUsd(constraints!.budgetUsd)} budget.` : "No allocation now."}${decision.rationale ? ` Rationale: ${decision.rationale}` : ""}${validatorNotes.length ? ` Validator: ${validatorNotes.join("; ")}.` : ""}`,
       status: plan ? "success" : "warn",
       source: decisionSource === "openserv" ? "OpenServ" : "Vaulto",
     }),
@@ -249,14 +261,28 @@ export async function analyze(address: string): Promise<AnalysisResult> {
     policyChecks: verdict.policyChecks,
     decisionRationale: decision.rationale,
     cutoff,
-  });
+  }, { fresh: opts.fresh, unavailable: decision.serv?.status === "stale" || decision.serv?.status === "local" ? decision.serv.error : undefined });
+
+  const runs = [decision.serv, narrative.serv].filter((r): r is ServRunInfo => Boolean(r));
+  const statuses = runs.map((r) => r.status);
+  const serv: ServStatus | undefined =
+    decision.serv && narrative.serv
+      ? {
+          status: statuses.includes("local") ? "local" : statuses.includes("stale") ? "stale" : statuses.every((x) => x === "cached") ? "cached" : statuses.includes("cached") ? "mixed" : "fresh",
+          requestedFresh: Boolean(opts.fresh),
+          decision: decision.serv,
+          narrative: narrative.serv,
+          costUsd: Math.round(runs.reduce((s, r) => s + r.spentUsd, 0) * 1e6) / 1e6,
+          savedUsd: Math.round(runs.filter((r) => r.status === "cached" || r.status === "stale").reduce((s, r) => s + (r.usage?.costUsd ?? 0), 0) * 1e6) / 1e6,
+        }
+      : undefined;
 
   logs.push(
     await log({
       walletAddress: wallet,
       agentName: "SERV Reasoning",
       action: "explain",
-      reasoning: `${plan ? `${fmtUsd(plan.totalUsd)} across ${plan.legs.map((l) => l.vaultName).join(" and ")}` : "No allocation"}; ${deferred.length} deferred, ${rejected.length} rejected. Verdicts by ${decisionSource === "openserv" ? "SERV (OpenServ)" : "the Vaulto local engine"}; memo + explanation by ${narrative.source === "openserv" ? `OpenServ (${narrative.model ?? "platform model"})` : "the Vaulto local engine (OpenServ narrative unavailable)"}, confidence ${narrative.confidence}%.`,
+      reasoning: `${plan ? `${fmtUsd(plan.totalUsd)} across ${plan.legs.map((l) => l.vaultName).join(" and ")}` : "No allocation"}; ${deferred.length} deferred, ${rejected.length} rejected. Verdicts by ${decisionSource === "openserv" ? "SERV (OpenServ)" : "the Vaulto local engine"}; memo + explanation by ${narrative.source === "openserv" ? `OpenServ (${narrative.model ?? "platform model"})${servNote(narrative.serv)}` : `the Vaulto local engine${servNote(narrative.serv)}`}, confidence ${narrative.confidence}%.${serv ? ` OpenServ spend this run ≈ ${serv.costUsd.toFixed(4)}${serv.savedUsd ? `; reused stored SERV output worth ≈ ${serv.savedUsd.toFixed(4)}` : ""}.` : ""}`,
       status: "success",
       source: narrative.source === "openserv" ? "OpenServ" : "Vaulto",
     }),
@@ -309,6 +335,7 @@ export async function analyze(address: string): Promise<AnalysisResult> {
         .filter((s) => s.executable && s.terms?.minLiveDepositUsd != null)
         .map((s) => ({ strategyId: s.id, vault: s.vaultName, symbol: s.shareSymbol ?? s.vaultName, usd: s.terms!.minLiveDepositUsd!, formula: s.terms!.minLiveDepositFormula ?? "", reason: s.terms!.minLiveDepositReason ?? "" })),
     },
+    serv,
     trace: { source: decision.source, model: decision.model ?? narrative.model, at: new Date().toISOString(), decision: { input: decision.input, output: decision.output }, narrative: narrative.input ? { input: narrative.input, output: narrative.output } : undefined },
     cutoff,
   };
@@ -444,6 +471,8 @@ export async function finalize(address: string, preparedId: string, results: Ste
   if (!prepared || prepared.walletAddress !== wallet) throw new Error("prepared transaction not found");
   const rec = (await store.getRecommendation(prepared.recommendationId)) ?? (await recoverRecommendation(store, wallet, prepared.recommendationId, fromClient?.recommendation));
   const demo = await store.getDemoState(wallet);
+  const replayBlock = (await getReplay())?.block ?? null;
+  const newMoves: DemoMove[] = [];
   const records: TransactionRecord[] = [];
   const cutoff = nextCutoff();
 
@@ -471,10 +500,12 @@ export async function finalize(address: string, preparedId: string, results: Ste
     records.push(await store.saveTransaction(record));
     const moved = (r.status === "confirmed" || r.status === "simulated") && step.kind !== "approve";
     if (moved && step.mode === "simulated") {
-      demo.moves.push({ strategyId: step.strategyId, asset: step.asset, amount: step.amount, at: record.createdAt });
+      newMoves.push({ strategyId: step.strategyId, asset: step.asset, amount: step.amount, at: record.createdAt, replayBlock });
     }
   }
+  demo.moves.push(...newMoves);
   await store.setDemoState(wallet, demo);
+  await addCookieDemoMoves(wallet, newMoves);
 
   // Live mainnet evidence: receipt (block, gas, status) per confirmed step, then the vault shares now held.
   const strategiesNow = (await loadStrategies()).strategies;

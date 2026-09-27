@@ -9,6 +9,7 @@ import { getReplay, setReplay } from "@/lib/replay";
 import { checkInference } from "@/lib/openserv/inference";
 import { getStore } from "@/lib/db";
 import { getUser, resetUser, updateUser } from "@/lib/orchestrator";
+import { clearCookieDemoMoves } from "@/lib/demo-moves";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -93,6 +94,7 @@ export async function DELETE(req: Request) {
   if (!address) return bad("address query param required");
   return handle(async () => {
     await resetUser(address);
+    await clearCookieDemoMoves(address);
     return { ok: true };
   });
 }

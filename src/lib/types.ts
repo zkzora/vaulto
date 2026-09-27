@@ -37,6 +37,8 @@ export interface DemoMove {
   asset: string;
   amount: number;
   at: string;
+  /** Replay block the deposit was simulated at (null / absent = Current). */
+  replayBlock?: number | null;
 }
 
 export interface DemoState {
@@ -315,6 +317,51 @@ export type RecommendationStatus =
   | "rejected"
   | "dismissed";
 
+/** Token usage and cost of one SERV call (OpenServ Inference API pricing from /v1/models, US cents per 1M tokens). */
+export interface ServUsage {
+  promptTokens: number;
+  cachedTokens: number;
+  completionTokens: number;
+  reasoningTokens: number;
+  attempts: number;
+  costUsd: number;
+  /** e.g. "gpt-5.4-mini: input 100, cached 10, output 600 US cents per 1M tokens (OpenServ /v1/models)". */
+  pricing: string;
+}
+
+/**
+ * How one SERV stage (verdicts or memo) was produced in this analysis:
+ * fresh = SERV called now; cached = identical inputs, stored SERV output reused;
+ * stale = SERV call failed, the stored SERV output for the identical inputs is shown; local = SERV failed and no stored output exists.
+ */
+export interface ServRunInfo {
+  stage: "decision" | "narrative";
+  status: "fresh" | "cached" | "stale" | "local";
+  /** Hash of the inputs (vault state + treasury + policy + block + prompt version). */
+  key: string;
+  promptVersion: string;
+  /** When the SERV output shown was produced. */
+  at: string;
+  model?: string;
+  /** Cost of the SERV call that produced this output (for a cached output: what the reuse saved). */
+  usage?: ServUsage;
+  /** OpenServ spend of this stage in this analysis (0 when the stored output was reused). */
+  spentUsd: number;
+  /** Why SERV was not used (stale / local). */
+  error?: string;
+}
+
+export interface ServStatus {
+  status: "fresh" | "cached" | "mixed" | "stale" | "local";
+  requestedFresh: boolean;
+  decision: ServRunInfo;
+  narrative: ServRunInfo;
+  /** OpenServ spend of this analysis (fresh calls only). */
+  costUsd: number;
+  /** Cost of the stored SERV outputs reused instead of calling SERV again. */
+  savedUsd: number;
+}
+
 export interface Recommendation {
   id: string;
   walletAddress: string;
@@ -348,6 +395,8 @@ export interface Recommendation {
   memo?: Memo;
   /** Exact input handed to SERV reasoning and the raw output it returned. */
   trace?: ReasoningTrace;
+  /** Fresh / cached / fallback status of the SERV output and its OpenServ cost. */
+  serv?: ServStatus;
   /** Pre-flight results per strategy id at analysis time. */
   preflights?: Record<string, VaultPreflight>;
   /** Vaults deferred ("temporarily paused — waiting NAV refresh"). */

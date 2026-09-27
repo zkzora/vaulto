@@ -65,10 +65,11 @@ function redeemSummary(r) {
 async function main() {
   log(`base ${BASE} · demo ${DEMO} · empty wallet ${EMPTY}`);
   const settings = await call("GET", `/api/settings?address=${DEMO}&ping=1`);
-  const analyze = await call("POST", "/api/analyze", { address: DEMO });
+  // FRESH=1 calls SERV even when a stored SERV output exists for identical inputs.
+  const analyze = await call("POST", "/api/analyze", { address: DEMO, fresh: process.env.FRESH === "1" });
   const rec = analyze.json.recommendation;
   if (!rec) throw new Error(`analysis failed: ${JSON.stringify(analyze.json).slice(0, 300)}`);
-  log(`SERV ${rec.reasoningSource} (${rec.reasoningModel}) · ${rec.decisions.map((d) => `${d.strategyId}:${d.verdict}`).join(" ")} · overrides ${rec.validatorOverrides?.length ?? 0}`);
+  log(`SERV ${rec.reasoningSource} (${rec.reasoningModel}) · ${rec.serv ? `${rec.serv.status}, spend ${rec.serv.costUsd.toFixed(4)}` : "no SERV status"} · ${rec.decisions.map((d) => `${d.strategyId}:${d.verdict}`).join(" ")} · overrides ${rec.validatorOverrides?.length ?? 0}`);
 
   const evidenceBefore = await call("GET", "/api/evidence");
   const ixv1 = (evidenceBefore.json.vaults ?? []).find((v) => v.symbol === "ixv1");
@@ -141,6 +142,7 @@ async function main() {
       decisionSource: rec.decisionSource,
       narrativeSource: rec.narrativeSource,
       reasoningModel: rec.reasoningModel,
+      serv: rec.serv ?? null,
       confidence: rec.confidence,
       title: rec.title,
       headline: rec.headline,
