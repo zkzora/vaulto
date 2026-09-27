@@ -1,0 +1,55 @@
+{
+  "key": "be117293e7117a0fa71e27c44489756d",
+  "stage": "decision",
+  "promptVersion": "7ca26a5f141f",
+  "model": "gpt-5.4-mini-2026-03-17",
+  "createdAt": "2026-09-27T14:12:36.814Z",
+  "output": {
+    "decisions": [
+      {
+        "strategyId": "ixhyb-bnb",
+        "verdict": "allocate",
+        "amount": 162.72,
+        "reason": "BNB Chain vault is active, open, deployed, and passes NAV freshness (0.4 h old at 2026-09-27T13:50:52.000Z), minimum deposit (100 USDC), and risk score (92 ≥ 80). Allocation is capped by the planner/concentration guardrail at 162.72 USDC, which is 25% of vault TVL 650.9 USDC; this is within the 100 USDC minimum and below the 162.72 USDC cap."
+      },
+      {
+        "strategyId": "ixhyb-avax",
+        "verdict": "defer",
+        "amount": 0,
+        "reason": "Avalanche C-Chain vault has maxDeposit(wallet)=0 USDC and NAV is stale at 13.3 days old (last update 2026-09-14T06:17:51.000Z), so it is temporarily paused waiting NAV refresh. Unblocks when NAV refreshes and the deposit limit reopens above 0 USDC."
+      },
+      {
+        "strategyId": "ixhyb-bnb-licensed",
+        "verdict": "reject",
+        "amount": 0,
+        "reason": "BNB Chain licensed vault is not whitelisted (whitelistEnabled() true; whitelist check failed), and maxDeposit(wallet)=0 USDC. It is also stale at 9.3 days since NAV update (2026-09-18T06:19:49.000Z), but the whitelist failure alone is a hard rejection."
+      },
+      {
+        "strategyId": "ixhyb-avax-licensed",
+        "verdict": "reject",
+        "amount": 0,
+        "reason": "Avalanche C-Chain licensed vault is not whitelisted (whitelistEnabled() true; whitelist check failed), and maxDeposit(wallet)=0 USDC. NAV is also stale at 13.3 days since 2026-09-14T06:17:09.000Z, so it fails eligibility and capacity checks."
+      },
+      {
+        "strategyId": "ixs-btc-real-yield",
+        "verdict": "reject",
+        "amount": 0,
+        "reason": "BTC Real Yield is announced but not deployed on the IXS Vault API, so there is no live vault to deposit into. The candidate also has no cap and no deployed contract, which makes it ineligible."
+      }
+    ],
+    "rationale": "Only the BNB USDC vault clears all hard checks and has a valid capacity cap, so it receives the sole allocation. The Avalanche USDC vaults are deferred because their deposit limits are zero and NAV is stale, while the licensed vaults and BTC strategy are rejected for whitelist or deployment failures."
+  },
+  "usage": {
+    "promptTokens": 7312,
+    "cachedTokens": 0,
+    "completionTokens": 548,
+    "reasoningTokens": 0,
+    "attempts": 1,
+    "costUsd": 0.0106,
+    "pricing": "gpt-5.4-mini: input 100, cached input 10, output 600 US cents per 1M tokens (OpenServ /v1/models)"
+  },
+  "view": {
+    "address": "0x7a3f5c1e9b2d4a6f8c0e1d3b5a7c9e2f4b6d9c21",
+    "replayBlock": null
+  }
+}

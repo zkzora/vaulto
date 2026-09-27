@@ -1,0 +1,95 @@
+{
+  "key": "e2b0c8cf5f079dd644499f2f8df266e8",
+  "stage": "narrative",
+  "promptVersion": "7ca26a5f141f",
+  "model": "gpt-5.4-mini-2026-03-17",
+  "createdAt": "2026-09-27T14:12:44.529Z",
+  "output": {
+    "title": "BNB USDC Allocation",
+    "headline": "Allocate 163 USDC into IX High Yield Bond (USDC) · BNB on BNB Chain; no other legs are allocated.",
+    "summary": "The treasury is fully idle at 1,996,433 US dollars, with 100% liquidity and BTC exposure at 53%, so the policy guardrails are satisfied. The only allocation is the BNB Chain USDC vault, while the Avalanche vaults are temporarily paused — waiting NAV refresh and the remaining candidates are rejected for whitelist or deployment failures.",
+    "reasons": [
+      {
+        "title": "Capital efficiency.",
+        "body": "The allocation uses the only open vault that clears the hard checks and stays within the planner cap. The proposed 163 USDC leg is small relative to the treasury, preserves full liquidity, and keeps the portfolio aligned with the runway-first mandate."
+      },
+      {
+        "title": "Liquidity.",
+        "body": "Treasury liquidity remains 100% against a 30% floor, and BTC exposure remains within the 70% limit at 53%. The selected vault is a USDC vault on BNB Chain with immediate sync settlement, so it does not introduce a pending operator queue."
+      },
+      {
+        "title": "Verdicts.",
+        "body": "IX High Yield Bond (USDC) · BNB is allocate for 163 USDC; IX High Yield Bond (USDC) · Avalanche is temporarily paused — waiting NAV refresh because the deposit limit is 0 USDC and NAV is stale at 13.3 days; IX High Yield Bond (USDC) · BNB · Licensed and IX High Yield Bond (USDC) · Avalanche · Licensed are rejected for not whitelisted and zero deposit limit; BTC Real Yield is rejected because it is announced but not deployed."
+      }
+    ],
+    "steps": [
+      {
+        "agent": "Treasury Scanner",
+        "title": "Treasury snapshot.",
+        "body": "Reviewed the treasury at 1,996,433 US dollars total and idle, with 100% liquidity, 23 idle days, and BTC exposure at 53%."
+      },
+      {
+        "agent": "Risk Guardian",
+        "title": "Pre-flight checks.",
+        "body": "Confirmed the BNB Chain vault is active, open, fresh at 0.4 hours old, and above the 100 USDC minimum; identified the Avalanche vaults as temporarily paused — waiting NAV refresh because their deposit limit is 0 USDC and NAV is stale; confirmed the licensed vaults fail whitelist checks; confirmed BTC Real Yield is not deployed."
+      },
+      {
+        "agent": "Allocation Planner",
+        "title": "Cap sizing.",
+        "body": "Set the BNB Chain allocation at 163 USDC, matching the 25% concentration cap on vault TVL of 650.9 USDC and staying above the 100 USDC minimum."
+      },
+      {
+        "agent": "SERV reasoning",
+        "title": "Final verdicts.",
+        "body": "Issued one verdict per candidate: allocate for the BNB Chain vault, defer for the Avalanche vault, reject the two licensed vaults, and reject BTC Real Yield."
+      }
+    ],
+    "memo": {
+      "title": "Treasury allocation memo",
+      "sections": [
+        {
+          "heading": "Treasury condition",
+          "body": "The treasury holds 1,996,433 US dollars in total and is fully idle. Liquidity is 100% against a 30% floor, idle days are 23, and BTC exposure is 53% against the 70% limit, so the portfolio is within policy guardrails."
+        },
+        {
+          "heading": "Policy",
+          "body": "Live mode is opt-in. The live redeemable minimum is 104 USDC, calculated as ceil(100 / 0.995 × 1.03), which keeps the whole position redeemable above the 100 USDC net minimum after the 0.5% redemption fee with a 3% NAV buffer. The selected execution mode here is Simulate by default, so nothing is sent on-chain."
+        },
+        {
+          "heading": "Proposed allocation",
+          "body": "Allocate 163 USDC into IX High Yield Bond (USDC) · BNB on BNB Chain. This leg represents 25% of the vault's TVL of 650.9 USDC, and the concentration guardrail capped it at that level. The leg is within the 100 USDC minimum and uses the only candidate that clears all hard checks."
+        },
+        {
+          "heading": "Deferred (waiting NAV refresh)",
+          "body": "IX High Yield Bond (USDC) · Avalanche is temporarily paused — waiting NAV refresh because the deposit limit is 0 USDC and NAV is stale at 13.3 days old. It unblocks when NAV refreshes and the deposit limit reopens above 0 USDC."
+        },
+        {
+          "heading": "Rejected",
+          "body": "IX High Yield Bond (USDC) · BNB · Licensed is rejected because it is not whitelisted and has a 0 USDC deposit limit. IX High Yield Bond (USDC) · Avalanche · Licensed is rejected because it is not whitelisted and has a 0 USDC deposit limit, with stale NAV as an additional failure. BTC Real Yield is rejected because it is announced but not deployed, so there is no live vault to allocate to."
+        },
+        {
+          "heading": "Risks",
+          "body": "The main risks are RWA credit risk, the daily redemption cycle, the 0.5% redemption fee, NAV drift between updates, and smart-contract and counterparty risk. Vault concentration is also relevant: the approved leg is capped at 25% of the vault's TVL, which limits single-vault concentration but still concentrates the allocation into one venue."
+        },
+        {
+          "heading": "Execution",
+          "body": "Mode is Simulate by default: the deposit flow is simulated on BNB Chain mainnet and nothing is sent. For async legs, requests are processed at the next 17:00 SGT cutoff on Singapore business days, with settlement estimated about one business day later; this memo does not treat any async leg as deposited or executed. Live mode is only available if opted in, requires the wallet's signature, and is capped per transaction by the guardrail."
+        }
+      ]
+    },
+    "confidence": 96
+  },
+  "usage": {
+    "promptTokens": 5789,
+    "cachedTokens": 0,
+    "completionTokens": 1200,
+    "reasoningTokens": 0,
+    "attempts": 1,
+    "costUsd": 0.012989,
+    "pricing": "gpt-5.4-mini: input 100, cached input 10, output 600 US cents per 1M tokens (OpenServ /v1/models)"
+  },
+  "view": {
+    "address": "0x7a3f5c1e9b2d4a6f8c0e1d3b5a7c9e2f4b6d9c21",
+    "replayBlock": null
+  }
+}
