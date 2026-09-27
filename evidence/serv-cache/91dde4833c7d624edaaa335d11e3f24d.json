@@ -1,0 +1,95 @@
+{
+  "key": "91dde4833c7d624edaaa335d11e3f24d",
+  "stage": "narrative",
+  "promptVersion": "7ca26a5f141f",
+  "model": "gpt-5.4-mini-2026-03-17",
+  "createdAt": "2026-09-27T06:59:11.283Z",
+  "output": {
+    "title": "No Allocation Today",
+    "headline": "Nothing is allocated: the two open USDC vaults are temporarily paused — waiting NAV refresh on BNB Chain and Avalanche C-Chain, the two licensed vaults are rejected for not being whitelisted, and BTC Real Yield is rejected because no vault is deployed.",
+    "summary": "The treasury remains fully liquid at 1,990,283 USD, with 1,990,283 USD idle and no allocation legs approved. The Allocation Planner validated 0 legs, total 0 USD, liquidity 100% → 100%, blended yield 0.0% → 0.0%, health 71 → 71, and extra income of about 0 USD per month.",
+    "reasons": [
+      {
+        "title": "Capital efficiency is unchanged.",
+        "body": "With no eligible vaults, the plan keeps 1,990,283 USD fully liquid. The treasury still meets the 30% liquidity floor at 100% liquid, and there is no approved way to improve yield without breaking policy guardrails."
+      },
+      {
+        "title": "Liquidity is preserved.",
+        "body": "The treasury holds 942,520 USD in USDC and 1,047,762.8 USD in BTC value, with BTC exposure at 53% versus the 70% limit. Because no leg passes pre-flight and cap checks, the correct outcome is to keep capital idle rather than force a suboptimal allocation."
+      },
+      {
+        "title": "Verdicts are consistent with the guardrails.",
+        "body": "The two open USDC vaults are temporarily paused — waiting NAV refresh because maxDeposit() is 0 USDC and NAV is stale; the two licensed vaults are rejected for not being whitelisted; BTC Real Yield is rejected because no vault is deployed. No candidate clears the full policy stack, so the final verdict is no allocation."
+      }
+    ],
+    "steps": [
+      {
+        "agent": "Treasury Scanner",
+        "title": "Assess treasury state.",
+        "body": "Reviewed the treasury totals, idle balance, asset mix, and policy limits. The treasury is fully liquid at 1,990,283 USD idle, with BTC exposure at 53% and no existing positions."
+      },
+      {
+        "agent": "Risk Guardian",
+        "title": "Run pre-flight checks.",
+        "body": "Checked vault status, eligibility, NAV freshness, deposit limits, minimum deposit, and live redeemable minimum facts. The open USDC vaults are temporarily paused — waiting NAV refresh; the licensed vaults fail whitelist access; BTC Real Yield has no deployed vault."
+      },
+      {
+        "agent": "Allocation Planner",
+        "title": "Validate caps and capacity.",
+        "body": "Validated the planner output of 0 legs and 0 USD total. No vault has usable capacity under the current facts, so there is nothing to size within maxAmount, the 100 USDC minimum, or the 25% vault-TVL concentration cap."
+      },
+      {
+        "agent": "SERV reasoning",
+        "title": "Issue final verdicts.",
+        "body": "Assigned one verdict to every candidate: defer for the two open USDC vaults, reject for the two licensed vaults, and reject for BTC Real Yield. The final recommendation is to wait for NAV refresh and a new deposit window."
+      }
+    ],
+    "memo": {
+      "title": "Treasury Committee Memo",
+      "sections": [
+        {
+          "heading": "Treasury condition",
+          "body": "The treasury totals 1,990,283 USD, all of it idle. The portfolio holds 942,520 USD in USDC and 1,047,762.8 USD in BTC value, with BTC exposure at 53% versus the 70% policy limit. The current outcome preserves runway and keeps liquidity at 100%."
+        },
+        {
+          "heading": "Policy",
+          "body": "The policy target is to preserve runway and earn on idle capital, while keeping liquidity above 30%, asset exposure within 70%, and vault risk score at or above 80. Live redeemable minimum is 104 USDC, calculated as ceil(100 / 0.995 × 1.03), so a live allocation must stay redeemable above the 100 USDC net minimum after the 0.5% redemption fee with a 3% NAV buffer. Live mode is opt-in only, and the wallet must sign it; it is capped per transaction by the guardrail."
+        },
+        {
+          "heading": "Proposed allocation",
+          "body": "No allocation is proposed. The Allocation Planner returned 0 legs, total 0 USD, liquidity 100% → 100%, blended yield 0.0% → 0.0%, health 71 → 71, and extra income of about 0 USD per month. There are no approved legs to report, so no concentration share applies and no vault-TVL cap is binding on an allocation."
+        },
+        {
+          "heading": "Deferred (waiting NAV refresh)",
+          "body": "IX High Yield Bond (USDC) · BNB is temporarily paused — waiting NAV refresh: NAV is 4.2 days old, maxDeposit() is 0 USDC, and the vault is active and open. IX High Yield Bond (USDC) · Avalanche is temporarily paused — waiting NAV refresh: NAV is 13.0 days old, maxDeposit() is 0 USDC, and the vault is active and open. What unblocks both is a fresh NAV update that restores a nonzero deposit limit."
+        },
+        {
+          "heading": "Rejected",
+          "body": "IX High Yield Bond (USDC) · BNB · Licensed is rejected because the treasury wallet is not whitelisted; maxDeposit() is 0 USDC and NAV is also stale at 9.0 days, but whitelist failure is the hard rejection. IX High Yield Bond (USDC) · Avalanche · Licensed is rejected for the same whitelist failure, with NAV also stale at 13.0 days. BTC Real Yield is rejected because it is announced but no vault is deployed, so there is nothing to allocate into."
+        },
+        {
+          "heading": "Risks",
+          "body": "The main risks are RWA credit risk, the daily redemption cycle, the 0.5% redemption fee, NAV drift between updates, and smart-contract and counterparty risk. Because the open vaults are paused on stale NAV, the immediate operational risk is not yield loss but waiting for a fresh NAV refresh before any allocation can be reconsidered."
+        },
+        {
+          "heading": "Execution",
+          "body": "Mode is Simulate by default, so any future eligible allocation would be simulated on the relevant chain mainnet and nothing would be sent. For async legs, requests are processed at the next 17:00 SGT cutoff on Singapore business days, with settlement estimated about one business day later; that estimate is Vaulto policy, not an IXS statement. Live mode is only available if opted in, requires the wallet's signature, and is capped per transaction by the guardrail."
+        }
+      ]
+    },
+    "confidence": 98
+  },
+  "usage": {
+    "promptTokens": 5764,
+    "cachedTokens": 2304,
+    "completionTokens": 1351,
+    "reasoningTokens": 0,
+    "attempts": 1,
+    "costUsd": 0.011796,
+    "pricing": "gpt-5.4-mini: input 100, cached input 10, output 600 US cents per 1M tokens (OpenServ /v1/models)"
+  },
+  "view": {
+    "address": "0x7a3f5c1e9b2d4a6f8c0e1d3b5a7c9e2f4b6d9c21",
+    "replayBlock": null
+  }
+}
