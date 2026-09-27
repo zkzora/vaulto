@@ -17,7 +17,7 @@ export function ReplayToggle() {
   // While a switch is in flight (the mutation also waits for the refetch), show its target (null = Current).
   const target = set.isPending ? (set.variables ?? null) : undefined;
   const active = q.data?.active ?? null;
-  const options = q.data?.options ?? [{ block: REPLAY_DEFAULT_BLOCK, label: `Block ${REPLAY_DEFAULT_BLOCK} · 24 Sep 2026 15:19 UTC (default)`, default: true }];
+  const options = q.data?.options?.length ? q.data.options : [{ block: REPLAY_DEFAULT_BLOCK, label: `Block ${REPLAY_DEFAULT_BLOCK} · 24 Sep 2026 15:19 UTC (default)`, default: true }];
   const chosen = picked ?? active?.block ?? q.data?.defaultBlock ?? REPLAY_DEFAULT_BLOCK;
   const shown = target !== undefined ? target : active?.block ?? null;
 

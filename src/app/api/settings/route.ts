@@ -14,9 +14,12 @@ import { clearCookieDemoMoves } from "@/lib/demo-moves";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-async function systemInfo(liveOptIn: boolean, replayOverride?: { value: Awaited<ReturnType<typeof getReplay>> }) {
+async function systemInfo(liveOptIn: boolean, replayOverride?: { value: Awaited<ReturnType<typeof getReplay>> }, opts: { registryWaitMs?: number } = {}) {
   const store = await getStore();
-  const registry = await getRegistry().catch(() => null);
+  // A PATCH (e.g. the Replay switch) must answer at once: the registry read at a replay block can take seconds on a
+  // cold function, so it only waits briefly and keeps loading in the background (the next GET has it cached).
+  const registryRead = getRegistry().catch(() => null);
+  const registry = opts.registryWaitMs != null ? await Promise.race([registryRead, new Promise<null>((r) => setTimeout(() => r(null), opts.registryWaitMs))]) : await registryRead;
   const liveDepositMinimums = (registry?.vaults ?? []).map((v) => ({ vault: v.symbol, chainId: v.chainId, ...redeemableMinimum(v.redeem.minAssetsUsd, v.redeem.feeBps, v.asset.symbol) })).map(({ vault, chainId, usd, formula }) => ({ vault, chainId, usd, formula }));
   return {
     openserv: openservConfigured(),
@@ -84,7 +87,7 @@ export async function PATCH(req: Request) {
     const optIn = liveOptIn === undefined ? await liveOptedIn(address) : await setLiveOptIn(address, liveOptIn);
     const replay = replayBlock === undefined ? undefined : { value: await setReplay(replayBlock) };
     const user = Object.keys(patch).length ? await updateUser(address, patch) : await getUser(address);
-    return { user, system: await systemInfo(optIn, replay) };
+    return { user, system: await systemInfo(optIn, replay, { registryWaitMs: 800 }) };
   });
 }
 
