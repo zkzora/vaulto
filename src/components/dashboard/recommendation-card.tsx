@@ -49,6 +49,8 @@ export function RecommendationCard({ rec, snapshot }: { rec: Recommendation | nu
   const txn = useTxn();
   const proposed = rec && rec.status === "proposed";
   const executed = rec && rec.status === "executed";
+  // A simulated run is never "executed": only legs on a Live (opt-in) chain are sent on-chain.
+  const simulatedRun = Boolean(executed && !(rec.legs.length > 0 && rec.legs.every((l) => snapshot.liveChainIds.includes(l.chainId))));
 
   if (analyze.isPending) {
     return (
@@ -96,7 +98,7 @@ export function RecommendationCard({ rec, snapshot }: { rec: Recommendation | nu
     <div className={cx("flex flex-col p-6", proposed ? "card-accent" : "card")}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className="whitespace-nowrap text-[12px] font-semibold uppercase tracking-[0.06em] text-blue-deep">{executed ? "Executed" : rec.status === "approved" ? "Approved · awaiting execution" : "Vaulto recommends"}</span>
+          <span className="whitespace-nowrap text-[12px] font-semibold uppercase tracking-[0.06em] text-blue-deep">{executed ? (simulatedRun ? "Simulated · nothing sent" : "Executed") : rec.status === "approved" ? "Approved · awaiting execution" : "Vaulto recommends"}</span>
           <OpenServBadge />
         </div>
         <div className="flex items-center gap-2">
@@ -111,7 +113,7 @@ export function RecommendationCard({ rec, snapshot }: { rec: Recommendation | nu
           <div className="mt-0.5 font-display text-[16px] font-semibold leading-[1.3] tracking-[-0.01em] text-amber">{rec.foundLabel}</div>
         </div>
         <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-faint">{executed ? "Allocated" : "Recommended"}</div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-faint">{executed ? (simulatedRun ? "Simulated allocation" : "Allocated") : "Recommended"}</div>
           <div className="mt-0.5 font-display text-[16px] font-semibold leading-[1.3] tracking-[-0.01em] text-ink">{rec.headline}</div>
         </div>
       </div>

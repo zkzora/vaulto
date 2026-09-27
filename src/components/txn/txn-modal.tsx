@@ -68,7 +68,7 @@ export function TxnModal({ prepared, loading, error, steps, executing, isDemo, c
           <div>
             <div className="eyebrow">{loading ? "Preparing" : live ? "Review transaction" : "Review simulation"}</div>
             <div className="mt-1.5 font-display text-[24px] font-semibold leading-tight tracking-[-0.02em] text-ink">
-              {loading ? "Building calldata via IXS MCP…" : prepared ? (live ? "Allocate idle capital to the IXS vault" : "Simulate the allocation against the IXS vault") : "Transaction"}
+              {loading ? "Building and simulating the calldata…" : prepared ? (live ? "Allocate idle capital to the IXS vault" : "Simulate the allocation against the IXS vault") : "Transaction"}
             </div>
           </div>
           <button onClick={onClose} disabled={executing} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-canvas text-[18px] text-muted hover:text-ink disabled:opacity-40" aria-label="Close">

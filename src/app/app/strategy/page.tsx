@@ -94,7 +94,7 @@ export default function StrategyPage() {
           <div className="mt-1 font-display text-[28px] font-semibold tracking-[-0.02em] text-ink">{rec.title}</div>
         </div>
         <div className="flex items-center gap-2">
-          {rec.status !== "proposed" && <Pill tone={rec.status === "executed" ? "green" : rec.status === "approved" ? "blue" : "muted"} className="h-7 px-3 text-[13px] capitalize">{rec.status}</Pill>}
+          {rec.status !== "proposed" && <Pill tone={rec.status === "executed" ? "green" : rec.status === "approved" ? "blue" : "muted"} className="h-7 px-3 text-[13px] capitalize">{rec.status === "executed" && !live ? "simulated" : rec.status}</Pill>}
           <Pill tone="blue" className="h-7 px-3 text-[13px]">{rec.confidence}% confidence</Pill>
         </div>
       </div>
@@ -297,7 +297,7 @@ export default function StrategyPage() {
                       </button>
                     </div>
                     <div className="mt-3 text-center text-[12px] leading-[1.5] text-faint">
-                      {rec.txCount} calldata step{rec.txCount > 1 ? "s" : ""} via IXS MCP · {live ? `wallet signature required · approve exact amount · hard cap ${(rec.guardrails?.maxLiveTxUsdc ?? 0).toLocaleString("en-US")} USDC per tx · est. fee ${fmtUsd(rec.feeUsd, { decimals: 2 })}` : `${execLabel} · nothing is sent`}
+                      {rec.txCount} calldata step{rec.txCount > 1 ? "s" : ""} {snapshot.replay ? "encoded against the vault ABI (Replay)" : "via IXS MCP"} · {live ? `wallet signature required · approve exact amount · hard cap ${(rec.guardrails?.maxLiveTxUsdc ?? 0).toLocaleString("en-US")} USDC per tx · est. fee ${fmtUsd(rec.feeUsd, { decimals: 2 })}` : `${execLabel} · nothing is sent`}
                     </div>
                   </>
                 )}
