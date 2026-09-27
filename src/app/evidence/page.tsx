@@ -103,7 +103,7 @@ function SimulationsCard({ s, title }: { s: EvidenceSnapshot; title?: string }) 
         <div className="font-display text-[16px] font-semibold text-ink">{title ?? "Simulated on mainnet · eth_call + state override (current state)"}</div>
         <SnapshotBadge s={s} />
       </div>
-      <div className="mt-1 text-[12px] text-muted">Deposit and redeem calldata built by the IXS MCP, run against the real vault contracts from an empty wallet. Nothing is sent.</div>
+      <div className="mt-1 text-[12px] text-muted">{s.replay ? "Deposit calldata encoded directly against the vault ABI (the IXS MCP builds against the current state only) and redeem calldata built by the IXS MCP, run against the real vault contracts at the replay block from an empty wallet. Nothing is sent." : "Deposit and redeem calldata built by the IXS MCP, run against the real vault contracts from an empty wallet. Nothing is sent."}</div>
       <div className="mt-3 grid gap-2">
         {s.simulations.map((m) => (
           <details key={m.label} className="rounded-xl border border-line px-4 py-2.5 text-[12px]">
