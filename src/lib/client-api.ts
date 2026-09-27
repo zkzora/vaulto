@@ -209,6 +209,7 @@ export interface SystemInfo {
   liveOptIn: boolean;
   replay: ReplayInfo | null;
   redeemNavBufferPct: number;
+  maxVaultTvlSharePct: number;
   deployment: { source: "git" | "vercel" | "local"; commit: string | null; ref: string | null; repo: string | null };
   maxLiveTxUsdc: number;
   navStaleHours: number;

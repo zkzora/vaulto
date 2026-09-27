@@ -352,6 +352,8 @@ export interface Recommendation {
   decisions?: { strategyId: string; verdict: "allocate" | "defer" | "reject"; amount?: number; reason: string }[];
   /** Next IXS cutoff at analysis time. */
   cutoff?: CutoffInfoLite;
+  /** Each leg's share of its vault's TVL (concentration guardrail: min(policy cap, 25% of TVL), never below 100 USDC). */
+  concentration?: { strategyId: string; vault: string; symbol: string; tvlUsd: number; amountUsd: number; shareOfTvlPct: number; shareAfterDepositPct: number; maxSharePct: number; capped: boolean }[];
   /** Times the deterministic validator overrode a SERV allocation (0 in a clean run). */
   validatorOverrides?: string[];
   /** Hard limits the deterministic guardrails enforce around SERV's decisions. */
@@ -364,6 +366,7 @@ export interface Recommendation {
     navStaleHours: number;
     liveMode?: "opt-in" | "off";
     liveOptIn?: boolean;
+    maxVaultTvlSharePct?: number;
     liveDepositMinimums?: { strategyId: string; vault: string; symbol: string; usd: number; formula: string; reason: string }[];
   };
 }

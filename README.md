@@ -41,6 +41,7 @@ The exact input and the raw output of both calls are stored on the recommendatio
 | Minimum vault risk score | 80 (policy) | Risk Guardian |
 | Minimum deposit | 100 USDC per request (stated by IXS) | pre-flight, Planner |
 | Live redeemable minimum | **104 USDC into ixv1** = ceil(100 / 0.995 × 1.03): the whole position must stay redeemable above the 100 USDC net `minRedeemAssets()` after the 0.5% `feeBps()` redeem fee, with a 3% NAV buffer | pre-flight, Planner, validator, Execution Agent |
+| Vault concentration | one leg ≤ min(policy cap, **25% of the vault's TVL** = `totalAssets()` before the deposit), never below the 100 USDC minimum; if that cap is under 100 USDC the vault is DEFERRED for capacity (`MAX_VAULT_TVL_SHARE_PCT`) | Planner caps, SERV prompt, validator (clamps and counts), memo, Risk Center |
 | Live cap | 150 USDC per transaction on the demo deployment (`MAX_LIVE_TX_USDC`) | Planner, Execution Agent |
 | NAV staleness | 72 h Vaulto policy, plus the contract's `navStalenessThreshold()` (48 h on ixv1) through `maxDeposit()` | pre-flight → DEFER |
 
@@ -94,7 +95,7 @@ The open vaults are only accepting deposits while their NAV is fresh: ixv1's `na
 - The IXS MCP builds against the current state only, so Replay encodes approve + deposit directly against the vault ABI (IXS stated direct contract builds are allowed) and only simulates them. Live is off in Replay; nothing is ever sent.
 - Every view is labelled "Replay: BNB mainnet state @ block N (NAV fresh at that block)". Recommendations are kept per view.
 
-Committed Replay evidence: `evidence/replay-block123779792.json` (SERV ALLOCATE into ixv1, simulated deposit with expected shares, memo).
+Committed Replay evidence: `evidence/replay-block123779792.json`. At that block ixv1's `totalAssets()` is 655.87 USDC, so the concentration guardrail caps the leg at 25% of TVL: SERV allocates 163.96 USDC (25% of the vault's TVL before the deposit, 20% after it) and the simulated deposit returns about 150.27 ixv1. Without the guardrail the Planner's policy cap would have been 572,000 USDC, about 872 times the vault's size.
 
 ## Recording-window watcher
 

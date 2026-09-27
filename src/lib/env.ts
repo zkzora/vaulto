@@ -1,4 +1,4 @@
-import { CHAINS, CHAIN_ID, MAX_LIVE_TX_USDC_DEFAULT, NAV_STALE_HOURS_DEFAULT } from "@/lib/chain/config";
+import { CHAINS, CHAIN_ID, MAX_LIVE_TX_USDC_DEFAULT, MAX_VAULT_TVL_SHARE_PCT_DEFAULT, NAV_STALE_HOURS_DEFAULT } from "@/lib/chain/config";
 
 const num = (v: string | undefined, fallback: number) => {
   const n = Number(v);
@@ -20,6 +20,8 @@ export const env = {
   // Policy knobs
   navStaleHours: num(process.env.NAV_STALE_HOURS, NAV_STALE_HOURS_DEFAULT),
   maxLiveTxUsdc: num(process.env.MAX_LIVE_TX_USDC, MAX_LIVE_TX_USDC_DEFAULT),
+  /** Concentration guardrail: max share of a vault's TVL one leg may take (percent). */
+  maxVaultTvlSharePct: num(process.env.MAX_VAULT_TVL_SHARE_PCT, MAX_VAULT_TVL_SHARE_PCT_DEFAULT),
   /** "opt-in" (default): Live only after the viewer enables it in Settings. "off": Live disabled on this deployment. */
   liveMode: (process.env.LIVE_MODE === "off" ? "off" : "opt-in") as "opt-in" | "off",
   // OpenServ (no OpenAI key involved).

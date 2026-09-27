@@ -66,6 +66,21 @@ export function buildRiskReport(snapshot: TreasurySnapshot, user: UserProfile, r
     },
   ];
 
+  // Vault concentration: each proposed leg vs its vault's TVL (guardrail: min(policy cap, 25% of TVL), never below 100 USDC).
+  const conc = rec && (rec.status === "proposed" || rec.status === "approved") ? (rec.concentration ?? []) : [];
+  const maxShare = rec?.guardrails?.maxVaultTvlSharePct ?? 25;
+  const topConc = conc.reduce<(typeof conc)[number] | null>((m, c) => (!m || c.shareOfTvlPct > m.shareOfTvlPct ? c : m), null);
+  items.push({
+    key: "concentration",
+    title: "Vault concentration",
+    level: topConc ? (topConc.shareOfTvlPct >= maxShare ? "Medium" : "Low") : "Low",
+    description: topConc
+      ? conc.map((c) => `${c.vault}: the proposed position would be ${c.shareOfTvlPct}% of the vault's TVL (${fmtUsd(c.amountUsd, { decimals: 2 })} of ${fmtUsd(c.tvlUsd, { decimals: 2 })} before the deposit, ${c.shareAfterDepositPct}% after it)${c.capped ? `, capped at ${c.maxSharePct}% of TVL by the concentration guardrail` : ""}.`).join(" ")
+      : `No open allocation. Any leg is capped at min(policy cap, ${maxShare}% of the vault's TVL), never below the 100 USDC minimum; below that the vault is deferred for capacity.`,
+    value: topConc ? `${topConc.shareOfTvlPct}%` : "—",
+    sub: `of vault TVL · cap ${maxShare}%`,
+  });
+
   const alerts: RiskReport["alerts"] = [];
   for (const w of watch?.waiting ?? []) {
     alerts.push({

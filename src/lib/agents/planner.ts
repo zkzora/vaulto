@@ -20,6 +20,9 @@ export interface LegCap {
   /** Largest amount (asset units) policy allows into this strategy. */
   maxAmount: number;
   maxUsd: number;
+  /** Vault TVL (totalAssets before the deposit) and the concentration cap derived from it, when known. */
+  tvlUsd: number | null;
+  concentrationCapUsd: number | null;
   /** Smallest leg the guardrails allow: the 100 USDC IXS minimum, or on a Live chain the redeemable minimum. */
   minAmount: number;
   minUsd: number;
@@ -40,8 +43,10 @@ export interface Constraints {
   /** IXS minimum deposit per leg (USD). */
   minDepositUsd: number;
   caps: LegCap[];
-  /** Vaults that passed pre-flight but cannot take a leg within the guardrails, with the reason. */
-  dropped: { strategyId: string; reason: string }[];
+  /** Vaults that passed pre-flight but cannot take a leg within the guardrails: verdict (capacity → defer) and reason. */
+  dropped: { strategyId: string; verdict: "defer" | "reject"; reason: string }[];
+  /** Concentration guardrail in force (percent of vault TVL per leg). */
+  maxVaultTvlSharePct: number | null;
 }
 
 export interface LegInput {
@@ -79,7 +84,7 @@ export function minLeg(strategy: VaultStrategy, live: boolean): { usd: number; n
  * liquidity floor (+1pt), two months of burn kept liquid (at most 10 pts above the floor), and a
  * stablecoin runway reserve. The decision itself is made by SERV reasoning within these caps.
  */
-export function planConstraints(snapshot: TreasurySnapshot, approved: Candidate[], user: UserProfile, opts: { maxLiveTxUsd?: number } = {}): Constraints | null {
+export function planConstraints(snapshot: TreasurySnapshot, approved: Candidate[], user: UserProfile, opts: { maxLiveTxUsd?: number; maxVaultTvlSharePct?: number } = {}): Constraints | null {
   if (!approved.length || snapshot.totalUsd <= 0) return null;
   const floorUsd = snapshot.totalUsd * ((user.liquidityFloorPct + 1) / 100);
   const burnBuffer = user.monthlyBurnUsd * 2;
@@ -120,16 +125,31 @@ export function planConstraints(snapshot: TreasurySnapshot, approved: Candidate[
         capNote = `Live hard cap ${opts.maxLiveTxUsd.toLocaleString("en-US")} ${c.asset} per transaction (MAX_LIVE_TX_USDC)`;
       }
     }
+    // Concentration guardrail: one leg may not exceed maxVaultTvlSharePct of the vault's TVL (totalAssets before the
+    // deposit). The cap is min(policy cap, that share of TVL); below the minimum leg the vault is deferred for capacity.
+    const tvl = c.strategy.tvlUsd != null && c.strategy.tvlUsd > 0 ? c.strategy.tvlUsd * price : null;
+    const share = opts.maxVaultTvlSharePct ?? null;
+    const concentrationCapUsd = tvl != null && share != null ? Math.floor(tvl * share) / 100 : null;
+    let capacityBound = false;
+    if (concentrationCapUsd != null && concentrationCapUsd < maxUsd) {
+      maxUsd = concentrationCapUsd;
+      capNote = `concentration guardrail: at most ${share}% of the vault's TVL (totalAssets ${tvl!.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${c.asset} → ${concentrationCapUsd.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${c.asset})`;
+      capacityBound = true;
+    }
     const maxAmount = roundAmount(c.asset, maxUsd / price, maxUsd);
     const min = minLeg(c.strategy, live);
     if (maxAmount * price < min.usd) {
-      dropped.push({ strategyId: c.strategy.id, reason: `At most ${Math.floor(maxAmount * price).toLocaleString("en-US")} ${c.asset} can go into ${c.strategy.vaultName} within the guardrails (${capNote ?? "liquidity floor and budget"}), below the ${min.note}` });
+      dropped.push(
+        capacityBound
+          ? { strategyId: c.strategy.id, verdict: "defer", reason: `Capacity: ${share}% of the vault's TVL (${tvl!.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${c.asset}) allows at most ${(concentrationCapUsd ?? 0).toLocaleString("en-US", { maximumFractionDigits: 2 })} ${c.asset}, below the ${min.note}; deferred until the vault is large enough` }
+          : { strategyId: c.strategy.id, verdict: "reject", reason: `At most ${Math.floor(maxAmount * price).toLocaleString("en-US")} ${c.asset} can go into ${c.strategy.vaultName} within the guardrails (${capNote ?? "liquidity floor and budget"}), below the ${min.note}` },
+      );
       continue;
     }
-    caps.push({ strategyId: c.strategy.id, vaultName: c.strategy.vaultName, chainId: c.strategy.chainId, chainName: c.strategy.chainName, asset: c.asset, depositLimitUsd: limit, priceUsd: price, apy: c.strategy.apy ?? 0, riskScore: c.strategy.riskScore, maxAmount, maxUsd: Math.round(maxAmount * price), minAmount: min.usd / price, minUsd: min.usd, minNote: min.note, capNote });
+    caps.push({ strategyId: c.strategy.id, vaultName: c.strategy.vaultName, chainId: c.strategy.chainId, chainName: c.strategy.chainName, asset: c.asset, depositLimitUsd: limit, priceUsd: price, apy: c.strategy.apy ?? 0, riskScore: c.strategy.riskScore, maxAmount, maxUsd: Math.round(maxAmount * price * 100) / 100, tvlUsd: tvl, concentrationCapUsd, minAmount: min.usd / price, minUsd: min.usd, minNote: min.note, capNote });
   }
   if (!caps.length && !dropped.length) return null;
-  return { totalUsd: snapshot.totalUsd, idleUsd: snapshot.idleUsd, keepLiquidUsd: Math.round(keepLiquidUsd), budgetUsd: Math.round(budgetUsd), stableReserveUsd: Math.round(stableReserveUsd), minDepositUsd: MIN_DEPOSIT_USDC, caps, dropped };
+  return { totalUsd: snapshot.totalUsd, idleUsd: snapshot.idleUsd, keepLiquidUsd: Math.round(keepLiquidUsd), budgetUsd: Math.round(budgetUsd), stableReserveUsd: Math.round(stableReserveUsd), minDepositUsd: MIN_DEPOSIT_USDC, caps, dropped, maxVaultTvlSharePct: opts.maxVaultTvlSharePct ?? null };
 }
 
 /** Deterministic sizing used when SERV reasoning is unavailable: fill caps proportionally to idle size. */

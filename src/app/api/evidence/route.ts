@@ -70,6 +70,7 @@ const STATEMENTS = {
     "Live deposits into ixv1 need at least 104 USDC = ceil(100 / 0.995 × 1.03), so the position stays redeemable above the 100 USDC net minimum (minRedeemAssets) after the 0.5% fee (feeBps) with a 3% NAV buffer.",
     "Settlement of async requests is estimated at about one business day after the cutoff, and Singapore public holidays come from the public calendar: both are Vaulto assumptions, not IXS statements.",
     "A NAV older than 72 h, or older than the contract's navStalenessThreshold(), is treated as stale.",
+    "Concentration: one leg may take at most min(policy cap, 25% of the vault's TVL = totalAssets before the deposit), never below the 100 USDC minimum; if that cap is below 100 USDC the vault is deferred for capacity.",
   ],
 };
 

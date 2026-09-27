@@ -34,6 +34,7 @@ async function systemInfo(liveOptIn: boolean, replayOverride?: { value: Awaited<
     liveOptIn,
     replay: replayOverride ? replayOverride.value : await getReplay().catch(() => null),
     maxLiveTxUsdc: env.maxLiveTxUsdc,
+    maxVaultTvlSharePct: env.maxVaultTvlSharePct,
     redeemNavBufferPct: REDEEM_NAV_BUFFER_PCT,
     navStaleHours: env.navStaleHours,
     minDepositUsdc: MIN_DEPOSIT_USDC,

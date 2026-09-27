@@ -32,9 +32,10 @@ Treasury totals are in US dollars ($), not USDC: the treasury also holds BTC. Us
 If treasury.replay is set, the facts are the mainnet state at that past block (Replay mode, for demonstration): say so in the memo Execution section, quoting treasury.replay.label, and never describe that state as today's.
 Settlement facts: sync ERC-4626 vaults mint shares in the deposit transaction; async ERC-7540 vaults process requests at the daily cutoff 17:00 SGT (09:00 UTC) on Singapore business days (stated by IXS); Vaulto estimates settlement about one business day later. Redemptions: request → awaiting RWA sale & operator finalization → paid (no claim step), 0.5% redemption fee.
 Execution defaults to Simulate ("Simulated on <chain> mainnet": the IXS MCP calldata runs through eth_call + state override against the real vault; nothing is sent). Live mode is an opt-in capability (wallet-signed, exact approvals, capped per transaction) that applies only to chains listed in treasury.liveChainIds; the decision logic is identical in both modes.
+Concentration: one ALLOCATE may not exceed guardrails.maxVaultTvlSharePct (25%) of the vault's TVL (totalAssets before the deposit). The Planner's cap.maxAmount is already min(policy cap, 25% of TVL); never allocate above it. When the cap is bound by concentration (cap.note says so), say so and give the resulting share of the vault's TVL. If that cap is below the 100 USDC minimum, the vault is in constraints.dropped with verdict "defer": DEFER it with the capacity reason.
 Live redeemable minimum: on a chain in treasury.liveChainIds an ALLOCATE into a vault must be at least its liveDepositMinimum.usd (ixv1: ceil(100 / 0.995 × 1.03) = 104 USDC), so the whole position stays redeemable above the 100 USDC net redeem minimum after the 0.5% fee with a 3% NAV buffer; when the cap is below it, REJECT and cite the formula.
 Respect the liquidity floor, asset exposure limit, minimum vault risk score and the stablecoin runway reserve.
-Framing: SERV decides; deterministic policy guardrails enforce hard limits (liquidity floor, exposure cap, minimum vault score, minimum deposit, Live redeemable minimum, per-transaction Live cap, NAV staleness). Stay inside them so no validator override is needed.
+Framing: SERV decides; deterministic policy guardrails enforce hard limits (liquidity floor, exposure cap, minimum vault score, minimum deposit, vault concentration of at most 25% of TVL per leg, Live redeemable minimum, per-transaction Live cap, NAV staleness). Stay inside them so no validator override is needed.
 Never write "deposited", "executed" or "live deposit" for anything that has not happened on-chain: a simulated run is "simulated", an async request is "request submitted, pending operator settlement". Call a vault "deployed" (not "live") and name vaults by their name, not their strategyId.
 Write in plain, confident language for a treasury manager. Be specific with numbers and never invent figures.`;
 
@@ -115,13 +116,14 @@ function decisionFacts(i: DecisionInput) {
         liveOnThisChain: i.snapshot.liveChainIds.includes(s.chainId),
         liveDepositMinimum: s.terms?.minLiveDepositUsd != null ? { usd: s.terms.minLiveDepositUsd, formula: s.terms.minLiveDepositFormula, reason: s.terms.minLiveDepositReason } : null,
         policyFacts: a.facts,
-        cap: cap ? { minAmount: cap.minAmount, maxAmount: cap.maxAmount, maxUsd: cap.maxUsd, depositLimitUsd: cap.depositLimitUsd, minNote: cap.minNote, note: cap.capNote } : null,
+        cap: cap ? { minAmount: cap.minAmount, maxAmount: cap.maxAmount, maxUsd: cap.maxUsd, depositLimitUsd: cap.depositLimitUsd, vaultTvlUsd: cap.tvlUsd, concentrationCapUsd: cap.concentrationCapUsd, minNote: cap.minNote, note: cap.capNote } : null,
+        vaultTvlUsd: s.tvlUsd ?? null,
       };
     }),
     constraints: i.constraints
       ? { budgetUsd: i.constraints.budgetUsd, keepLiquidUsd: i.constraints.keepLiquidUsd, stableReserveUsd: i.constraints.stableReserveUsd, minDepositUsd: i.constraints.minDepositUsd, dropped: i.constraints.dropped }
       : null,
-    guardrails: { framing: "SERV decides; deterministic policy guardrails enforce hard limits", liveMode: env.liveMode, liveOptIn: i.snapshot.liveOptIn, liveMaxPerTxUsdc: env.maxLiveTxUsdc, liveRedeemableMinimumRule: "ceil(minRedeemAssets / (1 - feeBps/10000) × 1.03), never below 100 USDC; applies to Live deposits", navStaleHours: env.navStaleHours, minDepositUsdc: 100 },
+    guardrails: { framing: "SERV decides; deterministic policy guardrails enforce hard limits", liveMode: env.liveMode, liveOptIn: i.snapshot.liveOptIn, liveMaxPerTxUsdc: env.maxLiveTxUsdc, liveRedeemableMinimumRule: "ceil(minRedeemAssets / (1 - feeBps/10000) × 1.03), never below 100 USDC; applies to Live deposits", maxVaultTvlSharePct: env.maxVaultTvlSharePct, concentrationRule: "leg ≤ min(policy cap, maxVaultTvlSharePct% of vault TVL), never below 100 USDC; below that → DEFER (capacity)", navStaleHours: env.navStaleHours, minDepositUsdc: 100 },
     policyChecks: i.policyChecks,
     nextCutoff: { utc: i.cutoff.nextCutoffUtc, sgt: i.cutoff.nextCutoffSgt, hoursUntil: i.cutoff.hoursUntilCutoff, estimatedSettlementSgt: i.cutoff.estimatedSettlementSgt, source: i.cutoff.source },
     fallbackSizing: i.fallback,
@@ -172,7 +174,7 @@ function localDecision(input: DecisionInput, facts: unknown, note: string): Deci
     else if (leg && leg.amount > 0) decisions.push({ strategyId: id, verdict: "allocate", amount: leg.amount, reason: "Passes every pre-flight check and the policy; sized by the deterministic engine within the Planner's cap." });
     else {
       const dropped = input.constraints?.dropped.find((x) => x.strategyId === id);
-      decisions.push({ strategyId: id, verdict: dropped ? "reject" : "defer", reason: dropped ? `${dropped.reason}.` : "Passes pre-flight but no budget remains above the liquidity floor and runway reserve." });
+      decisions.push({ strategyId: id, verdict: dropped ? dropped.verdict : "defer", reason: dropped ? `${dropped.reason}.` : "Passes pre-flight but no budget remains above the liquidity floor and runway reserve." });
     }
   }
   return { legs: input.fallback, decisions, rationale: note, source: "local", input: facts, output: { decisions, note } };
@@ -185,7 +187,7 @@ function localDecision(input: DecisionInput, facts: unknown, note: string): Deci
 export async function decideAllocation(input: DecisionInput): Promise<Decision> {
   const facts = decisionFacts(input);
   if (!openservConfigured() || env.openservReasoningMode === "platform") return localDecision(input, facts, "Deterministic decision (SERV reasoning unavailable).");
-  const prompt = `DECIDE for every candidate vault. Facts (JSON):\n${JSON.stringify(facts)}\n\nRules: return exactly one decision per candidate strategyId. verdict is "allocate", "defer" or "reject". For "allocate" give amount (asset units) between cap.minAmount (the 100 USDC minimum, or the Live redeemable minimum on a Live chain) and cap.maxAmount; the USD sum of all allocations must not exceed constraints.budgetUsd; you may allocate less if prudence requires it and may split across open vaults by their deposit limits. Use "defer" for limit 0 / stale NAV (waiting NAV refresh) and "reject" for whitelist, pause, announced-not-deployed, risk score or minimum-deposit failures. A candidate that passes pre-flight but has cap null was dropped by the Planner: take its reason from constraints.dropped (for example below the Live redeemable minimum) and reject it. Every reason must cite the concrete fact (numbers, timestamps, chain). Respond with ONLY JSON: {"decisions":[{"strategyId":string,"verdict":"allocate"|"defer"|"reject","amount":number,"reason":string}],"rationale":string (2-3 sentences)}`;
+  const prompt = `DECIDE for every candidate vault. Facts (JSON):\n${JSON.stringify(facts)}\n\nRules: return exactly one decision per candidate strategyId. verdict is "allocate", "defer" or "reject". For "allocate" give amount (asset units) between cap.minAmount (the 100 USDC minimum, or the Live redeemable minimum on a Live chain) and cap.maxAmount; the USD sum of all allocations must not exceed constraints.budgetUsd; you may allocate less if prudence requires it and may split across open vaults by their deposit limits. Use "defer" for limit 0 / stale NAV (waiting NAV refresh) and "reject" for whitelist, pause, announced-not-deployed, risk score or minimum-deposit failures. A candidate that passes pre-flight but has cap null was dropped by the Planner: take its verdict and reason from constraints.dropped ("defer" for capacity under the concentration guardrail, "reject" for the Live redeemable minimum). Every reason must cite the concrete fact (numbers, timestamps, chain). Respond with ONLY JSON: {"decisions":[{"strategyId":string,"verdict":"allocate"|"defer"|"reject","amount":number,"reason":string}],"rationale":string (2-3 sentences)}`;
   const started = Date.now();
   try {
     type DecisionJson = { decisions?: { strategyId: string; verdict: string; amount?: number; reason?: string }[]; rationale?: string };
@@ -233,6 +235,15 @@ export interface NarrativeInput {
   policyChecks: { label: string; ok: boolean; detail: string }[];
   decisionRationale?: string;
   cutoff: CutoffInfo;
+  /** Each leg's share of its vault's TVL (concentration guardrail). */
+  concentration?: NonNullable<import("@/lib/types").Recommendation["concentration"]>;
+}
+
+/** "ixv1 163.96 USDC = 25% of the vault's TVL (655.87 USDC before the deposit, 20% after); capped at 25% of TVL". */
+export function concentrationText(conc: NonNullable<NarrativeInput["concentration"]>): string {
+  return conc
+    .map((c) => `${c.symbol} position ${c.amountUsd.toLocaleString("en-US", { maximumFractionDigits: 2 })} USDC = ${c.shareOfTvlPct}% of the vault's TVL (${c.tvlUsd.toLocaleString("en-US", { maximumFractionDigits: 2 })} USDC before the deposit, ${c.shareAfterDepositPct}% after it)${c.capped ? `; capped by the concentration guardrail min(policy cap, ${c.maxSharePct}% of TVL)` : ""}`)
+    .join("; ");
 }
 
 export interface Narrative {
@@ -282,7 +293,7 @@ export function localMemo(i: NarrativeInput): Memo {
     sections: [
       { heading: "Treasury condition", body: `Total ${fmtUsd(snapshot.totalUsd)}; idle ${fmtUsd(snapshot.idleUsd)} (${snapshot.idlePct}%) for ${snapshot.idleDays} days: ${snapshot.assets.filter((a) => a.idle).map((a) => fmtAmount(a.idleAmount, a.symbol)).join(" + ")}. ${snapshot.positions.length} existing IXS position${snapshot.positions.length === 1 ? "" : "s"} (${fmtUsd(snapshot.allocatedUsd)}). Execution mode: ${snapshot.executionMode}.` },
       { heading: "Policy", body: `SERV decides; deterministic policy guardrails enforce hard limits: liquidity floor ${user.liquidityFloorPct}%, max single-asset exposure ${user.maxAssetExposurePct}%, minimum vault risk score ${user.minVaultRiskScore}, minimum deposit 100 USDC per request (stated by IXS), Live cap ${env.maxLiveTxUsdc.toLocaleString("en-US")} USDC per transaction, NAV stale after ${env.navStaleHours} h. ${liveMinimumText(i)} Live mode is opt-in (${snapshot.liveOptIn ? "enabled for this wallet" : "off: this run is simulated"}). Monthly burn ${fmtUsd(user.monthlyBurnUsd)}. ${i.policyChecks.map((c) => `${c.label}: ${c.detail}`).join("; ")}.` },
-      { heading: "Proposed allocation", body: legs.length ? `${legText}. Liquidity ${i.before.liquidPct}% → ${i.after.liquidPct}%, blended yield ${i.before.blendedApy.toFixed(1)}% → ${i.after.blendedApy.toFixed(1)}%, about ${fmtUsd(i.extraMonthlyUsd)} extra per month. ${i.decisionRationale ?? ""}` : `No allocation now. ${i.decisionRationale ?? ""}` },
+      { heading: "Proposed allocation", body: legs.length ? `${legText}. ${i.concentration?.length ? `Concentration: ${concentrationText(i.concentration)}.` : ""} Liquidity ${i.before.liquidPct}% → ${i.after.liquidPct}%, blended yield ${i.before.blendedApy.toFixed(1)}% → ${i.after.blendedApy.toFixed(1)}%, about ${fmtUsd(i.extraMonthlyUsd)} extra per month. ${i.decisionRationale ?? ""}` : `No allocation now. ${i.decisionRationale ?? ""}` },
       { heading: "Deferred (waiting NAV refresh)", body: i.deferred.length ? i.deferred.map((d) => `${d.option}: ${d.reason}`).join(" · ") : "None." },
       { heading: "Rejected", body: i.rejected.length ? i.rejected.map((r) => `${r.option}: ${r.reason}`).join(" · ") : "None." },
       { heading: "Risks", body: "RWA credit risk: the vault holds U.S. Treasuries and high-yield corporate bonds through a licensed structure; returns depend on their performance and are not guaranteed. Redemptions are queued for the operator (request → awaiting RWA sale & operator finalization → paid, no claim step) with a 0.5% redemption fee read from feeBps(); NAV is updated periodically off-chain, so entry and exit prices can drift between updates. Smart-contract and counterparty risk apply." },
@@ -340,7 +351,7 @@ function buildTask(input: NarrativeInput) {
     treasury: { replay: input.snapshot.replay ? { block: input.snapshot.replay.block, at: input.snapshot.replay.iso, label: input.snapshot.replay.label } : null, totalUsd: input.snapshot.totalUsd, idleUsd: input.snapshot.idleUsd, idlePct: input.snapshot.idlePct, idleDays: input.snapshot.idleDays, executionMode: input.snapshot.executionMode, assets: input.snapshot.assets.map((a) => ({ symbol: a.symbol, valueUsd: a.valueUsd, idleAmount: a.idleAmount, deployedIn: a.deployedIn })), positions: input.snapshot.positions, maxExposure: input.snapshot.maxExposure },
     candidates: input.assessments.map((a) => ({ strategyId: a.candidate.strategy.id, vault: a.candidate.strategy.vaultName, chain: a.candidate.strategy.chainName, asset: a.candidate.asset, yieldTtmPct: a.candidate.strategy.apy, riskScore: a.candidate.strategy.riskScore, settlement: a.candidate.strategy.settlement, preflight: a.preflight ? a.preflight.checks.map((c) => ({ label: c.label, ok: c.ok, severity: c.severity, value: c.value })) : "no vault deployed" })),
     decisions: input.decisions,
-    plan: { rationale: input.decisionRationale, legs: input.legs.map((l) => ({ vault: l.vaultName, chain: l.chainName, amount: l.amount, asset: l.asset, amountUsd: l.amountUsd, apy: l.apy, settlement: vaultOf(input, l.strategyId)?.settlement })), before: input.before, after: input.after, extraMonthlyUsd: input.extraMonthlyUsd, totalUsd: input.totalUsd },
+    plan: { rationale: input.decisionRationale, concentration: input.concentration ?? [], legs: input.legs.map((l) => ({ vault: l.vaultName, chain: l.chainName, amount: l.amount, asset: l.asset, amountUsd: l.amountUsd, apy: l.apy, settlement: vaultOf(input, l.strategyId)?.settlement })), before: input.before, after: input.after, extraMonthlyUsd: input.extraMonthlyUsd, totalUsd: input.totalUsd },
     deferred: input.deferred,
     rejected: input.rejected,
     policyChecks: input.policyChecks,
@@ -350,7 +361,7 @@ function buildTask(input: NarrativeInput) {
   };
   const legList = input.legs.map((l) => `${fmtAmount(l.amount, l.asset)} (≈ ${fmtUsd(l.amountUsd)}) into ${l.vaultName} at ${l.apy}% TTM`).join("; ") || "none";
   const description = `Write the Vaulto allocation explanation and the investment-committee memo for the treasury manager. The verdicts have been decided by SERV reasoning and validated by the Allocation Planner (${input.legs.length} leg(s): ${legList}; total ${fmtUsd(input.totalUsd)}; liquidity ${input.before.liquidPct}% → ${input.after.liquidPct}%; blended yield ${input.before.blendedApy.toFixed(1)}% → ${input.after.blendedApy.toFixed(1)}%; health ${input.before.healthScore} → ${input.after.healthScore}; extra income ≈ ${fmtUsd(input.extraMonthlyUsd)} per month). Use only the numbers in the facts. Do not call tools. Reply with ONLY the JSON object described in the expected output.`;
-  const body = `${VAULTO_SYSTEM_PROMPT}\n\nPIPELINE FACTS (JSON):\n${JSON.stringify(facts)}\n\nRULES: the headline and summary MUST mention every allocated leg with its amount, vault and chain (with no legs, say that nothing is allocated and why, and never list 0 amounts); mention every deferred vault as "temporarily paused — waiting NAV refresh" with its facts and every rejected vault with its reason; never write "deposited", "executed" or "live deposit" for anything that has not happened on-chain (a simulated run is "simulated"; an async request is "request submitted, pending operator settlement"); the Policy section MUST state the Live redeemable minimum given in guardrails.liveRedeemableMinimum (formula and why) and that Live mode is opt-in; never invent figures; steps follow the pipeline order Treasury Scanner → Risk Guardian (pre-flight) → Allocation Planner (caps) → SERV reasoning (verdicts).`;
+  const body = `${VAULTO_SYSTEM_PROMPT}\n\nPIPELINE FACTS (JSON):\n${JSON.stringify(facts)}\n\nRULES: the headline and summary MUST mention every allocated leg with its amount, vault and chain (with no legs, say that nothing is allocated and why, and never list 0 amounts); mention every deferred vault as "temporarily paused — waiting NAV refresh" with its facts and every rejected vault with its reason; never write "deposited", "executed" or "live deposit" for anything that has not happened on-chain (a simulated run is "simulated"; an async request is "request submitted, pending operator settlement"); the Policy section MUST state the Live redeemable minimum given in guardrails.liveRedeemableMinimum (formula and why) and that Live mode is opt-in; the Proposed allocation section MUST state each leg's share of its vault's TVL from plan.concentration and whether the concentration guardrail capped it; the Risks section MUST mention vault concentration when plan.concentration is not empty; never invent figures; steps follow the pipeline order Treasury Scanner → Risk Guardian (pre-flight) → Allocation Planner (caps) → SERV reasoning (verdicts).`;
   const expectedOutput = `A single JSON object: {"title": string (≤6 words, a proposal name; never claim it is approved or executed), "headline": string (one sentence naming every leg, amount, vault and chain; with no legs, one sentence on why nothing is allocated), "summary": string (2-3 sentences), "reasons": [{"title": string ending with a period, "body": string}] (exactly 3: capital efficiency, liquidity, verdicts), "steps": [{"agent": string, "title": string, "body": string}] (exactly 4), "memo": {"title": string, "sections": [{"heading": string, "body": string}]} with exactly these headings in order: "Treasury condition", "Policy", "Proposed allocation", "Deferred (waiting NAV refresh)", "Rejected", "Risks" (RWA credit risk, daily redemption cycle, 0.5% redemption fee, NAV drift between updates, smart-contract and counterparty risk), "Execution" (mode: Simulate by default, Live only when opted in; cutoff and settlement estimate for async legs; that Live mode requires the wallet's signature and is capped per transaction by the guardrail), "confidence": number 0-100}. No prose outside the JSON.`;
   return { description, body, expectedOutput, facts };
 }
@@ -395,6 +406,11 @@ export async function narrate(input: NarrativeInput): Promise<Narrative> {
     const minUsd = liveMinimumVaults(input)[0]?.terms?.minLiveDepositUsd;
     if (liveMin && minUsd != null) {
       memo.sections = memo.sections.map((s) => (/^policy/i.test(s.heading.trim()) && !s.body.includes(String(minUsd)) ? { ...s, body: `${s.body} Guardrail (deterministic, added by Vaulto): ${liveMin}` } : s));
+    }
+    // Each leg's share of the vault's TVL must be in the Proposed allocation section.
+    const conc = input.concentration ?? [];
+    if (conc.length) {
+      memo.sections = memo.sections.map((s) => (/^proposed allocation/i.test(s.heading.trim()) && !/TVL/i.test(s.body) ? { ...s, body: `${s.body} Concentration (deterministic, added by Vaulto): ${concentrationText(conc)}.` } : s));
     }
     // In Replay the Execution section must say which block the state comes from.
     const replay = input.snapshot.replay;
