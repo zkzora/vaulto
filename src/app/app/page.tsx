@@ -21,6 +21,7 @@ export default function HomePage() {
     return (
       <div className="grid gap-5">
         <Skeleton className="h-16 max-w-md" />
+        <ReplayToggle />
         <div className="grid gap-5 lg:grid-cols-2">
           <Skeleton className="h-72" />
           <Skeleton className="h-72" />
