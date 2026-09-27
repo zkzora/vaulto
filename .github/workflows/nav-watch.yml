@@ -32,3 +32,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+      # Keep the demo's serverless functions warm (Current and Replay reads, no SERV call, no OpenServ credit):
+      # a cold Replay scan at the past block takes ~15-20 s, a warm one ~2 s.
+      - name: Keep the demo warm
+        continue-on-error: true
+        run: |
+          base=https://vaulto-five.vercel.app
+          demo=0x7a3f5c1e9b2d4a6f8c0e1d3b5a7c9e2f4b6d9c21
+          for cookie in "" "vaulto_replay=123779792"; do
+            for path in "/api/treasury?address=$demo" "/api/risk?address=$demo" "/api/replay" "/api/settings?address=$demo"; do
+              if [ -n "$cookie" ]; then h="cookie: $cookie"; else h="x-keep-warm: 1"; fi
+              curl -s -o /dev/null -w '%{http_code} %{time_total}s ' --max-time 60 -H "$h" "$base$path" || true
+              echo "$path ${cookie:+(replay)}"
+            done
+          done
