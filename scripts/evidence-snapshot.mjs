@@ -148,6 +148,7 @@ async function main() {
       decisions: rec.decisions.map((d) => ({ ...d, vault: vaultName(d.strategyId) })),
       legs: rec.legs,
       validatorOverrides: rec.validatorOverrides ?? [],
+      concentration: rec.concentration ?? [],
       guardrails: rec.guardrails,
       preflights: Object.fromEntries(
         Object.entries(rec.preflights ?? {}).map(([id, p]) => [id, { verdict: p.verdict, chainId: p.chainId, blockNumber: p.blockNumber, checkedAt: p.checkedAt, depositLimitUsd: p.depositLimitUsd, depositLimitUnlimited: p.depositLimitUnlimited, navUpdatedAt: p.navUpdatedAt, navAgeHours: p.navAgeHours, navLastChangeTx: p.navLastChangeTx, navLastChangeBlock: p.navLastChangeBlock, minDepositUsd: p.minDepositUsd, minLiveDepositUsd: p.minLiveDepositUsd, whitelisted: p.whitelisted, settlement: p.settlement, checks: p.checks }]),
